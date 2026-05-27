@@ -1,0 +1,75 @@
+{
+    local_certs
+}
+# Proxmox
+proxmox.lan {
+    reverse_proxy https://192.168.1.2:8006 {
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
+}
+
+# Gitea
+git.lan {
+    reverse_proxy 192.168.1.13:3000
+}
+
+# Jellyfin
+jellyfin.lan {
+    reverse_proxy 192.168.1.12:8096
+}
+
+# Nextcloud
+nextcloud.lan {
+    reverse_proxy 192.168.1.11:11000
+}
+nextcloud.lan:3478 {
+    reverse_proxy 192.168.1.11:3478
+}
+
+# Kiwix/Wiki
+wiki.lan {
+    reverse_proxy 192.168.1.14:8080
+}
+
+# AMP
+amp.lan {
+    reverse_proxy 192.168.1.15:8080
+}
+
+# Router
+router.lan {
+    reverse_proxy 192.168.1.1
+}
+
+# FYP
+fyp.lan {
+    root * /root/plagiarism-detector/notebooks/htmls
+    file_server
+    handle_path /exploration* {
+        rewrite * /01_data_exploration.html
+    }
+    handle_path /baseline* {
+        rewrite * /02_baseline_experiments.html
+    }
+    handle / {
+        file_server browse
+    }
+}
+
+# Homelab homepage
+home.lan {
+    root * /root/htmls
+    file_server
+    try_files {path} /homelab.html
+}
+
+# Math pages
+math.lan {
+    root * /root/htmls/math
+    file_server
+    handle / {
+        file_server browse
+    }
+}
