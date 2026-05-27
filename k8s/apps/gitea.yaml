@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://git.henrydowd.dev/yourusername/homelab.git
+    repoURL: https://git.henrydowd.dev/henry/homelab.git
     targetRevision: HEAD
     path: k8s/apps/gitea
   destination:
