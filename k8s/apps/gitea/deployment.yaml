@@ -20,19 +20,20 @@ spec:
             - sh
             - -c
             - |
-              cat > /etc/gitea/app.ini << EOCONF
-              RUN_USER = gitea
+              mkdir -p /data/gitea/conf
+              cat > /data/gitea/conf/app.ini << EOCONF
+              RUN_USER = git
               RUN_MODE = prod
               APP_NAME = Henrys Gitea
-              WORK_PATH = /var/lib/gitea
+              WORK_PATH = /data/gitea
 
               [repository]
-              ROOT = /var/lib/gitea/git
+              ROOT = /data/git
               SCRIPT_TYPE = sh
 
               [server]
               STATIC_ROOT_PATH = /usr/share/webapps/gitea
-              APP_DATA_PATH = /var/lib/gitea/data
+              APP_DATA_PATH = /data/gitea
               LFS_START_SERVER = true
               SSH_DOMAIN = git.henrydowd.dev
               DOMAIN = git.henrydowd.dev
@@ -50,7 +51,7 @@ spec:
 
               [database]
               DB_TYPE = sqlite3
-              PATH = /var/lib/gitea/db/gitea.db
+              PATH = /data/gitea/db/gitea.db
               SSL_MODE = disable
               LOG_SQL = false
 
@@ -58,12 +59,12 @@ spec:
               PROVIDER = file
 
               [log]
-              ROOT_PATH = /var/log/gitea
+              ROOT_PATH = /data/gitea/log
               MODE = file
               LEVEL = info
 
               [lfs]
-              PATH = /var/lib/gitea/data/lfs
+              PATH = /data/gitea/lfs
 
               [mailer]
               ENABLED = false
@@ -121,8 +122,8 @@ spec:
                   name: gitea-secrets
                   key: oauth2-jwt-secret
           volumeMounts:
-            - name: gitea-config
-              mountPath: /etc/gitea
+            - name: gitea-data
+              mountPath: /data
       containers:
         - name: gitea
           image: gitea/gitea:latest
@@ -131,12 +132,8 @@ spec:
             - containerPort: 2222
           volumeMounts:
             - name: gitea-data
-              mountPath: /var/lib/gitea
-            - name: gitea-config
-              mountPath: /etc/gitea
+              mountPath: /data
       volumes:
         - name: gitea-data
           persistentVolumeClaim:
             claimName: gitea-data
-        - name: gitea-config
-          emptyDir: {}
