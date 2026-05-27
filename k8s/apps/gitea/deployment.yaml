@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+        - name: gitea
+          image: gitea/gitea:latest
+          ports:
+            - containerPort: 3000
+            - containerPort: 2222
+          env:
+            - name: LFS_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-secrets
+                  key: lfs-jwt-secret
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-secrets
+                  key: internal-token
+            - name: OAUTH2_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-secrets
+                  key: oauth2-jwt-secret
+          volumeMounts:
+            - name: gitea-data
+              mountPath: /var/lib/gitea
+            - name: gitea-config
+              mountPath: /etc/gitea
+      volumes:
+        - name: gitea-data
+          persistentVolumeClaim:
+            claimName: gitea-data
+        - name: gitea-config
+          configMap:
+            name: gitea-config
