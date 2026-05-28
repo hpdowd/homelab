@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`proxmox.lan`)
+    - match: Host(`proxmox.lan`) || Host(`proxmox.henrydowd.dev`)
       kind: Rule
       services:
         - name: proxmox-external
