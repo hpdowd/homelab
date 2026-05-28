@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amp
+  namespace: amp
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: amp.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: amp-external
+                port:
+                  number: 8080
+    - host: amp.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: amp-external
+                port:
+                  number: 8080

@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nextcloud
+  namespace: nextcloud
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: nextcloud.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nextcloud-external
+                port:
+                  number: 11000
+    - host: nextcloud.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nextcloud-external
+                port:
+                  number: 11000

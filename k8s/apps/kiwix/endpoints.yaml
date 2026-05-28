@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: kiwix-external
+  namespace: kiwix
+subsets:
+  - addresses:
+      - ip: 192.168.1.14
+    ports:
+      - port: 8080
