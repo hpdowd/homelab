@@ -9,6 +9,8 @@ addressType: IPv4
 endpoints:
   - addresses:
       - 192.168.1.14
+    conditions:
+      ready: true
 ports:
   - port: 8080
     protocol: TCP
