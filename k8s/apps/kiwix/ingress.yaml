@@ -3,19 +3,10 @@ kind: Ingress
 metadata:
   name: kiwix
   namespace: kiwix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
 spec:
-  ingressClassName: traefik
   rules:
-    - host: wiki.henrydowd.dev
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: kiwix-external
-                port:
-                  number: 8080
     - host: wiki.lan
       http:
         paths:
@@ -24,5 +15,13 @@ spec:
             backend:
               service:
                 name: kiwix-external
-                port:
-                  number: 8080
+                port: { number: 8080 }
+    - host: wiki.henrydowd.dev
+      http:
+        path:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kiwix
+                port: { number: 8080 }

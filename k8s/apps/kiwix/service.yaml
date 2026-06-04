@@ -4,7 +4,7 @@ metadata:
   name: kiwix-external
   namespace: kiwix
 spec:
+  selector: { app: kiwix }
   ports:
     - port: 8080
       targetPort: 8080
-      protocol: TCP
