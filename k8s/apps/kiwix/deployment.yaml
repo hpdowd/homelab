@@ -14,7 +14,8 @@ spec:
       containers:
         - name: kiwix
           image: ghcr.io/kiwix/kiwix-serve:3.7.0
-          args: ["--port=8080", "/data/*.zim"]
+          command: ["sh", "-c"]
+          args: ["kiwix-serve /data/*.zim"]
           ports:
             - containerPort: 8080
           volumeMounts:
