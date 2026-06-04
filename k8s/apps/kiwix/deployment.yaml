@@ -15,7 +15,7 @@ spec:
         - name: kiwix
           image: ghcr.io/kiwix/kiwix-serve:3.7.0
           command: ["sh", "-c"]
-          args: ["kiwix-serve /data/*.zim"]
+          args: ["kiwix-serve --port:8080 /data/*.zim"]
           ports:
             - containerPort: 8080
               targetPort: 8080
