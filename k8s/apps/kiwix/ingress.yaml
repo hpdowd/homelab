@@ -4,7 +4,7 @@ metadata:
   name: kiwix
   namespace: kiwix
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
   rules:
     - host: wiki.lan
@@ -14,7 +14,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: kiwix-external
+                name: kiwix
                 port: { number: 8080 }
     - host: wiki.henrydowd.dev
       http:
