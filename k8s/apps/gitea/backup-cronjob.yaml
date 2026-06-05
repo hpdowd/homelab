@@ -64,8 +64,8 @@ spec:
                       -d "{\"spec\":{\"replicas\":${1}}}" > /dev/null
                   }
 
-                  echo "[backup] Installing restic..."
-                  apk add --no-cache --quiet restic
+                  echo "[backup] Installing restic + curl..."
+                  apk add --no-cache --quiet restic curl
 
                   echo "[backup] Scaling Gitea down..."
                   scale 0
