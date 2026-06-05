@@ -1,0 +1,126 @@
+# Homelab-specific alert rules.
+# vm-k8s-stack's vmalert discovers PrometheusRule CRDs automatically.
+# These supplement the chart's default Kubernetes rules with alerts tuned to
+# THIS setup's known failure modes (see PLAN.md known issues).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: homelab-rules
+  namespace: monitoring
+  labels:
+    # vm-operator selects PrometheusRules; this label keeps it discoverable.
+    app.kubernetes.io/part-of: vm-k8s-stack
+spec:
+  groups:
+    - name: homelab.memory
+      rules:
+        - alert: NodeMemoryLow
+          # Fires when a node has < 1.2Gi available. Control node is 3GB/~70%,
+          # so this is the early-warning before OOM.
+          expr: |
+            node_memory_MemAvailable_bytes < 1.2e9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low available memory on {{ $labels.instance }}"
+            description: "Available memory < 1.2Gi for 5m. Check before adding workloads (e.g. Immich)."
+
+        - alert: NodeSwapClimbing
+          # You already touch swap (~1.3Gi). Alert if swap usage exceeds 60% of total.
+          expr: |
+            (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)
+              / (node_memory_SwapTotal_bytes > 0) > 0.6
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Swap usage high on {{ $labels.instance }}"
+            description: "Sustained swap > 60%. Real memory pressure — investigate the heaviest pods."
+
+        - alert: PodOOMKilled
+          expr: |
+            increase(kube_pod_container_status_restarts_total[15m]) > 0
+            and on(namespace, pod)
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OOMKilled: {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: "A container was OOMKilled. Its memory limit is too low or the node is starved."
+
+    - name: homelab.workloads
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CrashLoopBackOff: {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: "More than 3 restarts in 15m."
+
+        - alert: DeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas != kube_deployment_status_replicas_available
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} degraded"
+            description: "Desired != available replicas for 10m."
+
+    - name: homelab.storage
+      rules:
+        - alert: DiskFillingUp
+          # Any node filesystem over 85%.
+          expr: |
+            (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Disk > 85% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+            description: "Filesystem usage high. The vdb (Longhorn) and the OS SSD both matter."
+
+        - alert: LonghornVolumeDegraded
+          # Requires Longhorn's metrics endpoint to be scraped (it exposes
+          # longhorn_volume_robustness: 0=unknown,1=healthy,2=degraded,3=faulted).
+          expr: |
+            longhorn_volume_robustness == 2 or longhorn_volume_robustness == 3
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Longhorn volume {{ $labels.volume }} degraded/faulted"
+            description: "RWO single-attach pain point. Check the volume and the worker node."
+
+    - name: homelab.backups
+      rules:
+        - alert: BackupJobFailed
+          # restic CronJobs nextcloud-backup / gitea-backup. A failed run is the
+          # worst-case silent failure — you just built these.
+          expr: |
+            kube_job_status_failed{namespace=~"nextcloud|gitea", job_name=~".*backup.*"} > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backup job failed: {{ $labels.namespace }}/{{ $labels.job_name }}"
+            description: "A restic backup CronJob failed. Check logs; verify B2 repo with restic check."
+
+        - alert: BackupJobMissing
+          # Fires if no successful backup completed in the last 26h (daily job).
+          expr: |
+            time() - max by (namespace) (
+              kube_job_status_completion_time{namespace=~"nextcloud|gitea", job_name=~".*backup.*"}
+            ) > 26 * 3600
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "No recent backup in {{ $labels.namespace }}"
+            description: "No successful backup job completed in > 26h. The daily CronJob may not be running."
