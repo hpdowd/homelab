@@ -1,0 +1,136 @@
+# k8s/apps/nextcloud/backup-cronjob.yaml
+#
+# Backs up Nextcloud data PVC + Postgres database to Backblaze B2 via restic.
+# Runs daily at 03:00 Europe/Dublin, staggered from the existing nextcloud-cron (05min).
+#
+# Consistency note: no scale-down / maintenance mode. The backup is crash-consistent
+# rather than application-consistent. Acceptable trade-off for homelab — the DB dump
+# captures a consistent point-in-time snapshot of the database, and the data PVC is
+# mounted read-only so no writes occur during the restic pass. A future improvement
+# would be to scale the Deployment to 0 before the backup and restore it after,
+# which requires RBAC for the backup ServiceAccount (see ADR 004).
+#
+# Image choice: postgres:18-alpine is used because it ships pg_dump matching the
+# server version (PG18), and Alpine's apk allows installing restic alongside it.
+# Avoids version mismatch warnings from older pg_dump clients.
+#
+# Secrets: backup-credentials SealedSecret must exist in the nextcloud namespace.
+# See backup-setup-guide.md for the kubeseal command to generate it.
+#
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nextcloud-backup
+  namespace: nextcloud
+  labels:
+    app: nextcloud-backup
+spec:
+  schedule: "0 3 * * *"
+  timeZone: "Europe/Dublin"
+  concurrencyPolicy: Forbid          # skip if previous run still going
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+            - name: nextcloud-data
+              persistentVolumeClaim:
+                claimName: nextcloud-data
+                readOnly: true
+            - name: db-dump
+              emptyDir: {}
+          containers:
+            - name: backup
+              image: postgres:18-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+
+                  echo "[backup] Installing restic..."
+                  apk add --no-cache --quiet restic
+
+                  echo "[backup] Dumping Nextcloud database..."
+                  PGPASSWORD="${DB_PASSWORD}" pg_dump \
+                    -h postgres.nextcloud.svc.cluster.local \
+                    -U nextcloud \
+                    -d nextcloud_database \
+                    --format=custom \
+                    --file=/dump/nextcloud_db.dump
+                  echo "[backup] DB dump size: $(du -sh /dump/nextcloud_db.dump | cut -f1)"
+
+                  echo "[backup] Initialising restic repo (no-op if already exists)..."
+                  restic snapshots --quiet 2>/dev/null || restic init
+
+                  echo "[backup] Backing up data PVC..."
+                  restic backup /data \
+                    --tag nextcloud-data \
+                    --exclude="/data/nextcloud/.opcache" \
+                    --exclude="/data/nextcloud/cache" \
+                    --exclude="/data/appdata_*/preview" \
+                    --exclude="/data/appdata_*/thumbnails"
+
+                  echo "[backup] Backing up database dump..."
+                  restic backup /dump \
+                    --tag nextcloud-db
+
+                  echo "[backup] Pruning old snapshots..."
+                  restic forget \
+                    --keep-daily 7 \
+                    --keep-weekly 4 \
+                    --keep-monthly 3 \
+                    --prune \
+                    --tag nextcloud-data
+                  restic forget \
+                    --keep-daily 7 \
+                    --keep-weekly 4 \
+                    --keep-monthly 3 \
+                    --prune \
+                    --tag nextcloud-db
+
+                  echo "[backup] Done. Recent snapshots:"
+                  restic snapshots --last 5
+              env:
+                - name: RESTIC_REPOSITORY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: RESTIC_REPOSITORY
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: RESTIC_PASSWORD
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: DB_PASSWORD
+              volumeMounts:
+                - name: nextcloud-data
+                  mountPath: /data
+                  readOnly: true
+                - name: db-dump
+                  mountPath: /dump
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
