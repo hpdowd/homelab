@@ -1,19 +1,18 @@
-# k8s/apps/gitea/backup-cronjob.yaml
+# Daily Gitea backup to Backblaze B2 via restic. 03:30 local — staggered
+# 30 minutes after the Nextcloud backup so they don't fight for the upload link.
 #
-# Backs up Gitea data PVC to Backblaze B2 via restic.
-# Runs daily at 03:30 Europe/Dublin — staggered 30min after Nextcloud backup.
+# Unlike Nextcloud, Gitea goes offline for a few minutes here. Gitea uses
+# SQLite, and the database file lives inside the data PVC. A live copy of an
+# in-flight SQLite file is a recipe for a corrupt backup. So instead of getting
+# clever with snapshots, we just scale the Gitea Deployment to 0 first, mount
+# the freed-up volume, back it up, then scale back to 1.
 #
-# Scale-down pattern: Longhorn RWO volumes permit only a single pod attachment.
-# The backup pod scales the Gitea Deployment to 0 via the Kubernetes API before
-# mounting the PVC, then restores replicas=1 after the backup completes.
+# Talking to the k8s API: this pod runs as backup-sa (see backup-rbac.yaml).
+# k8s mounts the SA's JWT at /var/run/secrets/.../token, so we can curl the
+# API directly with no kubectl binary in the image.
 #
-# The Kubernetes API is called directly using curl + the service account token
-# mounted at /var/run/secrets/kubernetes.io/serviceaccount — no kubectl binary
-# needed. Requires backup-sa ServiceAccount with patch rights (backup-rbac.yaml).
-#
-# Gitea is offline for the duration of the backup (~2–5 minutes typically).
-# This is acceptable for a homelab — schedule at 03:30 when unused.
-#
+# Safety: a `trap ERR` ensures Gitea gets scaled back to 1 even if restic dies
+# mid-run. Without it, a failing backup would leave Gitea offline overnight.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -29,7 +28,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 1 # low — failed backup that skips scale-up is worse
+      # Low — we'd rather one clean failure than repeated retries that each
+      # leave Gitea down for 30s during their scale-down phase.
+      backoffLimit: 1
       template:
         spec:
           serviceAccountName: backup-sa
@@ -48,13 +49,14 @@ spec:
                 - |
                   set -euo pipefail
 
-                  # k8s API helpers — uses the service account token mounted by k8s
                   APISERVER="https://kubernetes.default.svc"
                   TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
                   CACERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
                   NS="gitea"
                   DEPLOY="gitea"
 
+                  # PATCH /apis/apps/v1/.../deployments/gitea with replicas=$1.
+                  # Equivalent to: kubectl scale deployment gitea --replicas=$1
                   scale() {
                     curl -sf -X PATCH \
                       -H "Authorization: Bearer ${TOKEN}" \
@@ -69,17 +71,20 @@ spec:
 
                   echo "[backup] Scaling Gitea down..."
                   scale 0
-                  # Wait for pod to release the volume — 30s is ample for a single pod
+                  # 30s is enough for a single-pod deployment to terminate
+                  # and Longhorn to detach the volume.
                   sleep 30
                   echo "[backup] Gitea scaled down"
 
-                  # Ensure scale-up runs even if backup fails
+                  # CRITICAL: scale Gitea back up no matter how this ends.
                   trap 'echo "[backup] ERROR — scaling Gitea back up"; scale 1' ERR
 
-                  echo "[backup] Initialising restic repo (no-op if exists)..."
+                  echo "[backup] Init restic repo if needed..."
                   restic snapshots --quiet 2>/dev/null || restic init
 
                   echo "[backup] Backing up Gitea data..."
+                  # Exclude logs — verbose, regenerated on restart, nothing
+                  # we'd ever want from a restored backup.
                   restic backup /data \
                     --tag gitea-data \
                     --exclude="/data/gitea/log"

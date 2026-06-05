@@ -18,7 +18,9 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate # block-storage RWO PVC — never run two pods against it
+    # RWO PVC: two postgres pods would either deadlock on the volume or, worse,
+    # both attach and corrupt the data dir. Recreate forces a hard swap.
+    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -29,7 +31,9 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:18 # MUST be >= source major (18.4). Do not downgrade.
+          # Must be >= the source AIO's Postgres major (18.4). Downgrading
+          # a Postgres data dir is not a thing — it just won't start.
+          image: postgres:18
           ports:
             - containerPort: 5432
           env:
@@ -47,8 +51,9 @@ spec:
                   secretKeyRef:
                     { name: nextcloud-secrets, key: POSTGRES_PASSWORD },
                 }
-            # Keep data in a subdirectory of the mount. postgres:18 changed defaults;
-            # an explicit PGDATA subdir avoids "directory not empty"/lost+found init failures.
+            # Postgres refuses to initdb into a non-empty directory, and the
+            # Longhorn mount point comes with a `lost+found`. Putting PGDATA in
+            # a subdirectory sidesteps that — initdb only sees its own empty dir.
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           volumeMounts:

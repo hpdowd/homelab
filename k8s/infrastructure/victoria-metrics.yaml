@@ -10,32 +10,32 @@ spec:
   source:
     repoURL: https://victoriametrics.github.io/helm-charts/
     chart: victoria-metrics-k8s-stack
-    # Pin the chart version — bump deliberately, never float.
+    # Pin to a specific chart version. Floating ("0.48.x") would let an
+    # autosync silently roll values schema changes onto us. Bump deliberately.
     targetRevision: 0.48.1
     helm:
       releaseName: vm
       values: |
-        # ---------------------------------------------------------------
-        # Global: pin everything that isn't a DaemonSet to the worker.
-        # The control node (300) is small (3GB, ~70% used) — keep it lean.
-        # node-exporter is a DaemonSet (see below) and intentionally runs
-        # on BOTH nodes so we still get host metrics from the control node.
-        # ---------------------------------------------------------------
+        # Global default: pin everything to the worker. The control node only
+        # has 3GB RAM and runs the k3s control plane, so we keep workloads off
+        # it. node-exporter is a DaemonSet and overrides this below so we still
+        # get host metrics from control too.
         nodeSelector:
           kubernetes.io/hostname: k3s-worker1
 
-        # === Single-node TSDB (vmsingle) ============================
-        # NOT the cluster variant (vmstorage/vmselect/vminsert) — that is
-        # pure overhead on one worker. Single-node is the right call here.
+        # vmsingle = the single-node VictoriaMetrics TSDB. The chart also
+        # supports a cluster mode (vmstorage/vmselect/vminsert), which is
+        # pointless overhead when there's only one worker.
         vmsingle:
           enabled: true
           spec:
             retentionPeriod: "30d"
             nodeSelector:
               kubernetes.io/hostname: k3s-worker1
-            # TSDB on local-path (worker-local), NOT Longhorn.
-            # Monitoring data is regenerable — no reason to replicate it
-            # or spend the 500GB vdb on it. See ADR 005.
+            # local-path, not Longhorn. Monitoring data is regenerable — if
+            # the worker dies we lose history but nothing important, and we
+            # don't want to spend Longhorn replicas (or the 500GB vdb) on it.
+            # See ADR 005.
             storage:
               accessModes: ["ReadWriteOnce"]
               storageClassName: local-path
@@ -47,14 +47,14 @@ spec:
                 cpu: 100m
                 memory: 128Mi
               limits:
-                # Hard ceiling so a runaway scrape can't pressure the node.
+                # Hard ceiling — a runaway scrape shouldn't be able to OOM the node.
                 memory: 512Mi
 
-        # vmcluster disabled — we use vmsingle.
         vmcluster:
           enabled: false
 
-        # === Alerting: vmalert + Alertmanager =======================
+        # vmalert evaluates the rules in homelab-rules.yaml plus the chart's
+        # built-in Kubernetes rules. Sends firing alerts to alertmanager.
         vmalert:
           enabled: true
           spec:
@@ -66,9 +66,9 @@ spec:
                 memory: 64Mi
               limits:
                 memory: 128Mi
-          # Our custom rules are added via .Values.alerting below + the
-          # chart's built-in k8s rules (kept on).
 
+        # Alertmanager: dedupes and routes alerts to email. SMTP password is
+        # pulled from the `alertmanager-smtp` SealedSecret at runtime.
         alertmanager:
           enabled: true
           spec:
@@ -80,13 +80,11 @@ spec:
                 memory: 32Mi
               limits:
                 memory: 64Mi
-          # SMTP password is pulled from the sealed secret 'alertmanager-smtp'
-          # (key: smtp_password) via the configSecret mechanism below.
           config:
             global:
               resolve_timeout: 5m
-              # NOTE: smtp_auth_password is templated from the mounted secret.
-              # See alertmanager-smtp SealedSecret + the env wiring below.
+              # smtp_auth_password is injected from the sealed secret; see
+              # extraSecretMounts wiring in ADR 005.
               smtp_smarthost: "smtp.protonmail.ch:587"
               smtp_from: "homelab-monitor@dowd.ie"
               smtp_auth_username: "homelab-monitor@dowd.ie"
@@ -96,9 +94,11 @@ spec:
               group_by: ["alertname", "namespace"]
               group_wait: 30s
               group_interval: 5m
+              # 4h on warnings — long enough that I'm not getting spammed,
+              # short enough that I'll see something still firing the next morning.
               repeat_interval: 4h
               routes:
-                # Critical alerts repeat more often.
+                # Criticals nag every hour until acknowledged or resolved.
                 - receiver: "email"
                   matchers:
                     - severity = "critical"
@@ -108,16 +108,17 @@ spec:
                 email_configs:
                   - to: "henry@dowd.ie"
                     send_resolved: true
-                    # smtp_auth_password injected from secret at runtime —
-                    # see 'extraSecretMounts' note in ADR 005 / README.
+            # If a critical is firing for the same alertname+namespace, don't
+            # also send the warning version of it. Cuts noise during incidents.
             inhibit_rules:
               - source_matchers: [severity = "critical"]
                 target_matchers: [severity = "warning"]
                 equal: ["alertname", "namespace"]
 
-        # === Exporters ==============================================
-        # node-exporter: DaemonSet — runs on BOTH nodes (no nodeSelector
-        # override) so we capture host CPU/RAM/disk from control too.
+        # node-exporter scrapes host-level metrics (CPU, RAM, disk, network).
+        # DaemonSet — runs on every node, including control. Clearing the
+        # global nodeSelector + adding a blanket toleration is what lets it
+        # override the worker-only pin.
         prometheus-node-exporter:
           enabled: true
           resources:
@@ -126,12 +127,13 @@ spec:
               memory: 24Mi
             limits:
               memory: 48Mi
-          # Explicitly clear the global worker pin so it runs everywhere.
           nodeSelector: {}
           tolerations:
             - effect: NoSchedule
               operator: Exists
 
+        # kube-state-metrics turns k8s objects (pods, deployments, jobs) into
+        # metrics so we can alert on things like "deployment has 0 ready replicas".
         kube-state-metrics:
           enabled: true
           nodeSelector:
@@ -143,7 +145,6 @@ spec:
             limits:
               memory: 64Mi
 
-        # === Grafana ================================================
         grafana:
           enabled: true
           nodeSelector:
@@ -154,14 +155,16 @@ spec:
               memory: 96Mi
             limits:
               memory: 256Mi
-          # Persist Grafana's SQLite (dashboards-as-code means this is
-          # mostly disposable, but it keeps users/prefs across restarts).
+          # 2GB local-path PVC for Grafana's SQLite (users, prefs, starred boards).
+          # Dashboards themselves live as ConfigMaps in git, so losing this isn't
+          # the end of the world — just an admin password reset.
           persistence:
             enabled: true
             storageClassName: local-path
             size: 2Gi
-          # Dashboard sidecar auto-loads any ConfigMap labelled
-          # grafana_dashboard: "1" — that's how our JSON dashboards land.
+          # The sidecar watches for ConfigMaps with `grafana_dashboard: "1"`
+          # and auto-loads them. That's how grafana-dashboard-capacity.yaml
+          # gets picked up — no UI imports needed.
           sidecar:
             dashboards:
               enabled: true
@@ -173,9 +176,9 @@ spec:
           ingress:
             enabled: true
             ingressClassName: traefik
-            # 6b lesson: do NOT pin router.entrypoints to websecure —
-            # the cloudflared tunnel speaks plain HTTP to Traefik.
-            # Omit the entrypoints annotation so the router serves 'web'.
+            # Don't pin router.entrypoints — see the comment in
+            # nextcloud/ingress.yaml for the full story. tl;dr: cloudflared
+            # speaks plain HTTP, websecure-only routers 404.
             annotations: {}
             hosts:
               - grafana.henrydowd.dev
@@ -185,18 +188,18 @@ spec:
           grafana.ini:
             server:
               root_url: "https://grafana.henrydowd.dev"
-            # Cloudflare terminates TLS; trust the forwarded proto.
             security:
-              # Set a real admin password via secret in production;
-              # placeholder admin/admin disabled by forcing change.
               disable_initial_admin_creation: false
 
-        # Keep the chart's bundled Kubernetes alerting + recording rules.
+        # Keep the chart's bundled k8s alerts and recording rules.
         defaultRules:
           create: true
           rules:
-            etcd: false          # k3s embeds etcd differently; skip noise
-            kubeScheduler: false  # not separately exposed on k3s
+            # k3s embeds etcd in the apiserver process — the standalone etcd
+            # rules don't apply and just generate noise.
+            etcd: false
+            # k3s doesn't expose the scheduler as a separate component either.
+            kubeScheduler: false
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

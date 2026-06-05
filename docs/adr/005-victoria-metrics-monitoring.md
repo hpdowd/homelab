@@ -1,52 +1,77 @@
-# ADR 005 — Monitoring: VictoriaMetrics single-node, TSDB off Longhorn, worker-pinned
+# ADR 005 — Monitoring: VictoriaMetrics single-node, off Longhorn, pinned to the worker
 
-## Status
-Accepted — 2026-06
+**Status:** Accepted
+**Date:** 2026-06
 
-## Context
-The homelab needed thorough monitoring (metrics, dashboards, alerting) before
-adding further RAM-hungry workloads (Immich) to a host already touching swap.
-Constraints:
-- Host-level RAM is the ceiling: control VM 3GB + worker VM 14GB = 17GB fixed
-  floor, leaving ~6–7GB for the Proxmox host + ZFS ARC + remaining LXCs.
-- Inside the cluster the worker has slack (~25% of 14GB used); the control node
-  is tighter (~70% of 3GB).
-- The 500GB Longhorn vdb is scarce and replication adds write amplification.
+## What problem this solves
 
-## Decision
+I want real visibility into the cluster — metrics, dashboards, alerts —
+before I add anything else heavy (Immich, mostly). Without it I'm guessing
+at "is this node out of RAM?" and "did the backup run?" and that's not OK
+for things I depend on.
+
+The constraint that shapes every choice below is RAM. The Proxmox host has
+~24GB. Once the VMs reserve theirs (worker 14GB + control 3GB), there's
+maybe 6–7GB left for the host itself, ZFS ARC, and the LXCs that didn't
+move to the cluster. There's not much slack for "the monitoring stack". Anything
+that wants 1.5GB is out.
+
+The other constraint is disk. The 500GB Longhorn vdb is finite, and writes
+to it cost extra because Longhorn replicates them. A TSDB doing 10s scrapes
+hammers that, and the metrics it's writing are regenerable — losing them is
+fine.
+
+## What I picked
+
 1. **VictoriaMetrics single-node (`vmsingle`), not the cluster variant.** The
-   vmstorage/vmselect/vminsert split is for horizontal scale we don't have on one
-   worker. Single-node is ~60MB and bundles cleanly via `victoria-metrics-k8s-stack`.
-   Chosen over kube-prometheus-stack for ~60–70% lower RAM (consistent with the
-   standing "lightweight at this hardware scale" principle; cf. Authelia over
-   Authentik).
-2. **TSDB on local-path, pinned to the worker — deliberately NOT Longhorn.**
-   Monitoring data is regenerable; losing it on a node rebuild is acceptable.
-   Keeping it off Longhorn spares the vdb and avoids replication overhead for
-   low-value data. Retention 30d.
-3. **Heavy components pinned to the worker** (vmsingle, vmalert, alertmanager,
-   grafana, kube-state-metrics) so they never compete with the control plane.
-   node-exporter is a DaemonSet and runs on BOTH nodes — host metrics from
-   control are wanted.
-4. **Alerting to email now; ntfy as a fast-follow.** Email needs no extra running
-   service (just an SMTP relay). Alertmanager receiver is a one-line swap to ntfy
-   later. SMTP password sealed (SealedSecret) and also stored in the password
-   manager, same discipline as RESTIC_PASSWORD.
-5. **Dashboards and alert rules as code.** Custom capacity dashboard ships as a
-   labelled ConfigMap (sidecar auto-load); community dashboards by grafana.com ID.
-   Homelab-specific PrometheusRule covers the known failure modes: memory/swap
-   pressure, OOMKilled, CrashLoop, disk filling, Longhorn degraded, and — most
-   importantly — **backup CronJob failed/missing** (the backups were just built;
-   a silent backup failure is the worst case).
+   cluster mode splits into vmstorage / vmselect / vminsert, which is great
+   if you have multiple storage nodes. I have one worker. Single-node is
+   ~60MB resident and ships in the same `victoria-metrics-k8s-stack` Helm
+   chart, so it's also one fewer decision later. I picked it over
+   `kube-prometheus-stack` because the latter wants ~60–70% more RAM, and
+   the budget doesn't have it. Same kind of trade I made on Authelia vs
+   Authentik.
 
-## Consequences
-- Monitoring adds ~300–350MB inside the worker VM's existing reservation — it
-  consumes worker slack, not new host RAM. Cheap.
-- The capacity dashboard becomes the data source for the Immich go/no-go decision.
-- ZFS pool health on the Proxmox HOST is not visible to in-cluster node-exporter
-  (it sees the worker VM's disks). Follow-up: run node-exporter or PVE-exporter on
-  the Proxmox host and scrape it as an external target (same EndpointSlice pattern
-  as AMP/Proxmox).
-- Did NOT reallocate RAM from worker to control: control's usage is stable and
-  won't grow; the worker hosts real workloads + future Immich. If control ever
-  struggles, bump it from host slack rather than robbing the worker.
+2. **The TSDB lives on `local-path`, not Longhorn, pinned to the worker.**
+   The data is throwaway in the disaster sense (I'd rather have a fresh
+   30-day window than wait for a Longhorn rebuild), and it spares the vdb
+   from being chewed on by ~50k samples/min of scrape writes. Retention is
+   30 days, which is plenty for "what changed recently".
+
+3. **The heavy components are all pinned to the worker.** vmsingle, vmalert,
+   alertmanager, grafana, kube-state-metrics — every one of them lives on
+   k3s-worker1. The control node is tight on RAM and I don't want a
+   monitoring spike to fight the API server for memory. The one exception
+   is node-exporter, which is a DaemonSet and runs on both nodes on purpose:
+   I want host metrics from control too.
+
+4. **Alerts go to email for now, ntfy probably later.** Email needs nothing
+   running on my side — Proton handles SMTP. ntfy is nicer for phone
+   notifications but means another service to run. Alertmanager's `receiver`
+   block is a one-line swap when I get round to it. The SMTP password is in
+   a SealedSecret *and* in my password manager, same as
+   `RESTIC_PASSWORD`.
+
+5. **Dashboards and alert rules are in git, not the Grafana UI.** The custom
+   "Capacity / RAM headroom" board ships as a labelled ConfigMap; Grafana's
+   sidecar picks it up automatically. The homelab alert rules sit in
+   `homelab-rules.yaml` and cover the things that have actually bitten me
+   or that I'd want to know about quietly: memory and swap pressure,
+   OOMKills, CrashLoopBackOff, disk filling up, Longhorn going degraded,
+   and — biggest — backups failing or going silently missing. A silently
+   broken backup is the failure mode I lose sleep over.
+
+## Consequences I should remember
+
+- The whole stack costs ~300–350MB inside the worker's already-reserved 14GB.
+  It eats worker slack, not host RAM. Cheap.
+- The capacity dashboard is the thing I look at before saying yes to Immich.
+- **ZFS pool health on the host is not visible from inside the cluster.**
+  node-exporter inside the worker sees the worker's disks, not the
+  underlying ZFS tank. Follow-up: stand up node-exporter (or pve-exporter)
+  on the Proxmox host and scrape it via the EndpointSlice pattern I already
+  use for AMP and Proxmox.
+- I did *not* take RAM from the worker to grow the control node. Control's
+  usage is stable and small; the worker hosts the real workloads and the
+  eventual Immich. If control ever struggles, that comes from host slack,
+  not from robbing the worker.

@@ -1,19 +1,16 @@
-# Grafana dashboards as code.
+# A custom "Capacity / RAM headroom" dashboard, baked into a ConfigMap so the
+# Grafana sidecar picks it up automatically (the grafana_dashboard label is
+# what makes that happen — configured in victoria-metrics.yaml).
 #
-# Two mechanisms:
-#  1. Community dashboards by grafana.com ID — declared in the values block of
-#     victoria-metrics.yaml is also possible, but keeping them here as a ConfigMap
-#     with the dashboardproviders sidecar keeps everything in k8s/apps/monitoring/.
-#     Recommended community IDs (import these in the Grafana UI first run, or via
-#     grafana.dashboards in the Helm values):
-#       - 1860   Node Exporter Full (host CPU/RAM/disk/net) — your main host view
-#       - 15757  Kubernetes / Views / Global (cluster overview)
-#       - 13332  kube-state-metrics v2 (pod/deploy/job health)
-#       - 17626  Longhorn (volume robustness, capacity) — needs Longhorn metrics scraped
+# This one answers a single question: how much real memory is free on each
+# node, and which pods are eating it? That's the gating factor for adding
+# Immich, so it gets its own board.
 #
-#  2. The custom dashboard below: a focused "Capacity / RAM headroom" board that
-#     answers the one question gating Immich — how much real memory is free, and
-#     which pods eat it. Loaded automatically by the grafana_dashboard sidecar label.
+# Useful community dashboards to import in the Grafana UI on first run:
+#   - 1860   Node Exporter Full        (host CPU/RAM/disk/net)
+#   - 15757  Kubernetes / Views / Global
+#   - 13332  kube-state-metrics v2     (pod/deploy/job health)
+#   - 17626  Longhorn                  (needs Longhorn's metrics endpoint scraped)
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -1,22 +1,29 @@
+# Nextcloud's background jobs (file scans, notifications, share cleanup, etc.)
+# run via cron.php. The admin panel nags unless this fires every 5 minutes.
+# Same image as the main pod so PHP version + app code line up exactly; runs
+# as www-data against the same data volume.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: nextcloud-cron
   namespace: nextcloud
 spec:
-  schedule: "*/5 * * * *" # every 5 minutes, as Nextcloud expects for "Cron" mode
-  concurrencyPolicy: Forbid # don't stack runs if one is slow
+  schedule: "*/5 * * * *"
+  # Forbid: if a run is slow, don't start another on top of it.
+  concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 280 # kill a stuck run before the next fires
+      # 280s — under the 5-minute schedule, so a stuck run gets killed before
+      # the next one fires instead of stacking up.
+      activeDeadlineSeconds: 280
       template:
         spec:
           restartPolicy: Never
           containers:
             - name: cron
-              image: nextcloud:33-apache # same image as the app, so php + code match
+              image: nextcloud:33-apache
               command:
                 [
                   "su",
