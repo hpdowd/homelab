@@ -1,21 +1,23 @@
 # k8s/apps/nextcloud/backup-cronjob.yaml
 #
 # Backs up Nextcloud data PVC + Postgres database to Backblaze B2 via restic.
-# Runs daily at 03:00 Europe/Dublin, staggered from the existing nextcloud-cron (05min).
+# Runs daily at 03:00 Europe/Dublin.
 #
-# Consistency note: no scale-down / maintenance mode. The backup is crash-consistent
-# rather than application-consistent. Acceptable trade-off for homelab — the DB dump
-# captures a consistent point-in-time snapshot of the database, and the data PVC is
-# mounted read-only so no writes occur during the restic pass. A future improvement
-# would be to scale the Deployment to 0 before the backup and restore it after,
-# which requires RBAC for the backup ServiceAccount (see ADR 004).
+# RESILIENCE (hardened after http2 connection drops on consumer upload link):
+#  - Internal retry loop: a dropped connection retries WITHIN the same pod.
+#    restic resumes from the repo index each attempt, re-uploading only what's
+#    missing — so retries make forward progress instead of restarting from zero.
+#  - -o s3.connections=2 : fewer parallel connections = more stable on flaky links
+#    (default is 5). Trades a little speed for reliability.
+#  - activeDeadlineSeconds: generous ceiling so a slow initial 37GB seed isn't
+#    killed mid-flight. Subsequent backups are incremental and finish in seconds;
+#    you can lower this once the first full backup completes.
+#  - podAffinity: co-locate the backup pod on the same node as the Nextcloud pod
+#    so the RWO Longhorn volume can be mounted read-only without a Multi-Attach
+#    error. No downtime (unlike Gitea, which scales down).
 #
-# Image choice: postgres:18-alpine is used because it ships pg_dump matching the
-# server version (PG18), and Alpine's apk allows installing restic alongside it.
-# Avoids version mismatch warnings from older pg_dump clients.
-#
-# Secrets: backup-credentials SealedSecret must exist in the nextcloud namespace.
-# See backup-setup-guide.md for the kubeseal command to generate it.
+# Optional: uncomment --limit-upload below to throttle (KiB/s) if drops persist —
+# saturating a consumer uplink can itself trigger connection resets.
 #
 apiVersion: batch/v1
 kind: CronJob
@@ -27,14 +29,22 @@ metadata:
 spec:
   schedule: "0 3 * * *"
   timeZone: "Europe/Dublin"
-  concurrencyPolicy: Forbid # skip if previous run still going
+  concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 2
+      backoffLimit: 3
+      activeDeadlineSeconds: 28800 # 8h ceiling for the initial full seed
       template:
         spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: nextcloud
+                  topologyKey: kubernetes.io/hostname
           restartPolicy: OnFailure
           volumes:
             - name: nextcloud-data
@@ -50,51 +60,67 @@ spec:
                 - /bin/sh
                 - -c
                 - |
-                  set -euo pipefail
+                  set -uo pipefail        # NOT -e: we handle backup retries ourselves
 
                   echo "[backup] Installing restic..."
                   apk add --no-cache --quiet restic
 
                   echo "[backup] Dumping Nextcloud database..."
-                  PGPASSWORD="${DB_PASSWORD}" pg_dump \
-                    -h postgres.nextcloud.svc.cluster.local \
-                    -U nextcloud \
-                    -d nextcloud_database \
-                    --format=custom \
-                    --file=/dump/nextcloud_db.dump
+                  if ! PGPASSWORD="${DB_PASSWORD}" pg_dump \
+                        -h postgres.nextcloud.svc.cluster.local \
+                        -U nextcloud \
+                        -d nextcloud_database \
+                        --format=custom \
+                        --file=/dump/nextcloud_db.dump; then
+                    echo "[backup] FATAL: database dump failed"
+                    exit 1
+                  fi
                   echo "[backup] DB dump size: $(du -sh /dump/nextcloud_db.dump | cut -f1)"
 
-                  echo "[backup] Initialising restic repo (no-op if already exists)..."
+                  echo "[backup] Initialising restic repo (no-op if exists)..."
                   restic snapshots --quiet 2>/dev/null || restic init
 
-                  echo "[backup] Backing up data PVC..."
-                  restic backup /data \
-                    --tag nextcloud-data \
-                    --exclude="/data/nextcloud/.opcache" \
-                    --exclude="/data/nextcloud/cache" \
-                    --exclude="/data/appdata_*/preview" \
-                    --exclude="/data/appdata_*/thumbnails"
+                  # Retry loop: restic resumes across attempts (skips uploaded packs)
+                  MAX=8
+                  N=1
+                  while [ "$N" -le "$MAX" ]; do
+                    echo "[backup] Data backup attempt ${N}/${MAX}..."
+                    if restic backup /data \
+                          --tag nextcloud-data \
+                          -o s3.connections=2 \
+                          --exclude="/data/nextcloud/.opcache" \
+                          --exclude="/data/nextcloud/cache" \
+                          --exclude="/data/appdata_*/preview" \
+                          --exclude="/data/appdata_*/thumbnails"; then
+                      echo "[backup] Data backup complete"
+                      break
+                    fi
+                    echo "[backup] Attempt ${N} dropped (likely transient) — resuming..."
+                    N=$((N + 1))
+                    sleep 20
+                  done
+                  if [ "$N" -gt "$MAX" ]; then
+                    echo "[backup] FATAL: data backup failed after ${MAX} attempts"
+                    exit 1
+                  fi
 
                   echo "[backup] Backing up database dump..."
-                  restic backup /dump \
-                    --tag nextcloud-db
+                  N=1
+                  while [ "$N" -le 5 ]; do
+                    if restic backup /dump --tag nextcloud-db -o s3.connections=2; then
+                      break
+                    fi
+                    N=$((N + 1)); sleep 10
+                  done
 
                   echo "[backup] Pruning old snapshots..."
-                  restic forget \
-                    --keep-daily 7 \
-                    --keep-weekly 4 \
-                    --keep-monthly 3 \
-                    --prune \
-                    --tag nextcloud-data
-                  restic forget \
-                    --keep-daily 7 \
-                    --keep-weekly 4 \
-                    --keep-monthly 3 \
-                    --prune \
-                    --tag nextcloud-db
+                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                    --prune --tag nextcloud-data || true
+                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                    --prune --tag nextcloud-db || true
 
-                  echo "[backup] Done. Recent snapshots:"
-                  restic snapshots --latest 1
+                  echo "[backup] Done. Current snapshots:"
+                  restic snapshots
               env:
                 - name: RESTIC_REPOSITORY
                   valueFrom:
