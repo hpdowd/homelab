@@ -27,7 +27,7 @@ metadata:
 spec:
   schedule: "0 3 * * *"
   timeZone: "Europe/Dublin"
-  concurrencyPolicy: Forbid          # skip if previous run still going
+  concurrencyPolicy: Forbid # skip if previous run still going
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
@@ -94,7 +94,7 @@ spec:
                     --tag nextcloud-db
 
                   echo "[backup] Done. Recent snapshots:"
-                  restic snapshots --last 5
+                  restic snapshots --latest 1
               env:
                 - name: RESTIC_REPOSITORY
                   valueFrom:
