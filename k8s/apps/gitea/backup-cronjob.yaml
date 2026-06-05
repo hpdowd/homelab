@@ -1,0 +1,105 @@
+# k8s/apps/gitea/backup-cronjob.yaml
+#
+# Backs up Gitea data PVC to Backblaze B2 via restic.
+# Runs daily at 03:30 Europe/Dublin — staggered 30min after Nextcloud backup.
+#
+# Gitea's SQLite or Postgres DB is embedded in the /data volume, so backing up
+# the full PVC gives a crash-consistent snapshot of repos + DB + config.
+# This is acceptable for Gitea — git objects are immutable and repos are
+# self-consistent; worst case on restore is replaying the last few commits.
+#
+# IMPORTANT: verify your Gitea PVC name before deploying:
+#   kubectl get pvc -n gitea
+# Update claimName below if it differs from 'gitea-data'.
+#
+# Secrets: backup-credentials SealedSecret must exist in the gitea namespace.
+# See backup-setup-guide.md for the kubeseal command to generate it.
+# Note: RESTIC_REPOSITORY must point to a DIFFERENT path than Nextcloud's repo,
+# e.g. s3:https://<endpoint>/<bucket>/gitea (not /nextcloud).
+#
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gitea-backup
+  namespace: gitea
+  labels:
+    app: gitea-backup
+spec:
+  schedule: "30 3 * * *"
+  timeZone: "Europe/Dublin"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+            - name: gitea-data
+              persistentVolumeClaim:
+                claimName: gitea-data    # VERIFY: kubectl get pvc -n gitea
+                readOnly: true
+          containers:
+            - name: backup
+              image: alpine:3.20
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+
+                  echo "[backup] Installing restic..."
+                  apk add --no-cache --quiet restic
+
+                  echo "[backup] Initialising restic repo (no-op if already exists)..."
+                  restic snapshots --quiet 2>/dev/null || restic init
+
+                  echo "[backup] Backing up Gitea data..."
+                  restic backup /data \
+                    --tag gitea-data \
+                    --exclude="/data/gitea/log"
+
+                  echo "[backup] Pruning old snapshots..."
+                  restic forget \
+                    --keep-daily 7 \
+                    --keep-weekly 4 \
+                    --keep-monthly 3 \
+                    --prune \
+                    --tag gitea-data
+
+                  echo "[backup] Done. Recent snapshots:"
+                  restic snapshots --last 5
+              env:
+                - name: RESTIC_REPOSITORY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: RESTIC_REPOSITORY
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: RESTIC_PASSWORD
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+              volumeMounts:
+                - name: gitea-data
+                  mountPath: /data
+                  readOnly: true
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "200m"
