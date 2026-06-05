@@ -16,9 +16,12 @@ metadata:
   name: nextcloud
   namespace: nextcloud
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # NOTE: do NOT pin router.entrypoints to websecure — the cloudflared tunnel
+    # speaks plain HTTP to Traefik (TLS terminates at Cloudflare), so the router
+    # must accept the 'web' entrypoint. Omitting the annotation serves both.
     traefik.ingress.kubernetes.io/router.middlewares: nextcloud-nextcloud-wellknown@kubernetescrd
 spec:
+  ingressClassName: traefik
   rules:
     - host: nextcloud.henrydowd.dev
       http:
