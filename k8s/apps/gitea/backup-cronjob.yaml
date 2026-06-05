@@ -3,19 +3,16 @@
 # Backs up Gitea data PVC to Backblaze B2 via restic.
 # Runs daily at 03:30 Europe/Dublin — staggered 30min after Nextcloud backup.
 #
-# Gitea's SQLite or Postgres DB is embedded in the /data volume, so backing up
-# the full PVC gives a crash-consistent snapshot of repos + DB + config.
-# This is acceptable for Gitea — git objects are immutable and repos are
-# self-consistent; worst case on restore is replaying the last few commits.
+# Scale-down pattern: Longhorn RWO volumes permit only a single pod attachment.
+# The backup pod scales the Gitea Deployment to 0 via the Kubernetes API before
+# mounting the PVC, then restores replicas=1 after the backup completes.
 #
-# IMPORTANT: verify your Gitea PVC name before deploying:
-#   kubectl get pvc -n gitea
-# Update claimName below if it differs from 'gitea-data'.
+# The Kubernetes API is called directly using curl + the service account token
+# mounted at /var/run/secrets/kubernetes.io/serviceaccount — no kubectl binary
+# needed. Requires backup-sa ServiceAccount with patch rights (backup-rbac.yaml).
 #
-# Secrets: backup-credentials SealedSecret must exist in the gitea namespace.
-# See backup-setup-guide.md for the kubeseal command to generate it.
-# Note: RESTIC_REPOSITORY must point to a DIFFERENT path than Nextcloud's repo,
-# e.g. s3:https://<endpoint>/<bucket>/gitea (not /nextcloud).
+# Gitea is offline for the duration of the backup (~2–5 minutes typically).
+# This is acceptable for a homelab — schedule at 03:30 when unused.
 #
 apiVersion: batch/v1
 kind: CronJob
@@ -32,14 +29,15 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 2
+      backoffLimit: 1 # low — failed backup that skips scale-up is worse
       template:
         spec:
+          serviceAccountName: backup-sa
           restartPolicy: OnFailure
           volumes:
             - name: gitea-data
               persistentVolumeClaim:
-                claimName: gitea-data    # VERIFY: kubectl get pvc -n gitea
+                claimName: gitea-data
                 readOnly: true
           containers:
             - name: backup
@@ -50,10 +48,35 @@ spec:
                 - |
                   set -euo pipefail
 
+                  # k8s API helpers — uses the service account token mounted by k8s
+                  APISERVER="https://kubernetes.default.svc"
+                  TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  CACERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  NS="gitea"
+                  DEPLOY="gitea"
+
+                  scale() {
+                    curl -sf -X PATCH \
+                      -H "Authorization: Bearer ${TOKEN}" \
+                      -H "Content-Type: application/merge-patch+json" \
+                      --cacert "${CACERT}" \
+                      "${APISERVER}/apis/apps/v1/namespaces/${NS}/deployments/${DEPLOY}" \
+                      -d "{\"spec\":{\"replicas\":${1}}}" > /dev/null
+                  }
+
                   echo "[backup] Installing restic..."
                   apk add --no-cache --quiet restic
 
-                  echo "[backup] Initialising restic repo (no-op if already exists)..."
+                  echo "[backup] Scaling Gitea down..."
+                  scale 0
+                  # Wait for pod to release the volume — 30s is ample for a single pod
+                  sleep 30
+                  echo "[backup] Gitea scaled down"
+
+                  # Ensure scale-up runs even if backup fails
+                  trap 'echo "[backup] ERROR — scaling Gitea back up"; scale 1' ERR
+
+                  echo "[backup] Initialising restic repo (no-op if exists)..."
                   restic snapshots --quiet 2>/dev/null || restic init
 
                   echo "[backup] Backing up Gitea data..."
@@ -68,6 +91,9 @@ spec:
                     --keep-monthly 3 \
                     --prune \
                     --tag gitea-data
+
+                  echo "[backup] Scaling Gitea back up..."
+                  scale 1
 
                   echo "[backup] Done. Recent snapshots:"
                   restic snapshots --last 5
