@@ -18,7 +18,9 @@ spec:
           image: redis:7-alpine
           ports:
             - containerPort: 6379
-          # Cache + transactional file locking only — no persistence needed.
+          # Nextcloud uses redis for memcache + file locking. Both are throw-away
+          # state — if redis restarts, Nextcloud rebuilds it. So persistence is
+          # off (no RDB snapshots, no AOF), which also means no PVC needed.
           command: ["redis-server", "--save", "", "--appendonly", "no"]
           resources:
             requests: { memory: "64Mi", cpu: "50m" }

@@ -1,19 +1,32 @@
-# Restore Procedure — restic / Backblaze B2
+# Restoring from the B2 backups
 
-> Disaster recovery for the homelab k3s services backed up to Backblaze B2 via restic.
-> Covers Nextcloud and Gitea. Assumes a working (or rebuilt) k3s cluster with
-> Longhorn, ArgoCD, and Sealed Secrets installed, and the backup-credentials
-> secret restored to each namespace.
->
-> Prerequisite: restic installed on your recovery machine, OR run via a throwaway
-> pod as shown below. Either way you need the RESTIC_PASSWORD and B2 credentials —
-> these live in your password manager (NOT in the cluster if the cluster is gone).
+This is the runbook I'll be very glad exists if I ever need it. It covers
+Nextcloud and Gitea — both backed up to Backblaze B2 by the daily restic
+CronJobs.
+
+## What you need before you start
+
+- A working k3s cluster with Longhorn, ArgoCD, and Sealed Secrets installed,
+  and the `backup-credentials` SealedSecret restored to the relevant
+  namespace. (If the cluster itself is gone, build it first; everything
+  except the secret bootstrapping is in this repo.)
+- `RESTIC_PASSWORD` and the B2 keys from my password manager. **If the
+  cluster is the thing you're recovering from, these are NOT in the cluster
+  anymore.** That's the whole point of keeping them in the password manager.
+- restic on your machine, OR a willingness to run it inside a throwaway pod
+  (snippet below).
+
+A note on which repo path to use: the restic repo URL ends in either
+`/nextcloud` or `/gitea`. Swap the suffix depending on what you're restoring.
+And the URL has to start with `s3:https://` — without the `s3:` prefix,
+restic treats it as a local-disk path, "succeeds" writing to the pod's
+ephemeral storage, and you get nothing. I learned this the painful way.
 
 ---
 
-## 0. Set up restic access
+## Step 0 — Get restic talking to B2
 
-On a recovery machine with restic installed:
+On a machine with restic installed:
 
 ```bash
 export RESTIC_REPOSITORY="s3:https://s3.eu-central-003.backblazeb2.com/hpd.homelab/nextcloud"
@@ -21,13 +34,16 @@ export RESTIC_PASSWORD="<from password manager>"
 export AWS_ACCESS_KEY_ID="<b2 key id>"
 export AWS_SECRET_ACCESS_KEY="<b2 app key>"
 
-restic snapshots          # confirm access
-restic check              # confirm integrity before relying on a restore
+restic snapshots   # should list snapshots — confirms you can read the repo
+restic check       # checks the repo is internally consistent. Do this BEFORE relying on a restore.
 ```
 
-Swap the repository path's final segment (`/nextcloud` ↔ `/gitea`) for each service.
+`restic check` is the thing that catches "the bucket has been quietly
+corrupted for 6 months and I never noticed". Run it now, not after you've
+nuked the only good copy of the data.
 
-If you have a cluster but no local restic, run any restic command via a pod:
+If you don't have restic locally but the cluster is up, run it inside a
+pod — the `backup-credentials` secret already has everything you need:
 
 ```bash
 kubectl run restic-restore -n <namespace> --rm -it --restart=Never \
@@ -37,122 +53,153 @@ kubectl run restic-restore -n <namespace> --rm -it --restart=Never \
 
 ---
 
-## Nextcloud restore
+## Restoring Nextcloud
 
-Nextcloud backup consists of two snapshots: `nextcloud-data` (the /var/www/html
-PVC contents) and `nextcloud-db` (a Postgres custom-format dump).
+Two snapshots come out of each Nextcloud backup, tagged separately:
 
-### 1. Restore the data
+- `nextcloud-data` — the contents of the `/var/www/html` PVC (files, app
+  state, `config.php`, the lot).
+- `nextcloud-db` — a Postgres `pg_dump` in custom format.
 
-Bring up the Nextcloud stack via ArgoCD so the PVCs and Postgres exist, then
-scale Nextcloud to 0 so nothing writes during restore:
+You restore both. Order doesn't matter strictly but it's easier to do data
+first then DB.
+
+### 1. Bring the app up empty, then take it offline
+
+Let ArgoCD deploy Nextcloud + Postgres + Redis so the PVCs and Postgres
+actually exist. Then scale Nextcloud to 0 — you don't want it writing while
+you're restoring underneath it:
 
 ```bash
 kubectl scale deployment nextcloud -n nextcloud --replicas=0
 ```
 
-Restore the data snapshot into the data PVC. Easiest is a temporary pod that
-mounts the PVC and runs restic restore:
+Leave Postgres running (you need it for the DB import in step 3).
+
+### 2. Restore the data into the PVC
+
+Spin up a temporary pod that mounts the `nextcloud-data` PVC and run
+`restic restore` into it. Pseudocode:
 
 ```bash
-# Identify the data snapshot
-restic snapshots --tag nextcloud-data
-
-# Restore into a pod that mounts nextcloud-data at /restore-target
-# (run restic restore latest --tag nextcloud-data --target /restore-target)
-# The snapshot's /data maps to /var/www/html contents.
+restic snapshots --tag nextcloud-data    # find the snapshot you want (usually 'latest')
+restic restore latest --tag nextcloud-data --target /restore-target
+# The snapshot's /data maps to the PVC's contents.
 ```
 
-### 2. Restore the database
+Make sure ownership ends up as `www-data` (UID 33) — Nextcloud will refuse
+to read files it doesn't own. `chown -R 33:33 /restore-target` if you need
+to.
+
+### 3. Restore the database
 
 ```bash
 restic restore latest --tag nextcloud-db --target /tmp/db-restore
 # yields /tmp/db-restore/dump/nextcloud_db.dump
 
-# Drop and recreate the DB, then restore:
+# Drop and recreate the DB, then load the dump:
 PGPASSWORD=<db_pass> psql -h <postgres> -U nextcloud -d postgres \
-  -c "DROP DATABASE nextcloud_database;" -c "CREATE DATABASE nextcloud_database OWNER nextcloud;"
+  -c "DROP DATABASE nextcloud_database;" \
+  -c "CREATE DATABASE nextcloud_database OWNER nextcloud;"
+
 PGPASSWORD=<db_pass> pg_restore -h <postgres> -U nextcloud \
-  -d nextcloud_database --no-owner --role=nextcloud /tmp/db-restore/dump/nextcloud_db.dump
+  -d nextcloud_database --no-owner --role=nextcloud \
+  /tmp/db-restore/dump/nextcloud_db.dump
 ```
 
-### 3. Bring it back up and verify
+`--no-owner --role=nextcloud` makes pg_restore ignore the ownership baked
+into the dump (which references the old AIO role `oc_nextcloud`) and just
+own everything as `nextcloud`. Without this you get GRANT errors.
+
+### 4. Start Nextcloud and check it's actually OK
 
 ```bash
 kubectl scale deployment nextcloud -n nextcloud --replicas=1
 
-# Once running:
 POD=$(kubectl get pod -n nextcloud -l app=nextcloud -o jsonpath='{.items[0].metadata.name}')
 kubectl exec -n nextcloud $POD -- su -s /bin/sh www-data -c "php occ maintenance:mode --off"
 kubectl exec -n nextcloud $POD -- su -s /bin/sh www-data -c "php occ files:scan --all"
 kubectl exec -n nextcloud $POD -- su -s /bin/sh www-data -c "php occ status"
 ```
 
-Note: `config.php` identity values (instanceid / secret / passwordsalt) must match
-the restored database. They're held in the sealed secret — if you rebuilt the
-cluster, restore that sealed secret first so the values line up with the DB.
+`occ files:scan --all` reconciles the filesystem with the database — if any
+files weren't tracked in the DB (or the DB references files that aren't
+there) this rebuilds the index.
+
+**Important:** the `instanceid` / `secret` / `passwordsalt` values in
+`config.php` must match the DB you just restored. They're held in the
+SealedSecret. If you rebuilt the cluster, make sure that SealedSecret was
+restored before Nextcloud started — otherwise every encrypted field
+(passwords, share tokens) is unreadable and looks like data corruption.
 
 ---
 
-## Gitea restore
+## Restoring Gitea
 
-Gitea backup is a single `gitea-data` snapshot of the /data volume, which on this
-deployment contains the SQLite database, repositories, config, and LFS objects.
+One snapshot: `gitea-data`, the whole `/data` volume. That has the SQLite
+database, the repos, LFS objects, hooks, and config inside it.
 
-### 1. Restore the data
-
-Bring up Gitea via ArgoCD so the PVC exists, then scale to 0:
+### 1. Bring it up, scale to 0
 
 ```bash
 kubectl scale deployment gitea -n gitea --replicas=0
 ```
 
-Restore the snapshot into the gitea-data PVC (via a pod mounting it):
+### 2. Restore the volume
+
+Same pattern as Nextcloud — pod that mounts `gitea-data`, then:
 
 ```bash
 restic snapshots --tag gitea-data
 restic restore latest --tag gitea-data --target /restore-target
-# snapshot's /data maps to the PVC root
+# The snapshot's /data maps to the PVC root.
 ```
 
-### 2. Regenerate hooks — REQUIRED
+### 3. Regenerate git hooks — DO NOT SKIP
 
-A raw-volume restore does NOT restore working git hooks if the install path or
-method changed. After restoring, regenerate them or pushes will fail:
+A raw-volume restore brings back the data files but the per-repo git hooks
+have absolute paths and assumptions baked in. If anything changed (image
+version, install path), pushes will silently fail or behave weirdly until
+you regenerate them:
 
 ```bash
 kubectl scale deployment gitea -n gitea --replicas=1
 
 POD=$(kubectl get pod -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
 kubectl exec -n gitea $POD -- su git -c "/usr/local/bin/gitea admin regenerate hooks"
-# If issues persist:
+
+# If something's still off:
 kubectl exec -n gitea $POD -- su git -c "/usr/local/bin/gitea doctor check --all"
 ```
 
-### 3. Verify
+### 4. Verify
 
-Browse a repo, confirm commits are present, and test a push to confirm hooks work.
+Open Gitea, browse a repo, do a `git clone` + `git push` from somewhere
+else against it. If the push completes and the commits show in the UI,
+you're back.
 
 ---
 
-## Partial restore (single file / repo)
+## Pulling out a single file
 
-restic can mount a repository as a filesystem to cherry-pick files without a
-full restore:
+You don't always need a full restore. restic can mount the repo as a
+filesystem so you can copy specific things out:
 
 ```bash
-restic mount /mnt/restic       # browse snapshots/ as a directory tree
-# copy out what you need, then unmount
+restic mount /mnt/restic
+# /mnt/restic/snapshots/<id>/... — browse like a normal directory tree
+# copy what you need
+fusermount -u /mnt/restic
 ```
 
 ---
 
-## Restore testing cadence
+## When did I actually test this?
 
-A backup is only real if a restore has been verified. Recommended:
-- `restic check` after every cluster rebuild (cheap, run it).
-- A full test restore of each service into a scratch namespace once a quarter.
-- Document the date of the last successful test restore here:
+A backup that's never been restored is a hope, not a backup. I should run a
+full test restore into a scratch namespace once a quarter and update the
+table below. (If both rows say "pending" and you're reading this, go do
+one.)
 
 | Service   | Last test restore | Result |
 |-----------|-------------------|--------|

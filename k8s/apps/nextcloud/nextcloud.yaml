@@ -8,7 +8,7 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 60Gi # source is 37G used; headroom for growth
+      storage: 60Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -17,8 +17,11 @@ metadata:
   namespace: nextcloud
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate. The data PVC is RWO (ReadWriteOnce) so only one
+  # pod can mount it at a time — a rolling update would deadlock waiting for the
+  # old pod to release the volume.
   strategy:
-    type: Recreate # RWO PVC — single writer
+    type: Recreate
   selector:
     matchLabels:
       app: nextcloud
@@ -29,11 +32,13 @@ spec:
     spec:
       containers:
         - name: nextcloud
-          image: nextcloud:33-apache # matches source 33.0.3.2 (tag tracks latest 33.x patch)
+          # 33-apache tag tracks the latest 33.x patch. Source AIO was on 33.0.5.1,
+          # so any 33.x is import-compatible. Do NOT jump to 34 here — Nextcloud
+          # only supports one-major-at-a-time upgrades, and you'd skip the migration.
+          image: nextcloud:33-apache
           ports:
             - containerPort: 80
           env:
-            # --- Database ---
             - name: POSTGRES_HOST
               value: postgres
             - name: POSTGRES_DB
@@ -50,10 +55,12 @@ spec:
                   secretKeyRef:
                     { name: nextcloud-secrets, key: POSTGRES_PASSWORD },
                 }
-            # --- Redis ---
             - name: REDIS_HOST
               value: redis
-            # --- Identity: MUST match imported DB or encrypted data/sessions break ---
+            # passwordsalt and secret from the old config.php. If these don't
+            # match the values that encrypted the data in the imported DB,
+            # every existing session breaks and encrypted fields go unreadable.
+            # Pulled from the sealed secret so the original values stay in git.
             - name: NEXTCLOUD_PASSWORD_SALT
               valueFrom:
                 {
@@ -66,7 +73,8 @@ spec:
                   secretKeyRef:
                     { name: nextcloud-secrets, key: NEXTCLOUD_SECRET },
                 }
-            # --- Admin (only used on fresh install; importing, so ignored) ---
+            # Admin creds are only used on a fresh install. We import an existing
+            # DB so these get ignored — kept so a clean redeploy still works.
             - name: NEXTCLOUD_ADMIN_USER
               valueFrom:
                 {
@@ -79,15 +87,17 @@ spec:
                   secretKeyRef:
                     { name: nextcloud-secrets, key: NEXTCLOUD_ADMIN_PASSWORD },
                 }
-            # --- URLs / proxy ---
             - name: NEXTCLOUD_TRUSTED_DOMAINS
               value: "nextcloud.henrydowd.dev nextcloud.lan"
+            # Cloudflare terminates TLS, so the pod sees plain HTTP from cloudflared.
+            # Without these two, Nextcloud generates http:// links and clients break.
             - name: OVERWRITEPROTOCOL
               value: "https"
             - name: OVERWRITECLIURL
               value: "https://nextcloud.henrydowd.dev"
-            # Traefik pod CIDR as trusted proxy so Nextcloud honours X-Forwarded-* .
-            # Adjust if pod network differs (k3s default is 10.42.0.0/16).
+            # Trust X-Forwarded-* from anything in the k3s pod CIDR (default 10.42/16).
+            # That covers Traefik. Without this, Nextcloud sees the Traefik pod IP
+            # as the client and rate-limits / mislogs everyone the same.
             - name: TRUSTED_PROXIES
               value: "10.42.0.0/16"
           volumeMounts:
@@ -96,7 +106,9 @@ spec:
           resources:
             requests: { memory: "512Mi", cpu: "250m" }
             limits: { memory: "1536Mi" }
-          # Generous startup window — first boot runs occ upgrade/migrations.
+          # First boot runs `occ upgrade` and DB migrations against the imported
+          # 37GB dataset — that can take several minutes. The startup probe gives
+          # it up to 30 * 10s = 5min before k8s decides the pod is broken.
           startupProbe:
             httpGet: { path: /status.php, port: 80 }
             failureThreshold: 30

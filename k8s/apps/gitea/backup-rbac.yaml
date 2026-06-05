@@ -1,10 +1,13 @@
-# k8s/apps/gitea/backup-rbac.yaml
+# Permissions for the Gitea backup CronJob.
 #
-# Grants the backup-sa ServiceAccount permission to scale the Gitea Deployment
-# to 0 before backup and back to 1 after. The backup CronJob uses this account
-# instead of the default SA so it can call the Kubernetes API directly via the
-# mounted service account token — no kubectl binary required.
+# The backup needs to scale the Gitea Deployment down to 0 (so the RWO volume
+# detaches) and back up to 1 when done. Rather than ship kubectl in the image,
+# the job uses the in-pod service-account token to talk to the k8s API directly
+# with curl. That token is mounted automatically when a pod uses a SA, so this
+# Role + RoleBinding is all the glue we need.
 #
+# Scope is narrow on purpose: only get + patch on this one Deployment in this
+# one namespace. Nothing else.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

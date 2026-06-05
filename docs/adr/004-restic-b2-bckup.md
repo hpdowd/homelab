@@ -1,63 +1,78 @@
-# ADR 004 — Offsite Backup via restic + Backblaze B2
+# ADR 004 — Offsite backups with restic to Backblaze B2
 
 **Status:** Accepted
 **Date:** 2026-06
 
-## Context
+## What problem this solves
 
-After migrating Nextcloud and Gitea into the k3s cluster, the only copies of
-irreplaceable user data lived on a single Longhorn replica (replica count = 1,
-single worker node) plus a ZFS `@pre-migration` snapshot on the *same physical
-disks*. RAID-1 protects against a single disk failure but not against machine
-loss, theft, fire, ransomware, or operator error. This was the highest-priority
-gap in the infrastructure and blocked decommissioning the migrated LXCs.
+After Nextcloud and Gitea moved into the cluster, every copy of irreplaceable
+data lived inside one machine. Longhorn was set to replica count 1 (because
+there's only one worker), and the pre-migration ZFS snapshot lived on the same
+two physical disks. RAID-1 handles a single disk failing. It doesn't handle
+the machine being stolen, a fire, ransomware, or me running the wrong
+`zfs destroy`. Until there was an offsite copy, the migrated LXCs couldn't be
+torn down either — they were the last independent backup.
 
-## Decision
+So the goal: a copy of the important data that's outside the house, encrypted,
+and survives me typing the wrong command.
 
-Use per-service restic CronJobs that back up to Backblaze B2 via the
-S3-compatible API. Each service's job runs in its own namespace so it can mount
-the service PVC directly; each service has its own restic repository path within
-a shared bucket (`hpd.homelab/nextcloud`, `hpd.homelab/gitea`).
+## What we picked
 
-- **Nextcloud:** co-locates with the running pod via podAffinity and mounts the
-  data PVC read-only (no downtime); the Postgres DB is captured with `pg_dump`
-  to a custom-format dump that is backed up alongside the file data.
-- **Gitea:** scales the Deployment to 0 before backup (Longhorn RWO volumes only
-  permit single-pod attachment), backs up the /data volume, then scales back up.
-  Scale operations use the Kubernetes API via the mounted service account token
-  (no kubectl binary), guarded by a `trap` so the Deployment is restored even if
-  the backup fails.
-- **Resilience:** the Nextcloud job wraps `restic backup` in a retry loop with
-  reduced S3 connection concurrency, tolerating the connection drops typical of a
-  consumer upload link. restic resumes from the repo index across attempts, so
-  retries make forward progress rather than restarting.
+Per-service CronJobs that push to Backblaze B2 using restic over its
+S3-compatible endpoint. Each service has its own restic repository under a
+single shared bucket (`hpd.homelab/nextcloud`, `hpd.homelab/gitea`). Separate
+repos mean a Nextcloud restore doesn't have to touch Gitea data and vice versa.
 
-## Alternatives considered
+A few quick notes on each:
 
-- **Longhorn recurring backup to S3:** volume-level, crash-consistent. Simpler but
-  not application-consistent and coupled to Longhorn. Kept as a secondary layer
-  via Longhorn's scheduled snapshots.
-- **`gitea dump`:** Gitea's official method. Rejected as the *primary* mechanism
-  because the official docs require shutting Gitea down for a consistent dump
-  anyway (so it saves no downtime over the scale-down approach), and each dump is
-  a fresh ZIP that restic cannot deduplicate — making daily retention far more
-  expensive than a raw-volume backup. The raw-volume restore's one extra step
-  (`gitea admin regenerate hooks`) is documented in the restore procedure.
-- **Velero:** full cluster backup tooling, heavier than needed for two services.
-  Revisit if the cluster grows.
-- **AWS S3:** more resume-relevant but brittle signup experience and pricier;
-  same restic config. Revisit for deliberate AWS exposure later.
+- **Nextcloud** runs alongside the live pod. `podAffinity` schedules the
+  backup pod on the same node, which is the only way to mount a Longhorn RWO
+  volume "read-only on the side" without detaching it from the running app.
+  The Postgres DB gets `pg_dump`'d into an emptyDir and backed up as its own
+  tagged snapshot — file data and DB are restored independently.
+- **Gitea** takes the opposite approach: scale the Deployment to 0, mount
+  the volume, back up, scale back to 1. Gitea uses SQLite, and a hot copy of
+  a SQLite file is a recipe for a torn read. A few minutes of downtime at
+  3:30am is fine. There's a shell `trap` so even if restic crashes, Gitea
+  comes back up.
+- **Flaky uploads.** The link here is a consumer connection that drops mid-
+  transfer once in a while, especially during the initial 37GB Nextcloud seed.
+  restic uploads pack files and tracks what's already in the repo, so a re-run
+  picks up where the last one died. The Nextcloud job wraps `restic backup`
+  in a retry loop and lowers `s3.connections` to 2 — both small things that
+  add up to "the seed actually finished".
 
-## Consequences
+## What I considered and didn't pick
 
-- Data is encrypted (restic AES-256) and deduplicated client-side before leaving
-  the cluster; B2 never sees plaintext.
-- **RESTIC_PASSWORD loss = permanent data loss.** Stored in password manager,
-  outside the cluster, so it survives a cluster rebuild.
-- Cost is negligible (~$0.13/month at current data size); uploads and in-ratio
-  egress are free.
-- B2 bucket lifecycle must be set to "Keep only the last version of the file" so
-  `restic forget --prune` translates into actual storage reclamation rather than
-  hidden versions accumulating.
-- A backup is only trustworthy once a restore is verified — see restore-procedure.md
-  for the testing cadence.
+- **Longhorn's built-in S3 backup.** Volume-level snapshot. Simpler, but it's
+  crash-consistent, not application-consistent — restoring a half-written
+  Postgres data dir is a bad time. Kept as a secondary safety net via
+  Longhorn's local scheduled snapshots, just not the primary offsite path.
+- **`gitea dump`.** Gitea's blessed backup command. Two problems: it expects
+  Gitea to be down for a consistent dump anyway (so no downtime saved), and
+  each run produces a fresh ZIP. restic can't dedupe across ZIPs the way it
+  can across a raw filesystem, so daily retention gets expensive fast. The
+  one downside of the raw-volume approach — needing to run
+  `gitea admin regenerate hooks` after a restore — is documented in the
+  restore runbook.
+- **Velero.** Full cluster-backup tool. Overkill for two services. Worth
+  revisiting if there are more apps.
+- **AWS S3.** Same restic config, slightly more annoying signup, slightly
+  pricier. B2 is the cheap version of the same thing.
+
+## Consequences I should remember
+
+- Data is encrypted with AES-256 and deduplicated on the cluster before
+  leaving. B2 only ever sees ciphertext.
+- **Losing `RESTIC_PASSWORD` = the backups are forever gone.** That password
+  is in my password manager, *not* in the cluster, so a cluster rebuild
+  doesn't take it with it.
+- It costs about $0.13/month at current size. Uploads are free, and a "ratio"
+  amount of egress is also free, so test-restores aren't an expensive event.
+- The B2 bucket lifecycle has to be set to "keep only the last version of the
+  file". Without that, `restic forget --prune` only deletes the *current*
+  pointer; old versions accumulate invisibly and storage usage creeps up
+  forever.
+- A backup that hasn't been restored isn't really a backup. See
+  `docs/restore-procedure.md` for the procedure and the table tracking when
+  I last actually did a test restore.

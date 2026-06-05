@@ -1,24 +1,26 @@
-# k8s/apps/nextcloud/backup-cronjob.yaml
+# Daily Nextcloud backup to Backblaze B2 via restic. 03:00 local.
 #
-# Backs up Nextcloud data PVC + Postgres database to Backblaze B2 via restic.
-# Runs daily at 03:00 Europe/Dublin.
+# Two things get backed up in the same run, both pushed to the same restic
+# repo but with different tags so we can restore them independently:
+#   - the data volume (mounted read-only from the running pod)
+#   - a pg_dump of the postgres database
 #
-# RESILIENCE (hardened after http2 connection drops on consumer upload link):
-#  - Internal retry loop: a dropped connection retries WITHIN the same pod.
-#    restic resumes from the repo index each attempt, re-uploading only what's
-#    missing — so retries make forward progress instead of restarting from zero.
-#  - -o s3.connections=2 : fewer parallel connections = more stable on flaky links
-#    (default is 5). Trades a little speed for reliability.
-#  - activeDeadlineSeconds: generous ceiling so a slow initial 37GB seed isn't
-#    killed mid-flight. Subsequent backups are incremental and finish in seconds;
-#    you can lower this once the first full backup completes.
-#  - podAffinity: co-locate the backup pod on the same node as the Nextcloud pod
-#    so the RWO Longhorn volume can be mounted read-only without a Multi-Attach
-#    error. No downtime (unlike Gitea, which scales down).
+# This pod runs alongside the live Nextcloud pod — no downtime. The trick is
+# podAffinity: Longhorn RWO volumes can only attach to one node at a time, so
+# we co-locate the backup pod on the same node as Nextcloud and mount the PVC
+# read-only there. Without the affinity it'd hit "Multi-Attach error" and
+# never start.
 #
-# Optional: uncomment --limit-upload below to throttle (KiB/s) if drops persist —
-# saturating a consumer uplink can itself trigger connection resets.
+# About the retry loop: the upload link here is a consumer line and occasionally
+# drops mid-transfer (saw a lot of http2 stream resets during the first 37GB
+# seed). restic uploads pack files and tracks what's already in the repo, so a
+# failed run can be safely re-run — the next attempt only uploads what's missing.
+# The loop wraps that: on failure, sleep a bit and try again, up to 8 times.
+# It almost always succeeds on attempt 1 once the seed is done; the loop is
+# insurance for the seed itself + the rare bad day.
 #
+# If the link is genuinely saturating and triggering the drops, uncomment
+# --limit-upload <KiB/s> below.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -35,9 +37,13 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 3
-      activeDeadlineSeconds: 28800 # 8h ceiling for the initial full seed
+      # 8h ceiling. Drop this once the first full seed is done — incremental
+      # runs finish in seconds.
+      activeDeadlineSeconds: 28800
       template:
         spec:
+          # Co-locate with the live Nextcloud pod so we can mount the RWO PVC
+          # read-only on the same node. See header note.
           affinity:
             podAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
@@ -55,12 +61,17 @@ spec:
               emptyDir: {}
           containers:
             - name: backup
+              # postgres:18-alpine gives us pg_dump matching the DB server.
+              # restic isn't in this image — we apk add it at runtime, which
+              # adds ~5s to startup and avoids maintaining a custom image.
               image: postgres:18-alpine
               command:
                 - /bin/sh
                 - -c
                 - |
-                  set -uo pipefail        # NOT -e: we handle backup retries ourselves
+                  # Deliberately no `-e`: we want to handle retries ourselves,
+                  # not bail on the first restic failure.
+                  set -uo pipefail
 
                   echo "[backup] Installing restic..."
                   apk add --no-cache --quiet restic
@@ -77,10 +88,14 @@ spec:
                   fi
                   echo "[backup] DB dump size: $(du -sh /dump/nextcloud_db.dump | cut -f1)"
 
-                  echo "[backup] Initialising restic repo (no-op if exists)..."
+                  # First-ever run: init the repo. Subsequent runs see it
+                  # exists and skip. Cheaper than a separate bootstrap job.
+                  echo "[backup] Init restic repo if needed..."
                   restic snapshots --quiet 2>/dev/null || restic init
 
-                  # Retry loop: restic resumes across attempts (skips uploaded packs)
+                  # Retry loop for the big data backup.
+                  # s3.connections=2 (default 5) — fewer parallel uploads = less
+                  # likely to trip the consumer link's connection limits.
                   MAX=8
                   N=1
                   while [ "$N" -le "$MAX" ]; do
@@ -95,7 +110,7 @@ spec:
                       echo "[backup] Data backup complete"
                       break
                     fi
-                    echo "[backup] Attempt ${N} dropped (likely transient) — resuming..."
+                    echo "[backup] Attempt ${N} dropped — sleeping then retrying"
                     N=$((N + 1))
                     sleep 20
                   done
@@ -104,6 +119,7 @@ spec:
                     exit 1
                   fi
 
+                  # DB dump is tiny — fewer retries needed.
                   echo "[backup] Backing up database dump..."
                   N=1
                   while [ "$N" -le 5 ]; do
@@ -113,6 +129,9 @@ spec:
                     N=$((N + 1)); sleep 10
                   done
 
+                  # Retention: 7 daily, 4 weekly, 3 monthly. --prune actually
+                  # removes the unreferenced pack files from B2 (otherwise
+                  # forget only updates the snapshot index, storage keeps growing).
                   echo "[backup] Pruning old snapshots..."
                   restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
                     --prune --tag nextcloud-data || true

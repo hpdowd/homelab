@@ -1,4 +1,7 @@
-# Redirect the DAV .well-known paths so calendar/contacts sync clients work.
+# CalDAV / CardDAV clients hit /.well-known/caldav (or carddav) to discover
+# the real endpoint. Nextcloud serves both at /remote.php/dav/, so we rewrite
+# the well-known path to the real one. Without this, iOS calendar sync silently
+# does nothing.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -16,9 +19,10 @@ metadata:
   name: nextcloud
   namespace: nextcloud
   annotations:
-    # NOTE: do NOT pin router.entrypoints to websecure — the cloudflared tunnel
-    # speaks plain HTTP to Traefik (TLS terminates at Cloudflare), so the router
-    # must accept the 'web' entrypoint. Omitting the annotation serves both.
+    # Don't add a router.entrypoints annotation here. Cloudflare terminates TLS
+    # at the edge and cloudflared hits Traefik over plain HTTP on the `web`
+    # entrypoint. A `websecure`-only router would silently 404 every public hit.
+    # Lost half a day to this in phase 6b — don't redo it.
     traefik.ingress.kubernetes.io/router.middlewares: nextcloud-nextcloud-wellknown@kubernetescrd
 spec:
   ingressClassName: traefik

@@ -1,22 +1,25 @@
-# Homelab-specific alert rules.
-# vm-k8s-stack's vmalert discovers PrometheusRule CRDs automatically.
-# These supplement the chart's default Kubernetes rules with alerts tuned to
-# THIS setup's known failure modes (see PLAN.md known issues).
+# Alert rules specific to this homelab. Sit alongside the chart's bundled
+# Kubernetes rules in vmalert; the rules here cover failure modes I've actually
+# hit on this hardware (memory pressure, OOMs, the RWO Longhorn pain point,
+# silently broken backups).
+#
+# vmalert auto-discovers PrometheusRule CRDs in any namespace, so the only
+# thing keeping this hooked up is the `app.kubernetes.io/part-of` label.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: homelab-rules
   namespace: monitoring
   labels:
-    # vm-operator selects PrometheusRules; this label keeps it discoverable.
     app.kubernetes.io/part-of: vm-k8s-stack
 spec:
   groups:
     - name: homelab.memory
       rules:
+        # 1.2GB free is the early-warning threshold on the control node, which
+        # sits around 30% headroom on a good day. Once we're under this for 5
+        # min something heavy got scheduled there and we should look.
         - alert: NodeMemoryLow
-          # Fires when a node has < 1.2Gi available. Control node is 3GB/~70%,
-          # so this is the early-warning before OOM.
           expr: |
             node_memory_MemAvailable_bytes < 1.2e9
           for: 5m
@@ -26,8 +29,9 @@ spec:
             summary: "Low available memory on {{ $labels.instance }}"
             description: "Available memory < 1.2Gi for 5m. Check before adding workloads (e.g. Immich)."
 
+        # The host already touches swap a little. >60% sustained means real
+        # memory is genuinely under pressure, not just normal cache eviction.
         - alert: NodeSwapClimbing
-          # You already touch swap (~1.3Gi). Alert if swap usage exceeds 60% of total.
           expr: |
             (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)
               / (node_memory_SwapTotal_bytes > 0) > 0.6
@@ -38,6 +42,9 @@ spec:
             summary: "Swap usage high on {{ $labels.instance }}"
             description: "Sustained swap > 60%. Real memory pressure — investigate the heaviest pods."
 
+        # OOMKills are loud and worth waking up for. The `and on(...)` joins
+        # the restart counter to the termination-reason metric so we only fire
+        # when the restart was actually caused by OOM (not a normal redeploy).
         - alert: PodOOMKilled
           expr: |
             increase(kube_pod_container_status_restarts_total[15m]) > 0
@@ -52,6 +59,8 @@ spec:
 
     - name: homelab.workloads
       rules:
+        # CrashLoopBackOff in disguise — k8s' actual state is fiddly to alert
+        # on, but ">3 restarts in 15m" catches it reliably.
         - alert: PodCrashLooping
           expr: |
             increase(kube_pod_container_status_restarts_total[15m]) > 3
@@ -74,8 +83,9 @@ spec:
 
     - name: homelab.storage
       rules:
+        # 85% is high enough to ignore daily noise, low enough to act on. Both
+        # the OS SSD and the Longhorn vdb get watched here.
         - alert: DiskFillingUp
-          # Any node filesystem over 85%.
           expr: |
             (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) > 0.85
@@ -86,9 +96,10 @@ spec:
             summary: "Disk > 85% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
             description: "Filesystem usage high. The vdb (Longhorn) and the OS SSD both matter."
 
+        # Longhorn's own metric. 0=unknown, 1=healthy, 2=degraded, 3=faulted.
+        # Degraded means the volume is up but a replica is missing; faulted
+        # is data-loss territory. Both deserve immediate attention.
         - alert: LonghornVolumeDegraded
-          # Requires Longhorn's metrics endpoint to be scraped (it exposes
-          # longhorn_volume_robustness: 0=unknown,1=healthy,2=degraded,3=faulted).
           expr: |
             longhorn_volume_robustness == 2 or longhorn_volume_robustness == 3
           for: 5m
@@ -100,9 +111,9 @@ spec:
 
     - name: homelab.backups
       rules:
+        # A silently-broken backup is the worst failure mode here — you only
+        # find out when you need it. Fire on the first failed run.
         - alert: BackupJobFailed
-          # restic CronJobs nextcloud-backup / gitea-backup. A failed run is the
-          # worst-case silent failure — you just built these.
           expr: |
             kube_job_status_failed{namespace=~"nextcloud|gitea", job_name=~".*backup.*"} > 0
           for: 1m
@@ -112,8 +123,10 @@ spec:
             summary: "Backup job failed: {{ $labels.namespace }}/{{ $labels.job_name }}"
             description: "A restic backup CronJob failed. Check logs; verify B2 repo with restic check."
 
+        # Catches the case where the CronJob isn't even running — e.g. the
+        # whole job got deleted, schedule broken, or the cluster was down at
+        # 03:00. 26h gives a bit of buffer past the 24h cadence.
         - alert: BackupJobMissing
-          # Fires if no successful backup completed in the last 26h (daily job).
           expr: |
             time() - max by (namespace) (
               kube_job_status_completion_time{namespace=~"nextcloud|gitea", job_name=~".*backup.*"}

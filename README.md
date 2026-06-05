@@ -1,65 +1,54 @@
 # homelab
 
-Personal homelab running on a Dell Optiplex (i5-14500T, 24GB RAM, ZFS RAID-1) managed with Proxmox.
+My homelab. Lives on one Dell Optiplex under the desk — Proxmox on the
+metal, a tiny k3s cluster on top, most of my services in there.
 
-Services are orchestrated via a k3s Kubernetes cluster, with GitOps managed by ArgoCD. Persistent storage is handled by Longhorn. Public services are exposed via Cloudflare Tunnels through a Traefik ingress controller.
+This repo is the source of truth. ArgoCD watches `main` and reconciles
+the cluster against it. If something's running and it isn't in here,
+that's a bug.
 
-## Infrastructure
+## What runs here
 
-| Component | Role |
-|---|---|
-| Proxmox | Hypervisor |
-| k3s | Kubernetes distribution (two nodes: control + worker) |
-| ArgoCD | GitOps continuous delivery (app-of-apps pattern) |
-| Longhorn | Persistent block storage on a dedicated 500GB disk |
-| MetalLB | LoadBalancer for bare-metal (IP pool: 192.168.1.200–210) |
-| Traefik | Ingress controller, single MetalLB-assigned VIP (192.168.1.200) |
-| Sealed Secrets | Encrypted secrets committed to git |
-| cloudflared | Cloudflare Tunnel — wildcard `*.henrydowd.dev` → Traefik |
-| Technitium | Internal DNS — split-horizon for LAN and public hostnames |
-| WireGuard | VPN for remote access |
-| restic → B2 | Offsite backup — Backblaze B2, AES-256 encrypted, deduplicated |
+Things I host for me: Gitea (this repo), Nextcloud (files, calendar,
+contacts), Kiwix (offline Wikipedia), an AMP game server, the Proxmox
+web UI, and Technitium for LAN DNS. The first three live in k3s.
+AMP, Proxmox and Technitium stay on LXCs and get proxied through the
+cluster's Traefik so the routing is uniform.
 
-## Services
+Public stuff comes in via a Cloudflare Tunnel — no port forwarding,
+no exposed IP. LAN stuff goes through Technitium so the `.lan`
+hostnames just work from inside the house.
 
-| Service | LAN | Public | Backend |
-|---|---|---|---|
-| Gitea | gitea.lan | git.henrydowd.dev | k3s pod |
-| Nextcloud | nextcloud.lan | nextcloud.henrydowd.dev | k3s pod |
-| Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod |
-| AMP | amp.lan | amp.henrydowd.dev | external LXC 102 (permanent) |
-| Proxmox | proxmox.lan | proxmox.henrydowd.dev | hypervisor host (HTTPS skip-verify) |
-| Technitium | technitium.lan | — | external LXC 100 |
+## Where to look
 
-External LXC services use a Service + EndpointSlice + Ingress pattern to proxy through Traefik.
+- **[docs/architecture.md](docs/architecture.md)** — how the pieces
+  fit together. Start here if you've never seen this repo before.
+- **[docs/bootstrap.md](docs/bootstrap.md)** — what it takes to
+  rebuild the cluster from a freshly installed Proxmox. The "if
+  everything dies" runbook.
+- **[docs/operations.md](docs/operations.md)** — the commands I
+  actually run day to day. Sealing secrets, syncing apps, that kind
+  of thing.
+- **[docs/adding-a-service.md](docs/adding-a-service.md)** — pattern
+  walkthrough for dropping in a new service.
+- **[docs/restore-procedure.md](docs/restore-procedure.md)** — how to
+  restore Nextcloud or Gitea from the offsite backups.
+- **[docs/adr/](docs/adr/)** — short notes on the *why* behind
+  certain decisions (backups, monitoring).
 
-## Repo Structure
+The non-obvious gotchas tend to live as comments inside the YAML
+that caused them, rather than in a separate "gotchas" doc.
+
+## Layout
 
 ```
 homelab/
-├── docs/
-│   ├── adr/                    # Architecture Decision Records
-│   │   └── 004-restic-b2-bckup.md
-│   ├── caddy/CaddyFile         # reference (pre-migration)
-│   ├── technitium/lan.zone     # DNS zone backup
-│   └── restore-procedure.md   # DR runbook (Nextcloud + Gitea)
+├── docs/         the prose
 └── k8s/
-    ├── argocd/                 # Root ArgoCD app (app-of-apps)
-    ├── infrastructure/         # MetalLB, Traefik, cloudflared
-    └── apps/
-        ├── gitea/              # k3s pod + backup CronJob
-        ├── nextcloud/          # k3s pod + Postgres + Redis + backup CronJob
-        ├── kiwix/              # k3s pod
-        ├── amp/                # external → LXC 102
-        ├── proxmox/            # external → Proxmox host
-        └── technitium/         # external → LXC 100
+    ├── argocd/        root-app — the only thing ArgoCD needs to be pointed at
+    ├── infrastructure/   MetalLB, Traefik, cloudflared, VictoriaMetrics
+    └── apps/             one directory per service
 ```
 
-## Routing
-
-All public traffic: Cloudflare → cloudflared tunnel → Traefik → service
-
-All LAN traffic: Technitium DNS → Traefik VIP (192.168.1.200) → service
-
-> See **CONTEXT.md** for cluster state, access commands, and deployment notes.
-> See **PLAN.md** for the migration history, phase status, and upcoming work.
+That's it. If you want the deep version of any of this, the docs
+above go into it.
