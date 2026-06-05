@@ -1,0 +1,86 @@
+# Grafana dashboards as code.
+#
+# Two mechanisms:
+#  1. Community dashboards by grafana.com ID — declared in the values block of
+#     victoria-metrics.yaml is also possible, but keeping them here as a ConfigMap
+#     with the dashboardproviders sidecar keeps everything in k8s/apps/monitoring/.
+#     Recommended community IDs (import these in the Grafana UI first run, or via
+#     grafana.dashboards in the Helm values):
+#       - 1860   Node Exporter Full (host CPU/RAM/disk/net) — your main host view
+#       - 15757  Kubernetes / Views / Global (cluster overview)
+#       - 13332  kube-state-metrics v2 (pod/deploy/job health)
+#       - 17626  Longhorn (volume robustness, capacity) — needs Longhorn metrics scraped
+#
+#  2. The custom dashboard below: a focused "Capacity / RAM headroom" board that
+#     answers the one question gating Immich — how much real memory is free, and
+#     which pods eat it. Loaded automatically by the grafana_dashboard sidecar label.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-capacity
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  homelab-capacity.json: |
+    {
+      "title": "Homelab — Capacity & RAM headroom",
+      "uid": "homelab-capacity",
+      "tags": ["homelab", "capacity"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Available memory per node (gating Immich)",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            {
+              "expr": "node_memory_MemAvailable_bytes",
+              "legendFormat": "{{instance}} available"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Swap used per node (you already touch swap)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            {
+              "expr": "node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes",
+              "legendFormat": "{{instance}} swap used"
+            }
+          ]
+        },
+        {
+          "type": "bargauge",
+          "title": "Top pods by memory (where the RAM goes)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "options": { "displayMode": "gradient", "orientation": "horizontal" },
+          "targets": [
+            {
+              "expr": "topk(12, sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\"}))",
+              "legendFormat": "{{namespace}}/{{pod}}",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Cluster memory committed vs allocatable",
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 17 },
+          "fieldConfig": { "defaults": { "unit": "percent" } },
+          "targets": [
+            {
+              "expr": "100 * sum(container_memory_working_set_bytes{container!=\"\"}) / sum(kube_node_status_allocatable{resource=\"memory\"})",
+              "legendFormat": "cluster memory used %"
+            }
+          ]
+        }
+      ]
+    }
