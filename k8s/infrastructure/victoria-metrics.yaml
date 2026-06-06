@@ -12,7 +12,7 @@ spec:
     chart: victoria-metrics-k8s-stack
     # Pin to a specific chart version. Floating ("0.48.x") would let an
     # autosync silently roll values schema changes onto us. Bump deliberately.
-    targetRevision: 0.49
+    targetRevision: 0.49.0
     helm:
       releaseName: vm
       values: |
