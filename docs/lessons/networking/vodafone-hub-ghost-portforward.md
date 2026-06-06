@@ -4,7 +4,7 @@
 2026-05-27
 
 ## Time lost
-~Significant — the misleading UI sent debugging in the wrong direction.
+~2h — the misleading UI sent debugging in the wrong direction
 
 ## Status
 Resolved — root cause understood; rules re-created.
@@ -36,3 +36,7 @@ Confirm the forward works from **outside** the LAN (mobile data, not Wi-Fi) — 
 ## Prevention
 - After any DHCP or network-settings change on the Vodafone Hub, re-verify port forwards from an external network. Treat the UI display as untrustworthy.
 - This is a consumer-router limitation, not fixable in config. It's a reason the long-term plan avoids depending on this router for WAN exposure — Cloudflare tunnels sidestep it for HTTP services; only WireGuard's UDP port still needs the forward.
+
+## Related
+- `infra/wireguard-lxc-dstate-freeze.md` — WireGuard LXC operational notes
+- The WireGuard UDP port-forward to LXC 101 is the only remaining dependency on this router for remote access
