@@ -146,8 +146,6 @@ spec:
               memory: 64Mi
 
         grafana:
-          image:
-            tag: "11.5.2"
           enabled: true
           nodeSelector:
             kubernetes.io/hostname: k3s-worker1
