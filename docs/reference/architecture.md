@@ -149,7 +149,7 @@ copied to local disk + password manager.
 Nextcloud backs up live via podAffinity + RO mount; Gitea scales to
 0 first because SQLite. `RESTIC_PASSWORD` in the password manager,
 not just in the cluster. Restore procedure is in
-`docs/restore-procedure.md`.
+`docs/runbooks/restore-procedure.md`.
 
 ## What's *not* in the cluster
 

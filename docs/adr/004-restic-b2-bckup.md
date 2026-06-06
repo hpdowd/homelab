@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-06
+**Superseded By:** —
 
 ## What problem this solves
 
@@ -74,5 +75,5 @@ A few quick notes on each:
   pointer; old versions accumulate invisibly and storage usage creeps up
   forever.
 - A backup that hasn't been restored isn't really a backup. See
-  `docs/restore-procedure.md` for the procedure and the table tracking when
+  `docs/runbooks/restore-procedure.md` for the procedure and the table tracking when
   I last actually did a test restore.

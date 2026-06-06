@@ -174,7 +174,7 @@ finished and Traefik's Service is `<pending>`.
 
 By this point the apps are running but empty (Nextcloud will be a
 fresh install, Gitea will be an empty Gitea, etc.). To get the actual
-data back, follow `docs/restore-procedure.md`. The condensed version:
+data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 
 - Scale the app to 0
 - Restore the data PVC from restic

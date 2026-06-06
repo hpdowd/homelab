@@ -40,7 +40,7 @@ the LAN) that I want to proxy through Traefik for routing uniformity.
    default `RollingUpdate` (which would deadlock).
 
 4. **Secrets** — anything sensitive goes in a `SealedSecret`. Generate
-   it with `kubeseal` (see `docs/operations.md`), drop it in
+   it with `kubeseal` (see `docs/reference/operations.md`), drop it in
    `sealed-secret.yaml`. The Secret name becomes whatever you give
    `kubectl create secret generic`.
 
@@ -182,7 +182,7 @@ public/LAN routing:
 Two things to remember about external services:
 
 - ArgoCD excludes `EndpointSlice` by default. The bootstrap patch in
-  `docs/bootstrap.md` step 6 removes that exclusion. If it isn't
+  `docs/runbooks/cluster-rebuild.md` step 6 removes that exclusion. If it isn't
   applied, the EndpointSlice doesn't sync, Traefik sees no backend, and
   the error message is "no available server" — not "missing
   EndpointSlice", which would be too helpful.

@@ -1,4 +1,0 @@
-$ORIGIN lan.
-@                     900       IN  SOA           technitium. hostadmin.local. 48 900 300 604800 900
-@                     600       IN  NS            technitium.
-*                     600       IN  A             192.168.1.10			;Caddy reverse proxy

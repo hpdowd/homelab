@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-06
+**Superseded By:** —
 
 ## What problem this solves
 
