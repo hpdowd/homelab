@@ -4,7 +4,7 @@
 2026-05-27
 
 ## Time lost
-~Short.
+~15m
 
 ## Status
 Resolved.

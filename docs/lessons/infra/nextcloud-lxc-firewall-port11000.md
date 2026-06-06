@@ -4,7 +4,7 @@
 2026-05-28
 
 ## Time lost
-~Short once the firewall was suspected.
+~30m (short once firewall was suspected; time lost to checking app internals first)
 
 ## Status
 Resolved.
