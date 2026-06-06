@@ -21,34 +21,33 @@ hostnames just work from inside the house.
 
 ## Where to look
 
-- **[docs/architecture.md](docs/architecture.md)** — how the pieces
-  fit together. Start here if you've never seen this repo before.
-- **[docs/bootstrap.md](docs/bootstrap.md)** — what it takes to
-  rebuild the cluster from a freshly installed Proxmox. The "if
-  everything dies" runbook.
-- **[docs/operations.md](docs/operations.md)** — the commands I
-  actually run day to day. Sealing secrets, syncing apps, that kind
-  of thing.
-- **[docs/adding-a-service.md](docs/adding-a-service.md)** — pattern
-  walkthrough for dropping in a new service.
-- **[docs/restore-procedure.md](docs/restore-procedure.md)** — how to
-  restore Nextcloud or Gitea from the offsite backups.
-- **[docs/adr/](docs/adr/)** — short notes on the *why* behind
-  certain decisions (backups, monitoring).
+**Reference**
+- **[docs/reference/architecture.md](docs/reference/architecture.md)** — how the pieces fit together. Start here.
+- **[docs/reference/operations.md](docs/reference/operations.md)** — commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.
 
-The non-obvious gotchas tend to live as comments inside the YAML
-that caused them, rather than in a separate "gotchas" doc.
+**Runbooks**
+- **[docs/runbooks/cluster-rebuild.md](docs/runbooks/cluster-rebuild.md)** — rebuild from a freshly installed Proxmox. The "if everything dies" runbook.
+- **[docs/runbooks/restore-procedure.md](docs/runbooks/restore-procedure.md)** — restore Nextcloud or Gitea from the offsite backups.
+- **[docs/runbooks/adding-a-service.md](docs/runbooks/adding-a-service.md)** — pattern walkthrough for dropping in a new service.
+
+**Architecture Decision Records**
+- **[docs/adr/](docs/adr/)** — the *why* behind key decisions (backups, monitoring). Each ADR has a Status and Superseded By field.
+
+**Incident log**
+- **[docs/lessons/](docs/lessons/)** — post-mortems filed by domain (`infra/`, `k8s/`, `networking/`, `storage/`, `backup/`). Template at `docs/lessons/TEMPLATE.md`.
 
 ## Layout
 
 ```
 homelab/
-├── docs/         the prose
+├── docs/
+│   ├── adr/            architecture decision records
+│   ├── lessons/        incident post-mortems by domain
+│   ├── runbooks/       repeatable procedures
+│   ├── reference/      cheat-sheets and architecture walkthrough
+│   └── public-export-checklist.md
 └── k8s/
-    ├── argocd/        root-app — the only thing ArgoCD needs to be pointed at
-    ├── infrastructure/   MetalLB, Traefik, cloudflared, VictoriaMetrics
-    └── apps/             one directory per service
+    ├── argocd/         root-app — the only thing ArgoCD needs to be pointed at
+    ├── infrastructure/ MetalLB, Traefik, cloudflared, VictoriaMetrics
+    └── apps/           one directory per service
 ```
-
-That's it. If you want the deep version of any of this, the docs
-above go into it.

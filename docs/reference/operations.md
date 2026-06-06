@@ -196,7 +196,7 @@ A short diagnosis flow that catches most of what bites me:
    websecure` annotation (that 404s the plaintext tunnel hit).
 3. **External LXC service "no available server"?** The ArgoCD
    `EndpointSlice` exclusion patch wasn't applied or got overwritten.
-   See `docs/bootstrap.md` step 6.
+   See `docs/runbooks/cluster-rebuild.md` step 6.
 4. **SealedSecret won't decrypt?** Master key mismatch. Either the
    secret was sealed against a different cluster, or this cluster's
    key got regenerated. Compare `kubeseal --fetch-cert` to the cert
