@@ -196,6 +196,9 @@ spec:
               root_url: "https://grafana.henrydowd.dev"
             security:
               disable_initial_admin_creation: false
+          
+          plugins:
+            - victoriametrics-datasource
 
         # Keep the chart's bundled k8s alerts and recording rules.
         defaultRules:
