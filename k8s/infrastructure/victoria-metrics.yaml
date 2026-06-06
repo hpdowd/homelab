@@ -159,7 +159,7 @@ spec:
           # Dashboards themselves live as ConfigMaps in git, so losing this isn't
           # the end of the world — just an admin password reset.
           persistence:
-            enabled: true
+            enabled: false
             storageClassName: local-path
             size: 2Gi
           # The sidecar watches for ConfigMaps with `grafana_dashboard: "1"`
