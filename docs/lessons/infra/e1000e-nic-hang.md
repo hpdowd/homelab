@@ -4,10 +4,13 @@
 2026-06-06
 
 ## Time lost
-~1h (plus an overnight outage)
+~1h (plus an overnight outage); additional time on 2026-06-06 evening chasing a
+misread recurrence (see Investigation)
 
 ## Status
-Resolved. Three-layer fix applied and verified.
+All three layers confirmed active post 18:00 reboot on 2026-06-06. Watch period
+in progress — if clean for one week the fix holds. If the hang recurs with all
+layers active, proceed directly to the hardware fix (dedicated PCIe NIC).
 
 ## Context
 - **System / component:** Proxmox VE host (`pve`), Dell Optiplex i5-14500T.
@@ -46,6 +49,17 @@ Resolved. Three-layer fix applied and verified.
   any theory. The correct cause was visible in 10 seconds; the memory hypothesis
   wasted significant time.
 
+- **Apparent recurrence on 2026-06-06 evening — misread.** After the fix was
+  applied and the host rebooted, the NIC appeared to be down again briefly.
+  This was the normal bridge-disabled window at startup (Proxmox brings `vmbr0`
+  up after the physical interface, causing a short period where traffic is not
+  forwarded). Not a hang recurrence — no "Hardware Unit Hang" in dmesg, and the
+  host became reachable within normal boot time.
+
+  **Lesson:** after a fix involving a reboot, wait for the full boot sequence to
+  complete before concluding the fix failed. The bridge-disabled window is
+  expected; the hang signature is a repeating kernel error, not a brief gap.
+
 ## Root cause
 Known e1000e transmit-unit hang on Intel I219-LM onboard NICs. The driver's TX
 ring stalls and the driver cannot self-recover; the interface goes silent until
@@ -55,18 +69,23 @@ affecting the I219 family under Linux.
 
 ## Fix
 
-Three layers applied, from most targeted to most systemic:
+Three layers applied. **Note on Layer 2 apply history:** `EEE=0` is not a valid
+e1000e module parameter — EEE must be disabled via `ethtool --set-eee` instead
+(see below). Additionally, `update-initramfs -u` was not run at original apply
+time, so `InterruptThrottleRate=3000` was not loaded by the kernel until the
+2026-06-06 evening reboot when initramfs was regenerated.
 
 **Layer 1 — Disable NIC offloading (ethtool, persistent via systemd):**
 ```bash
 cat > /etc/systemd/system/fix-e1000e.service << 'EOF'
 [Unit]
-Description=Disable e1000e NIC offloading to prevent Hardware Unit Hang
+Description=Disable e1000e NIC offloading and EEE to prevent Hardware Unit Hang
 After=network-online.target
 Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/ethtool -K enp0s31f6 gso off gro off tso off
+ExecStart=/usr/sbin/ethtool --set-eee enp0s31f6 eee off
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -74,11 +93,11 @@ systemctl daemon-reload
 systemctl enable --now fix-e1000e.service
 ```
 
-**Layer 2 — Disable EEE and set conservative interrupt throttling (driver level):**
+**Layer 2 — Conservative interrupt throttling (driver module parameter):**
 ```bash
-echo "options e1000e EEE=0 InterruptThrottleRate=3000" \
-  > /etc/modprobe.d/e1000e.conf
-update-initramfs -u
+# EEE=0 is NOT a valid e1000e module param — disable EEE via ethtool (Layer 1 above)
+echo "options e1000e InterruptThrottleRate=3000" > /etc/modprobe.d/e1000e.conf
+update-initramfs -u   # required — without this the param is not loaded at boot
 ```
 
 **Layer 3 — Disable PCIe Active State Power Management (kernel level):**
@@ -91,8 +110,30 @@ reboot
 ```
 
 ## Verification
-Post-reboot `dmesg | grep -i e1000e` confirmed clean — normal driver init only,
-no "Hardware Unit Hang":
+All three fix layers confirmed active post 18:00 reboot on 2026-06-06:
+
+```bash
+# Layer 1 — offload and EEE off
+ethtool -k enp0s31f6 | grep -E "tcp-segmentation|generic-segmentation|generic-receive"
+# tcp-segmentation-offload: off
+# generic-segmentation-offload: off
+# generic-receive-offload: off
+
+ethtool --show-eee enp0s31f6 | grep "EEE status"
+# EEE status: disabled
+
+systemctl status fix-e1000e.service   # active (exited)
+
+# Layer 2 — InterruptThrottleRate loaded
+cat /sys/bus/pci/devices/0000:00:1f.6/driver/module/parameters/InterruptThrottleRate
+# 3000,3000,...
+
+# Layer 3 — ASPM off
+cat /proc/cmdline | grep pcie_aspm     # pcie_aspm=off present
+grep pcie_aspm /etc/default/grub       # GRUB_CMDLINE_LINUX_DEFAULT="quiet pcie_aspm=off"
+```
+
+Clean dmesg — no "Hardware Unit Hang" after the fix:
 ```text
 [0.994498] e1000e: Intel(R) PRO/1000 Network Driver
 [1.263062] e1000e 0000:00:1f.6 eth0: (PCI Express:2.5GT/s:Width x1) ...
@@ -100,23 +141,13 @@ no "Hardware Unit Hang":
 [25.501897] e1000e 0000:00:1f.6 enp0s31f6: NIC Link is Up 100 Mbps Full Duplex
 ```
 
-All three fix layers confirmed active:
-```bash
-ethtool -k enp0s31f6 | grep -E "tcp-segmentation|generic-segmentation|generic-receive"
-# tcp-segmentation-offload: off
-# generic-segmentation-offload: off
-# generic-receive-offload: off
-
-systemctl status fix-e1000e.service   # active (exited)
-cat /etc/modprobe.d/e1000e.conf       # options e1000e EEE=0 InterruptThrottleRate=3000
-grep pcie_aspm /etc/default/grub      # GRUB_CMDLINE_LINUX_DEFAULT="quiet pcie_aspm=off"
-```
-
 ## Prevention
-- Three-layer fix is in place. If hangs recur despite all three layers, the
-  permanent hardware fix is a dedicated PCIe NIC (Intel i210/i350 or Realtek
-  RTL8125) — onboard I219-LM has driver-level issues that software mitigations
-  may not fully eliminate in all kernel versions.
+- All three layers are now correctly in place. The fix is considered proven if
+  the host runs cleanly for one week from 2026-06-06.
+- **If the hang recurs with all three layers confirmed active**, the software
+  mitigations are insufficient and the correct next step is a dedicated PCIe NIC
+  (Intel i210/i350 or Realtek RTL8125) with the onboard I219-LM disabled in BIOS.
+  Do not add more software layers — replace the hardware.
 - **Observability gap exposed:** the NIC hang blinded all monitoring too — there
   was no out-of-band way to see why the box was down until physically at it.
   A second low-power node for DNS/monitoring/remote access (or at minimum a
