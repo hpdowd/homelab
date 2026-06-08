@@ -148,12 +148,32 @@ Now point ArgoCD at this repo:
 kubectl apply -f k8s/argocd/root-app.yaml
 ```
 
-`root-app` discovers everything else. Watch in the ArgoCD UI:
+`root-app` discovers everything else — including the `argocd-ingress`
+app, which syncs `argocd-cmd-params-cm` (`server.insecure: "true"`) and
+the `argocd.lan` Ingress. **But a ConfigMap change does not auto-restart
+`argocd-server`**, so even after root-app reports synced, the server is
+still running in its default (TLS) mode and the `argocd.lan` ingress
+won't work. Restart it once more after the sync settles:
+
+```bash
+kubectl rollout restart deployment argocd-server -n argocd
+```
+
+Only after this restart does the server come up in insecure HTTP mode
+and serve cleanly behind Traefik at `argocd.lan`.
+
+Watch the sync progress in the ArgoCD UI. During a fresh bootstrap the
+`argocd.lan` ingress doesn't exist yet (it's one of the things being
+synced), so use the port-forward here — this is correct for bootstrap,
+not drift:
 
 ```bash
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 # https://localhost:8080  user: admin, password: kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d
 ```
+
+Once everything is green and you've done the restart above, `argocd.lan`
+is the normal way in (see `docs/reference/operations.md`).
 
 ## 7. Wait for everything to be green
 

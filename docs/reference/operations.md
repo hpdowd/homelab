@@ -6,16 +6,24 @@ enough that they're worth writing down.
 
 ## ArgoCD
 
-Open the UI:
+The UI lives at `http://argocd.lan` (Traefik ingress, LAN-only). CLI
+login:
+
+```bash
+argocd login argocd.lan --username admin --insecure --grpc-web
+```
+
+`--insecure` because Traefik fronts it with a self-signed `.lan` cert;
+`--grpc-web` because the API rides an HTTP ingress, not ArgoCD's native
+gRPC port. The server runs in `server.insecure` mode
+(`argocd-cmd-params-cm`) so it serves plain HTTP behind Traefik.
+
+Fallback when the ingress isn't available (e.g. mid-rebuild before
+`argocd.lan` exists — see `docs/runbooks/cluster-rebuild.md` step 6):
 
 ```bash
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 # https://localhost:8080  user: admin
-```
-
-CLI login (same port-forward must be running):
-
-```bash
 argocd login localhost:8080 --username admin --insecure
 ```
 
