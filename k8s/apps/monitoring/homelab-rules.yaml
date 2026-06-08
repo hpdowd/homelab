@@ -5,8 +5,8 @@
 #
 # vmalert auto-discovers PrometheusRule CRDs in any namespace, so the only
 # thing keeping this hooked up is the `app.kubernetes.io/part-of` label.
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
 metadata:
   name: homelab-rules
   namespace: monitoring
