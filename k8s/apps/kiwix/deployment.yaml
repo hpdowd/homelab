@@ -11,6 +11,13 @@ spec:
     metadata:
       labels: { app: kiwix }
     spec:
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chmod 777 /data"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
         - name: kiwix
           image: ghcr.io/kiwix/kiwix-serve:3.7.0
