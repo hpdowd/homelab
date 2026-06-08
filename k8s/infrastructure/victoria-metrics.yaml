@@ -196,8 +196,11 @@ spec:
               root_url: "https://grafana.henrydowd.dev"
             security:
               disable_initial_admin_creation: false
-          
           plugins: []
+          extraEnvVars:
+            GF_INSTALL_PLUGINS: ""
+            GF_PLUGINS_PREINSTALL: ""
+            GF_PLUGINS_PREINSTALL_SYNC: ""
           datasources:
             datasources.yaml:
               apiVersion: 1
