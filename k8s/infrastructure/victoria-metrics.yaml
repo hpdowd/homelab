@@ -197,8 +197,16 @@ spec:
             security:
               disable_initial_admin_creation: false
           
-          plugins:
-            - victoriametrics-datasource
+          plugins: []
+          datasources:
+            datasouces.yaml:
+              apiVersion: 1
+              datasources:
+                - name: VictoriaMetrics
+                  type: prometheus
+                  access: proxy
+                  url: http://vmsingle-vm-victoria-metrics-k8s-stack.monitoring.svc:8428
+                  isDefault: true
 
         # Keep the chart's bundled k8s alerts and recording rules.
         defaultRules:
