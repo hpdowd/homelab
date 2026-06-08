@@ -178,7 +178,7 @@ spec:
               labelValue: "1"
               searchNamespace: ALL
             datasources:
-              enabled: true
+              enabled: false
           ingress:
             enabled: true
             ingressClassName: traefik
