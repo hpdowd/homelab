@@ -179,12 +179,15 @@ spec:
             existingSecret: grafana-admin-creds
             userKey: admin-user
             passwordKey: admin-password
-          # No PVC — Grafana's SQLite (users, prefs, starred boards) is ephemeral
-          # and resets when the pod is rescheduled. That's acceptable: dashboards
-          # are provisioned from ConfigMaps in git (sidecar below) and the admin
-          # login is recreated from grafana-admin-creds on every start, so a
-          # restart only loses ad-hoc UI state. storageClassName/size are inert
-          # while enabled is false; kept for the day we flip it on.
+          # persistence off → Grafana runs on an emptyDir, not a PVC. Its SQLite
+          # (users, prefs, starred boards) is ephemeral and resets when the pod is
+          # rescheduled — which is the point: a reused local-path PVC once carried
+          # a corrupted SQLite DB across namespace deletions and crash-looped every
+          # reinstall (docs/lessons/k8s/grafana-pvc-corruption.md). Nothing
+          # important lives here — dashboards are ConfigMaps in git (sidecar below)
+          # and the admin login is recreated from the grafana-admin-creds
+          # SealedSecret on every start. storageClassName/size are inert while
+          # disabled; kept for if we ever flip it on.
           persistence:
             enabled: false
             storageClassName: local-path
