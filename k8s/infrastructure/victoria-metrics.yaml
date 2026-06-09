@@ -50,6 +50,8 @@ spec:
                 # Hard ceiling — a runaway scrape shouldn't be able to OOM the node.
                 memory: 2Gi
             extraArgs:
+              # Cap VM's in-memory caches at 40% of the memory limit above,
+              # leaving headroom under the 2Gi ceiling for query/ingest spikes.
               memory.allowedPercent: "40"
 
         vmcluster:
@@ -118,6 +120,21 @@ spec:
                 target_matchers: [severity = "warning"]
                 equal: ["alertname", "namespace"]
 
+        # k3s bundles the controller-manager, scheduler, kube-proxy, and datastore
+        # into the single k3s server process — none are exposed as the separately
+        # scrapeable endpoints a kubeadm cluster has. Left enabled, these scrape
+        # jobs are permanently-down targets that trip TargetDown plus the
+        # per-component *Down alerts. Turn the ServiceMonitors off here; the
+        # matching alert rules are disabled under defaultRules below.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeEtcd:                # k3s defaults to embedded SQLite, not etcd
+          enabled: false
+        kubeProxy:
+          enabled: false
+
         # node-exporter scrapes host-level metrics (CPU, RAM, disk, network).
         # DaemonSet — runs on every node, including control. Clearing the
         # global nodeSelector + adding a blanket toleration is what lets it
@@ -162,9 +179,12 @@ spec:
             existingSecret: grafana-admin-creds
             userKey: admin-user
             passwordKey: admin-password
-          # 2GB local-path PVC for Grafana's SQLite (users, prefs, starred boards).
-          # Dashboards themselves live as ConfigMaps in git, so losing this isn't
-          # the end of the world — just an admin password reset.
+          # No PVC — Grafana's SQLite (users, prefs, starred boards) is ephemeral
+          # and resets when the pod is rescheduled. That's acceptable: dashboards
+          # are provisioned from ConfigMaps in git (sidecar below) and the admin
+          # login is recreated from grafana-admin-creds on every start, so a
+          # restart only loses ad-hoc UI state. storageClassName/size are inert
+          # while enabled is false; kept for the day we flip it on.
           persistence:
             enabled: false
             storageClassName: local-path
@@ -178,6 +198,8 @@ spec:
               label: grafana_dashboard
               labelValue: "1"
               searchNamespace: ALL
+            # Datasource sidecar off — the VictoriaMetrics datasource is declared
+            # inline below instead of discovered from a ConfigMap.
             datasources:
               enabled: false
           ingress:
@@ -212,15 +234,23 @@ spec:
                   url: http://vmsingle-vm-victoria-metrics-k8s-stack.monitoring.svc:8428
                   isDefault: true
 
-        # Keep the chart's bundled k8s alerts and recording rules.
+        # Keep the chart's bundled k8s alert + recording rules, but drop the
+        # groups that target control-plane components k3s doesn't expose (their
+        # scrape jobs are disabled above). Otherwise we get permanent
+        # KubeControllerManagerDown / KubeSchedulerDown alerts and scheduler
+        # recording rules stuck on "no data".
         defaultRules:
-          create: true
-          rules:
-            # k3s embeds etcd in the apiserver process — the standalone etcd
-            # rules don't apply and just generate noise.
-            etcd: false
-            # k3s doesn't expose the scheduler as a separate component either.
-            kubeScheduler: false
+          enabled: true          # chart default; explicit for intent
+          groups:
+            kubernetesSystemControllerManager:   # KubeControllerManagerDown
+              enabled: false
+            kubernetesSystemScheduler:           # KubeSchedulerDown
+              enabled: false
+            kubeScheduler:                       # scheduler recording rules (no data on k3s)
+              enabled: false
+            etcd:                                # etcd rules — k3s uses embedded SQLite
+              enabled: false
+
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
