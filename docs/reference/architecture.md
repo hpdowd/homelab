@@ -23,7 +23,7 @@ Proxmox host
 ├── LXC 101  WireGuard   (VPN + cloudflare-ddns)
 ├── LXC 102  AMP         (game server)
 ├── VM  201  QBittorrent (PIA-only torrenting)
-├── VM  300  k3s-control   2 vCPU, 3GB RAM
+├── VM  300  k3s-control   2 vCPU, 3.5GiB RAM
 └── VM  301  k3s-worker1   8 vCPU, 14GB RAM, has the 500GB Longhorn disk
 ```
 
