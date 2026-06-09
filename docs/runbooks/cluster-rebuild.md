@@ -41,7 +41,7 @@ have one, otherwise install fresh.
 
 Two VMs:
 
-- **300 control** — 2 vCPU, 3GB RAM, static `192.168.1.10`
+- **300 control** — 2 vCPU, 3.5GiB RAM, static `192.168.1.10`
 - **301 worker1** — 8 vCPU, 14GB RAM, static `192.168.1.11`, plus a
   500GB virtual disk (`vdb`) carved out of `tank` for Longhorn
 

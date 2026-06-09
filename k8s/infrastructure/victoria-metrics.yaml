@@ -17,7 +17,7 @@ spec:
       releaseName: vm
       values: |
         # Global default: pin everything to the worker. The control node only
-        # has 3GB RAM and runs the k3s control plane, so we keep workloads off
+        # has 3.5GiB RAM and runs the k3s control plane, so we keep workloads off
         # it. node-exporter is a DaemonSet and overrides this below so we still
         # get host metrics from control too.
         nodeSelector:
@@ -99,16 +99,20 @@ spec:
               group_by: ["alertname", "namespace"]
               group_wait: 30s
               group_interval: 5m
-              # 4h on warnings — long enough that I'm not getting spammed,
+              # 6h on warnings — long enough that I'm not getting spammed,
               # short enough that I'll see something still firing the next morning.
-              repeat_interval: 4h
+              repeat_interval: 6h
               routes:
                 # Criticals nag every hour until acknowledged or resolved.
                 - receiver: "email"
                   matchers:
                     - severity = "critical"
                   repeat_interval: 1h
+                - reciever: "null"
+                  matchers:
+                    - alertname =~ "Watchdog|InfoInhibitor"
             receivers:
+              - name: "null"
               - name: "email"
                 email_configs:
                   - to: "henry@dowd.ie"
@@ -119,6 +123,11 @@ spec:
               - source_matchers: [severity = "critical"]
                 target_matchers: [severity = "warning"]
                 equal: ["alertname", "namespace"]
+        # InfoInhibitor suppresses lone infor alerts,
+        # They only appear again alongside warning/critical in the same namespace.
+              - source_matchers: [alertname = "InforInhibitor"]
+                target_matchers: [severity = "info"]
+                equal: ["namespace"]
 
         # k3s bundles the controller-manager, scheduler, kube-proxy, and datastore
         # into the single k3s server process — none are exposed as the separately

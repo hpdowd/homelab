@@ -16,18 +16,34 @@ spec:
   groups:
     - name: homelab.memory
       rules:
-        # 1.2GB free is the early-warning threshold on the control node, which
-        # sits around 30% headroom on a good day. Once we're under this for 5
-        # min something heavy got scheduled there and we should look.
-        - alert: NodeMemoryLow
+        # Per-node thresholds — the two nodes have very different roles and
+        # headroom, so a single global threshold doesn't fit either well.
+        #
+        # Control (3.5GiB, k3s control plane only): loose. It runs no app
+        # workloads, so it normally sits with plenty free; only warn once it's
+        # genuinely squeezed. 0.75GiB free for 5m.
+        - alert: NodeMemoryLowControl
           expr: |
-            node_memory_MemAvailable_bytes < 1.2e9
+            node_memory_MemAvailable_bytes{instance="192.168.1.10:9100"} < 805306368
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "Low available memory on {{ $labels.instance }}"
-            description: "Available memory < 1.2Gi for 5m. Check before adding workloads (e.g. Immich)."
+            summary: "Low available memory on control node ({{ $labels.instance }})"
+            description: "Available memory < 0.75Gi for 5m on k3s-control. Something heavy got scheduled onto the control plane — investigate."
+
+        # Worker1 (14GiB, runs every app): tight. This is the node that gates
+        # adding workloads (e.g. Immich), so warn with a fat 2GiB cushion still
+        # remaining — early enough to act before anything OOMs. 2GiB free for 5m.
+        - alert: NodeMemoryLowWorker
+          expr: |
+            node_memory_MemAvailable_bytes{instance="192.168.1.11:9100"} < 2147483648
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low available memory on worker node ({{ $labels.instance }})"
+            description: "Available memory < 2Gi for 5m on k3s-worker1. Check before adding workloads (e.g. Immich)."
 
         # The host already touches swap a little. >60% sustained means real
         # memory is genuinely under pressure, not just normal cache eviction.
