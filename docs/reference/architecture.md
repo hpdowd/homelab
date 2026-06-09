@@ -176,7 +176,7 @@ A few things I deliberately keep on LXCs:
 ## A note on memory
 
 The thing that constrains every "should I add X" decision is RAM.
-After the two k3s VMs reserve theirs, the host has maybe 7GB left for
+After the two k3s VMs reserve theirs, the host has maybe 6GB left for
 ZFS ARC, the Proxmox process, and the LXCs that didn't migrate. So
 when something says "needs 1.5GB", that's a real percentage of what's
 left. It's why I keep picking the lighter option (VictoriaMetrics
