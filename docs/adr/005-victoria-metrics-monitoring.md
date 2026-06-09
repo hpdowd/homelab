@@ -90,3 +90,22 @@ Explore, and alerting all work unchanged; the only thing lost is MetricsQL edito
 which is not worth a fatal startup dependency. The chart's datasources **sidecar** is disabled to
 avoid a second provisioned default colliding with the inline one. See
 `docs/lessons/k8s/grafana-monitoring-sync-cascade.md`.
+
+## Addendum — 2026-06-09: SMTP relay is Brevo, not Proton
+
+Decision 4 above assumed email "needs nothing running on my side — Proton handles SMTP." That was
+wrong: Proton's public SMTP (`smtp.protonmail.ch`) **cannot authenticate without the ProtonMail
+Bridge**, which is a desktop app and won't run in-cluster. The relay was also never actually wired —
+the config referenced a password-mount mechanism that didn't exist.
+
+**Decision:** use **Brevo** as the SMTP relay (`smtp-relay.brevo.com:587`, STARTTLS). Free tier is
+ample for homelab alert volume and it authenticates with a plain SMTP key — no bridge, nothing to
+run. Alertmanager pulls the key from the existing `alertmanager-smtp` SealedSecret, mounted by the
+operator at `/etc/vm/secrets/alertmanager-smtp/` via `alertmanager.spec.secrets`, and references it
+file-based with `smtp_auth_password_file` (password never inlined). `smtp_from`
+`homelab-monitor@henrydowd.dev`, `smtp_require_tls: true`.
+
+Once delivery worked, a backlog of always-firing chart alerts (k3s control-plane false positives)
+flushed into the inbox and had to be triaged separately — see
+`docs/lessons/k8s/k3s-control-plane-false-positives.md`. ntfy-for-phone (decision 4) is still the
+likely later swap; the receiver block remains a one-line change.
