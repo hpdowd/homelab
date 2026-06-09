@@ -18,5 +18,6 @@ Use `TEMPLATE.md` for new entries. Each entry covers: date · context · symptom
 | infra/nextcloud-lxc-firewall-port11000.md | infra | Proxmox LXC firewall silently blocked port 11000 (AIO frontend) |
 | infra/wireguard-lxc-dstate-freeze.md | infra | `pct enter` into WireGuard LXC while VPN active → D-state freeze, host reboot required |
 | k8s/grafana-pvc-corruption.md | k8s | Reused Grafana PVC with corrupt SQLite across reinstalls → CrashLoopBackOff |
+| k8s/grafana-monitoring-sync-cascade.md | k8s | Six-bug cascade: orphaned ArgoCD app → kiwix syncOptions → PrometheusRule vs VMRule → plugin 404 → datasource isDefault collision → Grafana OOMKill |
 | networking/proxmox-502-selfsigned-tunnel.md | networking | Cloudflare tunnel returned 502 for Proxmox — self-signed cert on :8006 |
 | networking/vodafone-hub-ghost-portforward.md | networking | Vodafone Hub silently wiped port-forward rules after DHCP change |
