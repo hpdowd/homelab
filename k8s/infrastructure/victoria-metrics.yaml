@@ -87,9 +87,10 @@ spec:
               resolve_timeout: 5m
               # smtp_auth_password is injected from the sealed secret; see
               # extraSecretMounts wiring in ADR 005.
-              smtp_smarthost: "smtp.protonmail.ch:587"
-              smtp_from: "homelab-monitor@dowd.ie"
-              smtp_auth_username: "homelab-monitor@dowd.ie"
+              smtp_smarthost: "smtp-relay.brevo.com:587"
+              smtp_from: "homelab-monitor@henrydowd.dev"
+              smtp_auth_username: "ae07ea001@smtp-brevo.com"
+              smtp_auth_password_file: /etc/vm/secrets/alertmanager-smtp/smtp_password
               smtp_require_tls: true
             route:
               receiver: "email"
