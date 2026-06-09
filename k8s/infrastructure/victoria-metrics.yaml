@@ -103,14 +103,15 @@ spec:
               # short enough that I'll see something still firing the next morning.
               repeat_interval: 6h
               routes:
+                - receiver: "null"
+                  matchers:
+                    - alertname =~ "Watchdog|InfoInhibitor"
+
                 # Criticals nag every hour until acknowledged or resolved.
                 - receiver: "email"
                   matchers:
                     - severity = "critical"
                   repeat_interval: 1h
-                - reciever: "null"
-                  matchers:
-                    - alertname =~ "Watchdog|InfoInhibitor"
             receivers:
               - name: "null"
               - name: "email"
@@ -123,9 +124,9 @@ spec:
               - source_matchers: [severity = "critical"]
                 target_matchers: [severity = "warning"]
                 equal: ["alertname", "namespace"]
-        # InfoInhibitor suppresses lone infor alerts,
-        # They only appear again alongside warning/critical in the same namespace.
-              - source_matchers: [alertname = "InforInhibitor"]
+                # InfoInhibitor suppresses lone infor alerts,
+                # They only appear again alongside warning/critical in the same namespace.
+              - source_matchers: [alertname = "InfoInhibitor"]
                 target_matchers: [severity = "info"]
                 equal: ["namespace"]
 
