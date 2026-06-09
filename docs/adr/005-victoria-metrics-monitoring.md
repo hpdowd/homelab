@@ -76,3 +76,17 @@ fine.
   usage is stable and small; the worker hosts the real workloads and the
   eventual Immich. If control ever struggles, that comes from host slack,
   not from robbing the worker.
+
+## Addendum — 2026-06-08: Grafana datasource provisioning
+
+The chart's default Grafana integration installs the `victoriametrics-datasource` plugin and
+provisions a datasource of that plugin type. On this cluster the plugin coordinate 404s on the
+Grafana registry, and because `GF_PLUGINS_PREINSTALL_SYNC` treats a failed preinstall as fatal,
+Grafana would not start.
+
+**Decision:** drop the VM datasource plugin entirely and provision a plain `type: prometheus`
+datasource pointed at vmsingle. VictoriaMetrics implements the Prometheus query API, so dashboards,
+Explore, and alerting all work unchanged; the only thing lost is MetricsQL editor autocomplete,
+which is not worth a fatal startup dependency. The chart's datasources **sidecar** is disabled to
+avoid a second provisioned default colliding with the inline one. See
+`docs/lessons/k8s/grafana-monitoring-sync-cascade.md`.

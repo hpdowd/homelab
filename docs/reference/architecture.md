@@ -14,7 +14,7 @@ Proxmox is on the bare metal. Inside Proxmox there are some LXCs (the
 permanent ones — DNS, VPN, AMP) and two full VMs that make up the k3s
 cluster. The split matters because LXCs share memory with the host
 (they only use what they touch) but VMs *reserve* their RAM the
-moment they boot. So the two k3s VMs eat 18GB up front whether
+moment they boot. So the two k3s VMs eat 17GB up front whether
 they're idle or hammered.
 
 ```
@@ -23,7 +23,7 @@ Proxmox host
 ├── LXC 101  WireGuard   (VPN + cloudflare-ddns)
 ├── LXC 102  AMP         (game server)
 ├── VM  201  QBittorrent (PIA-only torrenting)
-├── VM  300  k3s-control   2 vCPU, 4GB RAM
+├── VM  300  k3s-control   2 vCPU, 3GB RAM
 └── VM  301  k3s-worker1   8 vCPU, 14GB RAM, has the 500GB Longhorn disk
 ```
 
@@ -38,8 +38,11 @@ What's in the cluster:
 
 - **ArgoCD** — watches this repo and applies what it finds. The only
   thing pointed at it directly is `root-app`; root-app discovers
-  every other Application by recursing into `k8s/apps/`. That's the
-  "app-of-apps" pattern.
+  every other Application by watching `k8s/apps/` for `<name>.yaml`
+  manifests — **non-recursively**, so a bare subdirectory with no
+  matching top-level Application is silently ignored (this bit me —
+  see `docs/lessons/k8s/grafana-monitoring-sync-cascade.md`). That's
+  the "app-of-apps" pattern.
 - **Longhorn** — gives me dynamic block storage. Pods ask for a PVC
   and Longhorn carves it out of the worker's 500GB disk. Replica
   count is 1 because there's only one worker; if I ever add a second,
@@ -156,7 +159,11 @@ not just in the cluster. Restore procedure is in
 A few things I deliberately keep on LXCs:
 
 - **Technitium** — DNS. The cluster depends on it (LAN names →
-  Traefik VIP), so it can't live inside the thing it's serving.
+  Traefik VIP), so it can't live inside the thing it's serving. Its
+  admin UI *is* now reachable through Traefik at `technitium.lan`
+  (selectorless Service + EndpointSlice → LXC 100 `:5380`, same
+  pattern as AMP), but that's just an ingress shortcut — the DNS
+  server itself still runs on the LXC.
 - **WireGuard** — the VPN. Also runs cloudflare-ddns, which keeps the
   `home.henrydowd.dev` A record pointed at my current home IP. This
   is how I get back in when I'm out. If the cluster dies, this still
@@ -169,7 +176,7 @@ A few things I deliberately keep on LXCs:
 ## A note on memory
 
 The thing that constrains every "should I add X" decision is RAM.
-After the two k3s VMs reserve theirs, the host has maybe 6GB left for
+After the two k3s VMs reserve theirs, the host has maybe 7GB left for
 ZFS ARC, the Proxmox process, and the LXCs that didn't migrate. So
 when something says "needs 1.5GB", that's a real percentage of what's
 left. It's why I keep picking the lighter option (VictoriaMetrics
