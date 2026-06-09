@@ -49,8 +49,8 @@ spec:
               limits:
                 # Hard ceiling — a runaway scrape shouldn't be able to OOM the node.
                 memory: 2Gi
-              extraArgs:
-                memory.allowedPercent: "40"
+            extraArgs:
+              memory.allowedPercent: "40"
 
         vmcluster:
           enabled: false
@@ -76,6 +76,8 @@ spec:
           spec:
             nodeSelector:
               kubernetes.io/hostname: k3s-worker1
+            secrets:
+              - alertmanager-smtp
             resources:
               requests:
                 cpu: 10m
@@ -85,8 +87,6 @@ spec:
           config:
             global:
               resolve_timeout: 5m
-              # smtp_auth_password is injected from the sealed secret; see
-              # extraSecretMounts wiring in ADR 005.
               smtp_smarthost: "smtp-relay.brevo.com:587"
               smtp_from: "homelab-monitor@henrydowd.dev"
               smtp_auth_username: "ae07ea001@smtp-brevo.com"
