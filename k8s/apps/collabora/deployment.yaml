@@ -50,7 +50,7 @@ spec:
                 secretKeyRef: { name: collabora-admin, key: password }
                 securityContext:
           capabilities:
-            add: ["MKNOD"]
+            add: ["MKNOD", "SYS_CHROOT", "FOWNER"]
           resources:
             requests: { cpu: 250m, memory: 512Mi }
             limits: { memory: 2Gi }
