@@ -21,5 +21,6 @@ Use `TEMPLATE.md` for new entries. Each entry covers: date · context · symptom
 | k8s/grafana-monitoring-sync-cascade.md | k8s | Six-bug cascade: orphaned ArgoCD app → kiwix syncOptions → PrometheusRule vs VMRule → plugin 404 → datasource isDefault collision → Grafana OOMKill |
 | k8s/k3s-control-plane-false-positives.md | k8s | ~12 false-positive alert emails/night — chart's control-plane rules (scheduler/CM/etcd/proxy Down) assume kubeadm; k3s runs them in-process. Verified alive before silencing |
 | k8s/argocd-comparisonerror-silent-values.md | k8s | Bad inline Helm values (indent / duplicate key / typo'd key) → silent ArgoCD ComparisonError or last-wins; live workloads keep running old spec, no surface symptom |
+| k8s/alertmanager-null-route-typo.md | k8s | `reciever` typo → drop route inherits `email`, so Watchdog leaked to inbox; drop route ordered after critical; `InforInhibitor` matcher matched nothing. Silent — config loaded fine |
 | networking/proxmox-502-selfsigned-tunnel.md | networking | Cloudflare tunnel returned 502 for Proxmox — self-signed cert on :8006 |
 | networking/vodafone-hub-ghost-portforward.md | networking | Vodafone Hub silently wiped port-forward rules after DHCP change |
