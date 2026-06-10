@@ -54,7 +54,7 @@ spec:
           startupProbe:
             httpGet: { path: /hosting/discovery, port: 9980 }
             periodSeconds: 5
-            failureThreshold: 150
+            failureThreshold: 30
           readinessProbe:
             httpGet: { path: /hosting/discovery, port: 9980 }
             periodSeconds: 10
