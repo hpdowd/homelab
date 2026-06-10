@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: collabora, namespace: collabora }
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: collabora.henrydowd.dev
+      http:
+        paths:
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: collabora, port: { number: 9980 } } },
+            }
+    - host: collabora.lan
+      http:
+        paths:
+          - {
+              path: /,
+              pathType: Prefix,
+              backend: { service: { name: collabora, port: { number: 9980 } } },
+            }

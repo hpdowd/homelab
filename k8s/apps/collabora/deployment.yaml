@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collabora
+  namespace: collabora
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: collabora }
+  template:
+    metadata:
+      labels: { app: collabora }
+    spec:
+      # Control node is RAM-starved; keep this on the worker
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {
+                      key: kubernetes.io/hostname,
+                      operator: In,
+                      values: ["k3s-worker1"],
+                    }
+      # --- INTERIM reachback fix: resolve nextcloud.henrydowd.dev via public DNS
+      #     so the WOPI callback gets Cloudflare's valid cert. Delete this whole
+      #     dnsPolicy/dnsConfig block once cert-manager issues a real Traefik cert.
+      dnsPolicy: "None"
+      dnsConfig:
+        nameservers: ["1.1.1.1", "1.0.0.1"]
+      # ---
+      containers:
+        - name: code
+          image: collabora/code:26.04.1.4.1 # latest as of 10/06/2026
+          ports:
+            - containerPort: 9980
+          env:
+            - name: aliasgroup1
+              value: "https://nextcloud\\.henrydowd\\.dev" # regex; dots escaped
+            - name: server_name
+              value: "collabora.henrydowd.dev" # required behind a Host-rewriting proxy
+            - name: extra_params
+              value: "--o:ssl.enable=false --o:ssl.termination=true"
+            - name: dictionaries
+              value: "en_GB en_US"
+            - name: username
+              value: "admin"
+            - name: password
+              valueFrom:
+                secretKeyRef: { name: collabora-admin, key: password }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 2Gi }
+          startupProbe:
+            httpGet: { path: /hosting/discovery, port: 9980 }
+            periodSeconds: 5
+            failureThreshold: 150
+          readinessProbe:
+            httpGet: { path: /hosting/discovery, port: 9980 }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: 9980 }
+            periodSeconds: 20
