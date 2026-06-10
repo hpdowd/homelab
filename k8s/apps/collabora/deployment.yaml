@@ -9,6 +9,8 @@ spec:
     matchLabels: { app: collabora }
   template:
     metadata:
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/code: unconfined
       labels: { app: collabora }
     spec:
       # Control node is RAM-starved; keep this on the worker
@@ -31,7 +33,7 @@ spec:
       # ---
       containers:
         - name: code
-          image: collabora/code:25.04.10.3.1 # latest as of 10/06/2026
+          image: collabora/code:26.04.1.4.1 # latest as of 10/06/2026
           ports:
             - containerPort: 9980
           env:
