@@ -13,11 +13,16 @@ Things I host for me: Gitea (this repo), Nextcloud (files, calendar,
 contacts), Kiwix (offline Wikipedia), an AMP game server, the Proxmox
 web UI, and Technitium for LAN DNS. The first three live in k3s.
 AMP, Proxmox and Technitium stay on LXCs and get proxied through the
-cluster's Traefik so the routing is uniform.
+cluster's Traefik so the routing is uniform. VictoriaMetrics + Grafana +
+Alertmanager runs in-cluster for metrics, dashboards, and email alerts.
 
 Public stuff comes in via a Cloudflare Tunnel — no port forwarding,
 no exposed IP. LAN stuff goes through Technitium so the `.lan`
 hostnames just work from inside the house.
+
+Secrets are committed as **SealedSecrets** — encrypted against the
+in-cluster controller's public key. The controller's private key is the
+only trust root and is not in this repo.
 
 ## Where to look
 
