@@ -40,7 +40,7 @@ spec:
             - name: server_name
               value: "collabora.henrydowd.dev" # required behind a Host-rewriting proxy
             - name: extra_params
-              value: "--o:ssl.enable=false --o:ssl.termination=true --o:logging.level=trace."
+              value: "--o:ssl.enable=false --o:ssl.termination=true --o:logging.level=trace"
             - name: dictionaries
               value: "en_GB en_US"
             - name: username
