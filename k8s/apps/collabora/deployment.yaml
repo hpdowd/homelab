@@ -31,7 +31,7 @@ spec:
       # ---
       containers:
         - name: code
-          image: collabora/code:26.04.1.4.1 # latest as of 10/06/2026
+          image: collabora/code:25.04.10.3.1 # latest as of 10/06/2026
           ports:
             - containerPort: 9980
           env:
