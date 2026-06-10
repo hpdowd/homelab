@@ -9,8 +9,6 @@ spec:
     matchLabels: { app: collabora }
   template:
     metadata:
-      annotations:
-        container.apparmor.security.beta.kubernetes.io/code: unconfined
       labels: { app: collabora }
     spec:
       # Control node is RAM-starved; keep this on the worker
@@ -42,7 +40,7 @@ spec:
             - name: server_name
               value: "collabora.henrydowd.dev" # required behind a Host-rewriting proxy
             - name: extra_params
-              value: "--o:ssl.enable=false --o:ssl.termination=true --o:logging.level=trace"
+              value: "--o:ssl.enable=false --o:ssl.termination=true"
             - name: dictionaries
               value: "en_GB en_US"
             - name: username
@@ -51,8 +49,11 @@ spec:
               valueFrom:
                 secretKeyRef: { name: collabora-admin, key: password }
           securityContext:
+            appArmorContext:
+              appAtmorProfile:
+                type: Unconfined
             capabilities:
-              add: ["SYS_ADMIN", "MKNOD", "SYS_CHROOT", "FOWNER"]
+              add: ["SYS_ADMIN", "MKNOD", "SYS_CHROOT", "FOWNER", "CHOWN"]
           resources:
             requests: { cpu: 250m, memory: 512Mi }
             limits: { memory: 2Gi }
