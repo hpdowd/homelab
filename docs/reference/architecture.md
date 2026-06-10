@@ -182,3 +182,12 @@ when something says "needs 1.5GB", that's a real percentage of what's
 left. It's why I keep picking the lighter option (VictoriaMetrics
 single-node, Authelia over Authentik) and why Immich is still on the
 bench.
+
+One nuance, though: that ~6GB host limit only bites things that live
+*outside* the k3s VMs (LXCs, another VM). The worker VM already reserves
+its 14GiB up front, so anything I schedule *inside* the cluster competes
+for the worker's own 13.59GiB, not the host's leftovers — and most of
+that worker RAM sits idle (snapshot: ~35% used, never over 50%). The
+gating arithmetic for "add Immich/Collabora?" lives in
+`capacity-headroom.md`, including how to re-pull the numbers from
+VictoriaMetrics and when they're due a re-check.
