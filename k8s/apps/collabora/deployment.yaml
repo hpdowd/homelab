@@ -17,11 +17,9 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
-                  - {
-                      key: kubernetes.io/hostname,
-                      operator: In,
-                      values: ["k3s-worker1"],
-                    }
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["k3s-worker1"]
       # --- INTERIM reachback fix: resolve nextcloud.henrydowd.dev via public DNS
       #     so the WOPI callback gets Cloudflare's valid cert. Delete this whole
       #     dnsPolicy/dnsConfig block once cert-manager issues a real Traefik cert.

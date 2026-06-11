@@ -3,8 +3,10 @@ kind: Application
 metadata:
   name: victoria-metrics
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.io
+  # No resources-finalizer (same as every other app here): deleting the
+  # Application must never cascade-delete live resources. The monitoring
+  # namespace has needed force-finalizer surgery before (see HOMELAB gotcha
+  # / vm-operator pattern) — orphaning on delete is the safer default.
 spec:
   project: default
   source:

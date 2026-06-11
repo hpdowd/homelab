@@ -3,8 +3,8 @@ kind: Application
 metadata:
   name: nextcloud
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.io
+  # No resources-finalizer (same as every other app here): deleting the
+  # Application must never cascade-delete the namespace and its PVCs.
 spec:
   project: default
   source:
