@@ -25,3 +25,4 @@ Use `TEMPLATE.md` for new entries. Each entry covers: date · context · symptom
 | k8s/collabora-slow-load-wordbook.md | k8s | Collabora cold opens ~55 s — hunspell en_GB.dic uploaded as personal wordbook; DictionaryNeo quadratic load per kit. Two-day detour fixing a coincident jail-copy/AppArmor pathology first (raw logs alongside) |
 | networking/proxmox-502-selfsigned-tunnel.md | networking | Cloudflare tunnel returned 502 for Proxmox — self-signed cert on :8006 |
 | networking/vodafone-hub-ghost-portforward.md | networking | Vodafone Hub silently wiped port-forward rules after DHCP change |
+| storage/zfs-snapshot-retention-noop.md | storage | Nightly ZFS prune failed silently since setup (`zfs destroy` multi-arg) — and its selection logic would have deleted the wrong snapshots if it had worked |

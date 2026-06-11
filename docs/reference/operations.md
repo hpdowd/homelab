@@ -161,9 +161,20 @@ List snapshots:
 zfs list -t snapshot
 ```
 
-The daily cron already snapshots at 02:00 with a 7-day retention. The
-manual one is for "I'm about to do something risky and I want a
-hard rollback".
+The daily cron (`/etc/cron.d/zfs-snapshots` →
+`/usr/local/bin/zfs-daily-snapshot.sh` on the host) snapshots at 02:00
+and keeps the 7 newest dailies per dataset. Quick health check —
+every dataset should show exactly 7:
+
+```bash
+zfs list -t snapshot -o name | grep daily | sed 's/@.*//' | sort | uniq -c
+```
+
+(The original one-liner version of that cron never actually pruned —
+see `docs/lessons/storage/zfs-snapshot-retention-noop.md`.)
+
+The manual snapshot is for "I'm about to do something risky and I want
+a hard rollback".
 
 ## Backups
 
