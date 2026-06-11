@@ -12,7 +12,7 @@ at "is this node out of RAM?" and "did the backup run?" and that's not OK
 for things I depend on.
 
 The constraint that shapes every choice below is RAM. The Proxmox host has
-~24GB. Once the VMs reserve theirs (worker 14GB + control 3.5GiB), there's
+~24GB. Once the VMs reserve theirs (worker 14GB + control 4GiB), there's
 maybe 6GB left for the host itself, ZFS ARC, and the LXCs that didn't
 move to the cluster. There's not much slack for "the monitoring stack". Anything
 that wants 1.5GB is out.

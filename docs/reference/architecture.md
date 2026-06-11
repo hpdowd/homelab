@@ -14,7 +14,7 @@ Proxmox is on the bare metal. Inside Proxmox there are some LXCs (the
 permanent ones — DNS, VPN, AMP) and two full VMs that make up the k3s
 cluster. The split matters because LXCs share memory with the host
 (they only use what they touch) but VMs *reserve* their RAM the
-moment they boot. So the two k3s VMs eat 17GB up front whether
+moment they boot. So the two k3s VMs eat 18GB up front whether
 they're idle or hammered.
 
 ```
@@ -23,7 +23,7 @@ Proxmox host
 ├── LXC 101  WireGuard   (VPN + cloudflare-ddns)
 ├── LXC 102  AMP         (game server)
 ├── VM  201  QBittorrent (PIA-only torrenting)
-├── VM  300  k3s-control   2 vCPU, 3.5GiB RAM
+├── VM  300  k3s-control   2 vCPU, 4GiB RAM
 └── VM  301  k3s-worker1   8 vCPU, 14GB RAM, has the 500GB Longhorn disk
 ```
 

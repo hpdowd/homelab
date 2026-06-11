@@ -20,7 +20,7 @@ spec:
         # Per-node thresholds — the two nodes have very different roles and
         # headroom, so a single global threshold doesn't fit either well.
         #
-        # Control (3.5GiB, k3s control plane only): loose. It runs no app
+        # Control (4GiB, k3s control plane only): loose. It runs no app
         # workloads, so it normally sits with plenty free; only warn once it's
         # genuinely squeezed. 0.75GiB free for 5m.
         - alert: NodeMemoryLowControl
