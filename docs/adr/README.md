@@ -8,3 +8,9 @@ Each ADR has a **Status** (Accepted / Superseded) and a **Superseded By** line s
 |---|---|
 | 004-restic-b2-bckup.md | Offsite backup with restic to Backblaze B2 |
 | 005-victoria-metrics-monitoring.md | VictoriaMetrics single-node over kube-prometheus-stack |
+
+Numbering starts at 004: decisions 001–003 (k3s itself, GitOps via
+ArgoCD, Longhorn PVC over hostPath for the Nextcloud migration) predate
+the ADR habit and were never written up. Their reasoning is partly
+captured in architecture.md; the numbers stay reserved rather than
+reused.
