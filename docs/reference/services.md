@@ -42,7 +42,10 @@ pattern as AMP and Proxmox (see architecture.md).
 - `*.lan` → 192.168.1.200 and `*.henrydowd.dev` → 192.168.1.200
   (split-horizon: LAN traffic to public hostnames stays local).
 - `home.henrydowd.dev` — Cloudflare A record (DNS-only, not proxied),
-  kept current by cloudflare-ddns on the WireGuard LXC.
+  kept current by cloudflare-ddns on the WireGuard LXC
+  (`/usr/local/bin/cloudflare-ddns.sh`, cron every 5 min; only PUTs when
+  the IP actually changed, logs changes and failures to
+  `/var/log/cloudflare-ddns.log` in the container).
 
 ## Nextcloud
 
