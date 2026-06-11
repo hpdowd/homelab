@@ -31,7 +31,7 @@ spec:
       # ---
       containers:
         - name: code
-          image: collabora/code:25.04.10.3.1 # latest as of 10/06/2026
+          image: collabora/code:26.04.1.4.1 # 25.04 downgrade was a ruled-out test during the slow-load incident
           ports:
             - containerPort: 9980
           env:
@@ -40,7 +40,8 @@ spec:
             - name: server_name
               value: "collabora.henrydowd.dev" # required behind a Host-rewriting proxy
             - name: extra_params
-              value: "--o:ssl.enable=false --o:ssl.termination=true"
+              # ssl handled by Cloudflare/Traefik; prespawn is cheap with bind-mounted jails
+              value: "--o:ssl.enable=false --o:ssl.termination=true --o:num_prespawn_children=2"
             - name: dictionaries
               value: "en_GB en_US"
             - name: username
@@ -48,6 +49,13 @@ spec:
             - name: password
               valueFrom:
                 secretKeyRef: { name: collabora-admin, key: password }
+          # Both settings below are load-bearing for fast (~6ms) bind-mounted kit
+          # jails. Without them CODE silently falls back to copying the whole LO
+          # tree per jail. The AppArmor *field* is required — the deprecated
+          # annotation does not apply on k3s >=1.30, and the default
+          # cri-containerd profile denies mount(2). The caps feed the file
+          # capabilities on coolmount/coolforkit-caps (pid 1 CapEff=0 is normal).
+          # See docs/lessons/k8s/collabora-slow-load-wordbook.md
           securityContext:
             appArmorProfile:
               type: Unconfined
