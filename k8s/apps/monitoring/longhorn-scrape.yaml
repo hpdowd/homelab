@@ -1,0 +1,28 @@
+# Scrape Longhorn's manager metrics (longhorn-backend:9500/metrics).
+#
+# Without this, every longhorn_* expression in homelab-rules.yaml evaluates
+# against nothing — the LonghornVolumeDegraded alert existed for weeks while
+# all four volumes sat degraded, and never fired, because the metric was
+# simply absent. The LonghornMetricsAbsent guard in homelab-rules.yaml now
+# catches that failure mode.
+#
+# VMServiceScrape (VictoriaMetrics operator), NOT ServiceMonitor — same
+# reasoning as VMRule vs PrometheusRule (see HOMELAB gotchas / the
+# grafana-monitoring-sync-cascade lesson).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: longhorn
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: vm-k8s-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - longhorn-system
+  selector:
+    matchLabels:
+      app: longhorn-manager
+  endpoints:
+    - port: manager
+      path: /metrics

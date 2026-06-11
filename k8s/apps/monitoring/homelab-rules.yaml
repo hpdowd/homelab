@@ -3,8 +3,9 @@
 # hit on this hardware (memory pressure, OOMs, the RWO Longhorn pain point,
 # silently broken backups).
 #
-# vmalert auto-discovers PrometheusRule CRDs in any namespace, so the only
-# thing keeping this hooked up is the `app.kubernetes.io/part-of` label.
+# The operator picks up VMRule CRDs (NOT PrometheusRule — one wrong kind
+# fails the whole Application's sync batch, see the grafana-monitoring-sync
+# cascade lesson) and feeds them to vmalert.
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
@@ -45,8 +46,10 @@ spec:
             summary: "Low available memory on worker node ({{ $labels.instance }})"
             description: "Available memory < 2Gi for 5m on k3s-worker1. Check before adding workloads (e.g. Immich)."
 
-        # The host already touches swap a little. >60% sustained means real
-        # memory is genuinely under pressure, not just normal cache eviction.
+        # Watches the two k3s VMs (node-exporter doesn't see the Proxmox
+        # host). >60% sustained means real memory pressure, not just normal
+        # cache eviction. The `> 0` in the divisor doubles as a guard: nodes
+        # with no swap drop out instead of dividing by zero.
         - alert: NodeSwapClimbing
           expr: |
             (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)
@@ -124,6 +127,20 @@ spec:
           annotations:
             summary: "Longhorn volume {{ $labels.volume }} degraded/faulted"
             description: "RWO single-attach pain point. Check the volume and the worker node."
+
+        # Guard for the alert above. This rule spent weeks dead because the
+        # longhorn_* metrics were never scraped — the alert can't fire on data
+        # that doesn't exist, which is its own silent failure. If the Longhorn
+        # scrape (longhorn-scrape.yaml) breaks, this fires instead.
+        - alert: LonghornMetricsAbsent
+          expr: |
+            absent(longhorn_volume_robustness)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn metrics missing from VictoriaMetrics"
+            description: "longhorn_volume_robustness has no series — the Longhorn scrape is broken, so LonghornVolumeDegraded is blind. Check the VMServiceScrape and vmagent targets."
 
     - name: homelab.backups
       rules:

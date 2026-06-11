@@ -105,9 +105,13 @@ spec:
               # short enough that I'll see something still firing the next morning.
               repeat_interval: 6h
               routes:
+                # KubeCPU/MemoryOvercommit fire permanently on a 2-node
+                # cluster ("cannot tolerate node failure" — true by design
+                # here). Null-routed rather than disabled so they stay
+                # visible in vmalert/Grafana without emailing every 6h.
                 - receiver: "null"
                   matchers:
-                    - alertname =~ "Watchdog|InfoInhibitor"
+                    - alertname =~ "Watchdog|InfoInhibitor|KubeCPUOvercommit|KubeMemoryOvercommit"
 
                 # Criticals nag every hour until acknowledged or resolved.
                 - receiver: "email"
@@ -126,8 +130,8 @@ spec:
               - source_matchers: [severity = "critical"]
                 target_matchers: [severity = "warning"]
                 equal: ["alertname", "namespace"]
-                # InfoInhibitor suppresses lone infor alerts,
-                # They only appear again alongside warning/critical in the same namespace.
+                # InfoInhibitor suppresses lone info alerts; they only
+                # surface alongside a warning/critical in the same namespace.
               - source_matchers: [alertname = "InfoInhibitor"]
                 target_matchers: [severity = "info"]
                 equal: ["namespace"]
