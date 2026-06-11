@@ -86,6 +86,13 @@ and only a host hard-reboot recovers. Use a LAN session or the host
 console with the VPN disconnected. See
 `docs/lessons/infra/wireguard-lxc-dstate-freeze.md`.
 
+## Alpine LXCs: busybox crond doesn't notice appended crontabs
+
+busybox crond only re-reads `/etc/crontabs` when the *directory* mtime
+changes; appending a line to `/etc/crontabs/root` doesn't touch it, so
+the new entry silently never runs. `rc-service crond restart` after
+editing. (Bit the cloudflare-ddns move to LXC 101.)
+
 ## Collabora securityContext
 
 `appArmorProfile: {type: Unconfined}` must be the securityContext
