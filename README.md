@@ -10,11 +10,12 @@ that's a bug.
 ## What runs here
 
 Things I host for me: Gitea (this repo), Nextcloud (files, calendar,
-contacts), Kiwix (offline Wikipedia), an AMP game server, the Proxmox
-web UI, and Technitium for LAN DNS. The first three live in k3s.
-AMP, Proxmox and Technitium stay on LXCs and get proxied through the
-cluster's Traefik so the routing is uniform. VictoriaMetrics + Grafana +
-Alertmanager runs in-cluster for metrics, dashboards, and email alerts.
+contacts), Collabora (in-browser docs for Nextcloud), Kiwix (offline
+Wikipedia), an AMP game server, the Proxmox web UI, and Technitium for
+LAN DNS. The first four live in k3s. AMP, Proxmox and Technitium stay
+on LXCs and get proxied through the cluster's Traefik so the routing is
+uniform. VictoriaMetrics + Grafana + Alertmanager runs in-cluster for
+metrics, dashboards, and email alerts.
 
 Public stuff comes in via a Cloudflare Tunnel — no port forwarding,
 no exposed IP. LAN stuff goes through Technitium so the `.lan`
@@ -28,6 +29,8 @@ only trust root and is not in this repo.
 
 **Reference**
 - **[docs/reference/architecture.md](docs/reference/architecture.md)** — how the pieces fit together. Start here.
+- **[docs/reference/services.md](docs/reference/services.md)** — what runs where, and the config facts each service depends on.
+- **[docs/reference/gotchas.md](docs/reference/gotchas.md)** — the sharp edges, one paragraph each, linked to the full lessons.
 - **[docs/reference/operations.md](docs/reference/operations.md)** — commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.
 
 **Runbooks**
