@@ -19,7 +19,7 @@ spec:
       releaseName: vm
       values: |
         # Global default: pin everything to the worker. The control node only
-        # has 3.5GiB RAM and runs the k3s control plane, so we keep workloads off
+        # has 4GiB RAM and runs the k3s control plane, so we keep workloads off
         # it. node-exporter is a DaemonSet and overrides this below so we still
         # get host metrics from control too.
         nodeSelector:
