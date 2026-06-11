@@ -1,7 +1,11 @@
 apiVersion: v1
 kind: Service
-metadata: { name: collabora, namespace: collabora }
+metadata:
+  name: collabora
+  namespace: collabora
 spec:
-  selector: { app: collabora }
+  selector:
+    app: collabora
   ports:
-    - { port: 9980, targetPort: 9980 }
+    - port: 9980
+      targetPort: 9980
