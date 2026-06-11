@@ -49,9 +49,8 @@ spec:
               valueFrom:
                 secretKeyRef: { name: collabora-admin, key: password }
           securityContext:
-            appArmorContext:
-              appArmorProfile:
-                type: Unconfined
+            appArmorProfile:
+              type: Unconfined
             capabilities:
               add: ["SYS_ADMIN", "MKNOD", "SYS_CHROOT", "FOWNER", "CHOWN"]
           resources:
