@@ -5,6 +5,11 @@ metadata:
   namespace: gitea
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate: gitea-data is a Longhorn RWO PVC, so only
+  # one pod can mount it at a time — a rolling update would deadlock waiting
+  # for the old pod to release the volume.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: gitea
@@ -15,7 +20,7 @@ spec:
     spec:
       initContainers:
         - name: config-init
-          image: alpine
+          image: alpine:3.20
           command:
             - sh
             - -c
@@ -133,6 +138,19 @@ spec:
           volumeMounts:
             - name: gitea-data
               mountPath: /data
+          resources:
+            requests: { memory: "256Mi", cpu: "100m" }
+            limits: { memory: "1Gi" }
+          # Gitea exposes an unauthenticated health endpoint at /api/healthz.
+          # The startup probe covers slow first boots (migrations after an
+          # image bump); liveness catches a hung process afterwards.
+          startupProbe:
+            httpGet: { path: /api/healthz, port: 3000 }
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/healthz, port: 3000 }
+            periodSeconds: 30
       volumes:
         - name: gitea-data
           persistentVolumeClaim:

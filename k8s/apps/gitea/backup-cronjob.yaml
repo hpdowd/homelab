@@ -33,6 +33,18 @@ spec:
       backoffLimit: 1
       template:
         spec:
+          # Co-locate with the live Gitea pod: this pod mounts the RWO PVC
+          # while Gitea is still running (the scale-to-0 happens later, inside
+          # the script), and Longhorn RWO volumes only attach to one node.
+          # Today everything lands on the single worker anyway — this makes
+          # that explicit so a second node doesn't silently break the backup.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: gitea
+                  topologyKey: kubernetes.io/hostname
           serviceAccountName: backup-sa
           restartPolicy: OnFailure
           volumes:
@@ -69,15 +81,17 @@ spec:
                   echo "[backup] Installing restic + curl..."
                   apk add --no-cache --quiet restic curl
 
+                  # CRITICAL: scale Gitea back up no matter how this ends.
+                  # Registered before the scale-down so there is no window
+                  # where a failure leaves Gitea offline.
+                  trap 'echo "[backup] ERROR — scaling Gitea back up"; scale 1' ERR
+
                   echo "[backup] Scaling Gitea down..."
                   scale 0
                   # 30s is enough for a single-pod deployment to terminate
                   # and Longhorn to detach the volume.
                   sleep 30
                   echo "[backup] Gitea scaled down"
-
-                  # CRITICAL: scale Gitea back up no matter how this ends.
-                  trap 'echo "[backup] ERROR — scaling Gitea back up"; scale 1' ERR
 
                   echo "[backup] Init restic repo if needed..."
                   restic snapshots --quiet 2>/dev/null || restic init
