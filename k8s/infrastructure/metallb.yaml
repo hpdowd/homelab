@@ -8,7 +8,9 @@ spec:
   source:
     repoURL: https://metallb.github.io/metallb
     chart: metallb
-    targetRevision: "0.14.x"
+    # Pin to a specific chart version (same reasoning as victoria-metrics.yaml):
+    # floating "0.14.x" lets an autosync roll new versions in unattended.
+    targetRevision: 0.14.9
   destination:
     server: https://kubernetes.default.svc
     namespace: metallb-system
@@ -18,3 +20,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # MetalLB's CRDs are too large for the client-side-apply
+      # last-applied-configuration annotation, which left the bgppeers CRD
+      # permanently OutOfSync. Server-side apply diffs against the live
+      # object instead.
+      - ServerSideApply=true

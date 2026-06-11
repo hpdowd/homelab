@@ -15,7 +15,10 @@ spec:
     spec:
       containers:
         - name: cloudflared
-          image: cloudflare/cloudflared:latest
+          # Pinned: this is the public ingress path — a silently-pulled new
+          # :latest on a pod restart is the wrong time to discover a breaking
+          # change. Bump deliberately.
+          image: cloudflare/cloudflared:2026.6.0
           args:
             - tunnel
             - --no-autoupdate
