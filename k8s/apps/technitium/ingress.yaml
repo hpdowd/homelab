@@ -4,6 +4,7 @@ metadata:
   name: technitium
   namespace: technitium
 spec:
+  ingressClassName: traefik
   rules:
     - host: technitium.lan
       http:

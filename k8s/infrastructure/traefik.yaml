@@ -8,7 +8,9 @@ spec:
   source:
     repoURL: https://helm.traefik.io/traefik
     chart: traefik
-    targetRevision: "34.x"
+    # Pin to a specific chart version (same reasoning as victoria-metrics.yaml):
+    # floating "34.x" lets an autosync roll new versions in unattended.
+    targetRevision: 34.5.0
     helm:
       values: |
         deployment:
