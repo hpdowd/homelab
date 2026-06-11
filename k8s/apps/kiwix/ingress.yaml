@@ -3,9 +3,8 @@ kind: Ingress
 metadata:
   name: kiwix
   namespace: kiwix
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
+  ingressClassName: traefik
   rules:
     - host: wiki.lan
       http:
