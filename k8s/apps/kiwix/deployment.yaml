@@ -13,7 +13,7 @@ spec:
     spec:
       initContainers:
         - name: fix-permissions
-          image: busybox
+          image: busybox:1.37
           command: ["sh", "-c", "chmod 777 /data"]
           volumeMounts:
             - name: data
@@ -25,7 +25,6 @@ spec:
           args: ["kiwix-serve --port=8080 /data/*.zim"]
           ports:
             - containerPort: 8080
-              targetPort: 8080
           volumeMounts:
             - name: data
               mountPath: /data
