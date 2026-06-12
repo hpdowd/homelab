@@ -19,6 +19,10 @@ spec:
         app: gitea
     spec:
       initContainers:
+        # Regenerates app.ini from this heredoc on EVERY pod start — git is
+        # the source of truth for Gitea config. Edit it here, not in the
+        # running pod (hand edits are wiped on the next restart). Secrets are
+        # injected via env at render time so they stay out of the repo.
         - name: config-init
           image: alpine:3.20
           command:

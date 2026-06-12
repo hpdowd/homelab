@@ -103,3 +103,13 @@ Retention 7 daily / 4 weekly / 3 monthly. Credentials in a
 in the password manager — losing it loses the backups.** The why: ADR
 004. Restore: `docs/runbooks/restore-procedure.md` (including the
 test-restore log).
+
+What is *not* backed up, knowingly:
+
+- **AMP (LXC 102) and Technitium (LXC 100)** — both on `local-lvm`, so
+  neither the nightly ZFS snapshots (tank only) nor vzdump (no jobs
+  configured) covers them. Loss means rebuilding by hand: reinstall +
+  re-add the DNS zones / game server config. Accepted for now; revisit
+  if either accumulates state worth keeping.
+- **QBittorrent (VM 201)** — disposable by design, currently stopped.
+- **Monitoring TSDB** — regenerable, see ADR 005.

@@ -1,3 +1,10 @@
+# The app-of-apps root. This is the only manifest ever applied by hand
+# (kubectl apply -f, rebuild runbook step 6) — it watches k8s/apps/ and
+# creates every other Application from the <name>.yaml files it finds there.
+#
+# Discovery is NON-recursive: a subdirectory without a matching top-level
+# <name>.yaml is silently ignored. That one cost a day once — see
+# docs/lessons/k8s/grafana-monitoring-sync-cascade.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

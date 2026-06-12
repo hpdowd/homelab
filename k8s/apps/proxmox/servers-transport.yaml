@@ -1,3 +1,6 @@
+# Proxmox serves a self-signed cert on :8006. Traefik would refuse the
+# backend connection without this. LAN-internal hop only — the public side
+# still gets a real cert from Cloudflare.
 apiVersion: traefik.io/v1alpha1
 kind: ServersTransport
 metadata:

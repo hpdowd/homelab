@@ -1,3 +1,7 @@
+# LAN IPs MetalLB may hand to LoadBalancer Services, announced over ARP
+# (L2). Outside the router's DHCP range. In practice only .200 is in use —
+# Traefik pins it via annotation, and Technitium points *.lan and
+# *.henrydowd.dev at it.
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:

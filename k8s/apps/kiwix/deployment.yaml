@@ -12,6 +12,9 @@ spec:
       labels: { app: kiwix }
     spec:
       initContainers:
+        # Fresh Longhorn volumes come up root-owned; kiwix-serve runs as a
+        # non-root user and needs to read the ZIMs. Blunt but fine — the
+        # volume only ever holds public wiki dumps.
         - name: fix-permissions
           image: busybox:1.37
           command: ["sh", "-c", "chmod 777 /data"]
@@ -21,6 +24,10 @@ spec:
       containers:
         - name: kiwix
           image: ghcr.io/kiwix/kiwix-serve:3.7.0
+          # Via sh -c so the *.zim glob expands at startup — ZIM dumps are
+          # copied onto the PVC by hand (kubectl cp), and this picks up
+          # whatever is there without listing filenames in the manifest.
+          # New ZIM = restart the pod.
           command: ["sh", "-c"]
           args: ["kiwix-serve --port=8080 /data/*.zim"]
           ports:

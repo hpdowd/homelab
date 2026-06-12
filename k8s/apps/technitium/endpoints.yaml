@@ -1,3 +1,7 @@
+# Ingress glue for the Technitium ADMIN UI only (LXC 100, :5380). The DNS
+# server itself runs on the LXC and is deliberately outside the cluster —
+# the cluster depends on it for *.lan, so it can't live inside the thing it
+# serves. Same selectorless-Service + EndpointSlice pattern as amp/.
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
 metadata:

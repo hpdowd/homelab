@@ -1,3 +1,5 @@
+# Deliberately no selector — the backend is the hand-written EndpointSlice
+# in endpoints.yaml (LXC 102), not pods.
 apiVersion: v1
 kind: Service
 metadata:

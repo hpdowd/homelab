@@ -10,6 +10,8 @@ spec:
     - name: http
       port: 3000
       targetPort: 3000
+    # Cluster-internal only. The tunnel is HTTP-only, so git-over-ssh isn't
+    # reachable from outside — use HTTPS remotes (or the LAN/VPN).
     - name: ssh
       port: 2222
       targetPort: 2222
