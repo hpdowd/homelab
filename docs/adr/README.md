@@ -8,6 +8,7 @@ Each ADR has a **Status** (Accepted / Superseded) and a **Superseded By** line s
 |---|---|
 | 004-restic-b2-bckup.md | Offsite backup with restic to Backblaze B2 |
 | 005-victoria-metrics-monitoring.md | VictoriaMetrics single-node over kube-prometheus-stack |
+| 006-immich.md | Immich: public before Authelia, raw manifests, 100MB tunnel cap accepted, backed up from day one |
 
 Numbering starts at 004: decisions 001–003 (k3s itself, GitOps via
 ArgoCD, Longhorn PVC over hostPath for the Nextcloud migration) predate
