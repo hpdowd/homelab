@@ -203,5 +203,11 @@ one.)
 
 | Service   | Last test restore | Result |
 |-----------|-------------------|--------|
-| Nextcloud | (pending)         |        |
-| Gitea     | (pending)         |        |
+| Nextcloud | 2026-06-12        | OK — `restic check` clean, 10% read-data clean (182 packs), DB dump restored + `pg_restore --list` valid (1642 TOC entries, PG 18.4), config + sample dirs restored from B2 sha256-identical to live. One dir "missing" turned out to be created an hour *after* the snapshot — expected. |
+| Gitea     | 2026-06-12        | OK — `restic check --read-data` clean (100% of packs), full restore, `PRAGMA integrity_check` = ok on the restored SQLite DB, all 12 repos present in `/data/git/henry/`. |
+
+Notes from the 2026-06-12 run: in-cluster throwaway pods with each
+namespace's `backup-credentials` (the pattern in operations.md) work fine
+for this. Give the pod an `ephemeral-storage` limit — a full restore of
+the Nextcloud data set fills the worker's root disk and gets the pod
+evicted. Restore a bounded `--include` instead.

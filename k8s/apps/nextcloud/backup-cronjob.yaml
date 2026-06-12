@@ -100,13 +100,19 @@ spec:
                   N=1
                   while [ "$N" -le "$MAX" ]; do
                     echo "[backup] Data backup attempt ${N}/${MAX}..."
+                    # Excludes match the nextcloud:33-apache layout: the PVC
+                    # root is /var/www/html, so the datadirectory is /data/data
+                    # in here. (The original excludes used AIO-era paths like
+                    # /data/nextcloud/* and /data/appdata_* that matched
+                    # nothing — previews were silently included in every
+                    # backup. Caught during the 2026-06-12 test restore.)
                     if restic backup /data \
                           --tag nextcloud-data \
                           -o s3.connections=2 \
-                          --exclude="/data/nextcloud/.opcache" \
-                          --exclude="/data/nextcloud/cache" \
-                          --exclude="/data/appdata_*/preview" \
-                          --exclude="/data/appdata_*/thumbnails"; then
+                          --exclude="/data/data/appdata_*/preview" \
+                          --exclude="/data/data/appdata_*/thumbnails" \
+                          --exclude="/data/data/nextcloud.log" \
+                          --exclude="/data/data/audit.log*"; then
                       echo "[backup] Data backup complete"
                       break
                     fi
