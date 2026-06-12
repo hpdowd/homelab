@@ -31,6 +31,20 @@ spec:
           enabled: true
           isDefaultClass: true
 
+        # Traefik v3 defaults readTimeout to 60s (v2: unlimited) — kills any
+        # request whose body takes >60s to send, i.e. large Immich/Nextcloud
+        # uploads on slow links. 0 = disabled. Cloudflare's 100MB tunnel cap
+        # (ADR 006) is separate and unaffected.
+        ports:
+          web:
+            transport:
+              respondingTimeouts:
+                readTimeout: 0
+          websecure:
+            transport:
+              respondingTimeouts:
+                readTimeout: 0
+
         logs:
           general:
             level: INFO
