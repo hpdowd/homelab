@@ -1,3 +1,7 @@
+# Second-level app-of-apps: root-app creates this, and this creates the
+# Applications in k8s/infrastructure/ (MetalLB, Traefik, cloudflared,
+# VictoriaMetrics). Keeps platform pieces in their own directory instead of
+# mixing them in with the services.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

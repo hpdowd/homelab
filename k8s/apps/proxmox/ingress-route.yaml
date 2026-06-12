@@ -1,3 +1,7 @@
+# IngressRoute instead of a plain Ingress because the backend speaks HTTPS
+# with a self-signed cert on :8006 — a plain Ingress can't say "talk https
+# to the backend and skip verification", this + servers-transport.yaml can.
+# Background: docs/lessons/networking/proxmox-502-selfsigned-tunnel.md.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:

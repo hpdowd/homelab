@@ -1,3 +1,11 @@
+# The public-ingress path: this pod dials OUT to Cloudflare and keeps the
+# tunnel open, so no ports are forwarded on the router and the home IP stays
+# unpublished. Cloudflare terminates TLS at the edge and the tunnel delivers
+# plain HTTP to Traefik's `web` entrypoint — which is why no Ingress here may
+# pin `router.entrypoints: websecure` (see gotchas.md).
+#
+# The tunnel token comes from the cloudflared-token SealedSecret. Replacing
+# the tunnel = new token = reseal.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
