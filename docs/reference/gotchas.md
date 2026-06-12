@@ -48,6 +48,14 @@ with `helm template` against the pinned chart version. See
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 
+## Service-link env vars
+
+kubelet injects docker-link-style vars (`<SVC>_PORT=tcp://ip:port`) for
+every Service in the namespace. An app that reads an env var named like
+your Service crash-loops on boot — Immich's `REDIS_PORT` met the `redis`
+Service this way. `enableServiceLinks: false` on the pod spec turns the
+whole legacy mechanism off.
+
 ## Longhorn
 
 - RWO volumes mean `strategy: Recreate` on every Deployment that mounts

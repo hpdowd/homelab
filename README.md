@@ -10,12 +10,12 @@ that's a bug.
 ## What runs here
 
 Things I host for me: Gitea (this repo), Nextcloud (files, calendar,
-contacts), Collabora (in-browser docs for Nextcloud), Kiwix (offline
-Wikipedia), an AMP game server, the Proxmox web UI, and Technitium for
-LAN DNS. The first four live in k3s. AMP, Proxmox and Technitium stay
-on LXCs and get proxied through the cluster's Traefik so the routing is
-uniform. VictoriaMetrics + Grafana + Alertmanager runs in-cluster for
-metrics, dashboards, and email alerts.
+contacts), Immich (photos), Collabora (in-browser docs for Nextcloud),
+Kiwix (offline Wikipedia), an AMP game server, the Proxmox web UI, and
+Technitium for LAN DNS. The first five live in k3s. AMP, Proxmox and
+Technitium stay on LXCs and get proxied through the cluster's Traefik
+so the routing is uniform. VictoriaMetrics + Grafana + Alertmanager
+runs in-cluster for metrics, dashboards, and email alerts.
 
 Public stuff comes in via a Cloudflare Tunnel — no port forwarding,
 no exposed IP. LAN stuff goes through Technitium so the `.lan`

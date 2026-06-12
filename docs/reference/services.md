@@ -13,6 +13,7 @@ for how a request actually flows see architecture.md.
 | Nextcloud | nextcloud.lan | nextcloud.henrydowd.dev | k3s pod (`nextcloud` ns) |
 | Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) |
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) |
+| Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
 | Grafana | grafana.lan | grafana.henrydowd.dev | k3s pod (`monitoring` ns) |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 |
 | Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) |
@@ -82,6 +83,28 @@ pattern as AMP and Proxmox (see architecture.md).
   ~55s cold opens. See
   `docs/lessons/k8s/collabora-slow-load-wordbook.md`.
 
+## Immich
+
+- Images: `immich-server` + `immich-machine-learning` v2.7.5, plus
+  Immich's own `postgres:14-vectorchord` build — the three are
+  version-paired, bump them together from the release's docker-compose
+  (see ADR 006).
+- Storage: Longhorn PVC `immich-library` 200Gi at `/data` (originals,
+  thumbs, encoded video) · `immich-db` 10Gi · ML model cache 10Gi on
+  local-path (regenerable).
+- Cache/queue: Valkey, no persistence.
+- SealedSecrets: `immich-secrets` (DB password) ·
+  `backup-credentials` (B2 + restic, repo `.../immich`).
+- Everything pinned to the worker; the ML container has the biggest
+  memory limit in the cluster (3Gi) — it's the thing to watch during a
+  big import.
+- **Uploads >100MB fail through the Cloudflare tunnel** (per-request
+  cap). At home this never applies — split-horizon sends
+  `immich.henrydowd.dev` straight to Traefik. Remote large videos: use
+  the WireGuard VPN, or let the app retry when the phone gets home.
+- Backup: 04:00 nightly to `hpd.homelab/immich`, `thumbs/` and
+  `encoded-video/` excluded as regenerable.
+
 ## Gitea
 
 - Image: `gitea/gitea` (pinned in the deployment).
@@ -97,7 +120,8 @@ pattern as AMP and Proxmox (see architecture.md).
 restic → Backblaze B2, bucket `hpd.homelab`
 (`s3.eu-central-003.backblazeb2.com`). Per-service repos:
 `.../nextcloud` (03:00, no downtime, tags `nextcloud-data` +
-`nextcloud-db`) and `.../gitea` (03:30, scales to 0, tag `gitea-data`).
+`nextcloud-db`) · `.../gitea` (03:30, scales to 0, tag `gitea-data`) ·
+`.../immich` (04:00, no downtime, tags `immich-data` + `immich-db`).
 Retention 7 daily / 4 weekly / 3 monthly. Credentials in a
 `backup-credentials` SealedSecret per namespace; **`RESTIC_PASSWORD` is
 in the password manager — losing it loses the backups.** The why: ADR
