@@ -1,0 +1,15 @@
+# Lives in the traefik namespace so the TLSStore can reference the secret
+# (Traefik doesn't read secrets cross-namespace by default).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: henrydowd-dev
+  namespace: traefik
+spec:
+  secretName: henrydowd-dev-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - henrydowd.dev
+    - "*.henrydowd.dev"

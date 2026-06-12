@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    # Pinned exactly (same reasoning as traefik.yaml) — verified via
+    # `helm search repo jetstack/cert-manager` 2026-06-12.
+    targetRevision: v1.20.2
+    helm:
+      values: |
+        crds:
+          enabled: true
+
+        # Control node is RAM-starved (4GiB, MemAvailable has hit 0.12GiB);
+        # keep everything on the worker like the VM stack.
+        nodeSelector:
+          kubernetes.io/hostname: k3s-worker1
+        webhook:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
+        cainjector:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
+        startupapicheck:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
