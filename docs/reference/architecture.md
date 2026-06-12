@@ -176,12 +176,12 @@ A few things I deliberately keep on LXCs:
 ## A note on memory
 
 The thing that constrains every "should I add X" decision is RAM.
-After the two k3s VMs reserve theirs, the host has maybe 6GB left for
+After the two k3s VMs reserve theirs, the host has maybe 5GB left for
 ZFS ARC, the Proxmox process, and the LXCs that didn't migrate. So
 when something says "needs 1.5GB", that's a real percentage of what's
 left. It's why I keep picking the lighter option (VictoriaMetrics
-single-node, Authelia over Authentik) and why Immich is still on the
-bench.
+single-node, Authelia over Authentik), and why Immich waited for the
+headroom report before getting deployed (it's in now — ADR 006).
 
 One nuance, though: that ~6GB host limit only bites things that live
 *outside* the k3s VMs (LXCs, another VM). The worker VM already reserves

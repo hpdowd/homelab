@@ -5,6 +5,13 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab — Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-06-12:** both candidates below are deployed —
+> Collabora (phase 6d) and Immich (phase 6c, ADR 006). Immich went in on
+> a ~6-day baseline showing a 7.9GiB worker minimum; post-deploy idle is
+> ~6.8GiB available. The feasibility numbers below are kept as the
+> record of the decision. Still owed: watch `MemAvailable` through the
+> first big library import, and re-pull the distribution afterwards.
+
 ## The reframing that actually matters
 
 The host's tight ~6GB free is **not** the constraint for in-cluster
