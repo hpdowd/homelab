@@ -76,18 +76,30 @@ Install via Helm (or the official manifest). Point its data dir at
 kubectl annotate sc longhorn storageclass.kubernetes.io/is-default-class="true"
 ```
 
-Set the default replica count to 1 (single-worker reality) and keep
-replicas off the control node — it only has the 29G OS disk:
+Set the replica count to 1 (single-worker reality) and keep replicas
+off the control node — it only has the 29G OS disk. **Two knobs, both
+matter:** the `default-replica-count` setting only covers volumes whose
+StorageClass doesn't say otherwise, and the stock `longhorn`
+StorageClass hardcodes `numberOfReplicas: "3"` — so new PVCs ignore the
+setting unless the StorageClass (via its source ConfigMap) is fixed too:
 
 ```bash
 kubectl -n longhorn-system patch settings.longhorn.io default-replica-count \
   --type=merge -p '{"value":"{\"v1\":\"1\",\"v2\":\"1\"}"}'
+# the SC is immutable but Longhorn regenerates it from this ConfigMap:
+kubectl -n longhorn-system get cm longhorn-storageclass \
+  -o jsonpath='{.data.storageclass\.yaml}' \
+  | sed 's/numberOfReplicas: "3"/numberOfReplicas: "1"/' > /tmp/sc.yaml
+kubectl -n longhorn-system create cm longhorn-storageclass \
+  --from-file=storageclass.yaml=/tmp/sc.yaml --dry-run=client -o yaml \
+  | kubectl apply -f -
 kubectl -n longhorn-system patch nodes.longhorn.io k3s-control \
   --type=merge -p '{"spec":{"allowScheduling":false}}'
 ```
 
 (The node object only exists once Longhorn has started on it — if the
-patch 404s, wait and retry.)
+patch 404s, wait and retry. Confirm with
+`kubectl get sc longhorn -o jsonpath='{.parameters.numberOfReplicas}'`.)
 
 **Verify it actually took, after the first PVCs exist:**
 

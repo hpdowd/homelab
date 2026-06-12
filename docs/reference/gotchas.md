@@ -63,9 +63,14 @@ whole legacy mechanism off.
 - A CronJob sharing a RWO PVC with a live pod needs `podAffinity` to
   co-schedule on the same node, or it hits Multi-Attach errors.
 - Replica count is **1, worker only** (single usable storage node — see
-  ADR 005's RAM/disk reasoning). If `default-replica-count` ever drifts
-  back to 3, every volume sits permanently `degraded` and replicas land
-  on the control node's OS disk. Verify after any Longhorn reinstall:
+  ADR 005's RAM/disk reasoning). Two places control it and both have
+  bitten: the `default-replica-count` *setting*, and the
+  `numberOfReplicas` *parameter* baked into the `longhorn` StorageClass
+  (which wins for every dynamically provisioned PVC — the first Immich
+  volumes came up degraded at 3 replicas hours after the setting was
+  fixed). The SC is regenerated from the `longhorn-storageclass`
+  ConfigMap; fix it there, commands in cluster-rebuild.md step 3.
+  Verify after any Longhorn reinstall *and after adding any service*:
   `kubectl -n longhorn-system get volumes.longhorn.io` — every volume
   should say `healthy`, not `degraded`.
 
