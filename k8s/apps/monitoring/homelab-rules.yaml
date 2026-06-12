@@ -152,7 +152,7 @@ spec:
         # find out when you need it. Fire on the first failed run.
         - alert: BackupJobFailed
           expr: |
-            kube_job_status_failed{namespace=~"nextcloud|gitea", job_name=~".*backup.*"} > 0
+            kube_job_status_failed{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"} > 0
           for: 1m
           labels:
             severity: critical
@@ -166,7 +166,7 @@ spec:
         - alert: BackupJobMissing
           expr: |
             time() - max by (namespace) (
-              kube_job_status_completion_time{namespace=~"nextcloud|gitea", job_name=~".*backup.*"}
+              kube_job_status_completion_time{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"}
             ) > 26 * 3600
           for: 1h
           labels:

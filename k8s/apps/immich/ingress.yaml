@@ -1,0 +1,31 @@
+# Public + LAN, like Nextcloud. Split-horizon does the heavy lifting: at home
+# immich.henrydowd.dev resolves straight to Traefik, so phone backup on home
+# WiFi never touches the tunnel. Away from home, uploads ride the Cloudflare
+# tunnel, which caps requests at 100MB — large videos fail until the phone is
+# home (or on the WireGuard VPN). Known and accepted — see ADR 006.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: immich
+  namespace: immich
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: immich.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: immich-server
+                port: { number: 2283 }
+    - host: immich.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: immich-server
+                port: { number: 2283 }
