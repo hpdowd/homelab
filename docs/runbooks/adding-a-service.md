@@ -54,6 +54,15 @@ the LAN) that I want to proxy through Traefik for routing uniformity.
    - Probes: at minimum a `livenessProbe`. If the app takes a while to
      start (Nextcloud first boot, anything that runs migrations), add a
      `startupProbe` too with a generous `failureThreshold`.
+   - Consider `enableServiceLinks: false`. kubelet injects
+     `<SVC>_PORT=tcp://...` vars for every Service in the namespace, and
+     apps that read an env var by that name crash on boot — Immich's
+     `REDIS_PORT` did exactly this (see gotchas.md).
+   - If the service gets backed up later, remember the Longhorn replica
+     check: after the PVC is bound,
+     `kubectl -n longhorn-system get volumes.longhorn.io` should show
+     the new volume `healthy` — `degraded` means the StorageClass
+     replica default has drifted again (gotchas.md).
 
 6. **A Service** — a normal ClusterIP Service pointing at the
    Deployment's pods. Nothing fancy.

@@ -16,8 +16,9 @@ CronJobs.
 - restic on your machine, OR a willingness to run it inside a throwaway pod
   (snippet below).
 
-A note on which repo path to use: the restic repo URL ends in either
-`/nextcloud` or `/gitea`. Swap the suffix depending on what you're restoring.
+A note on which repo path to use: the restic repo URL ends in
+`/nextcloud`, `/gitea`, or `/immich`. Swap the suffix depending on what
+you're restoring.
 And the URL has to start with `s3:https://` — without the `s3:` prefix,
 restic treats it as a local-disk path, "succeeds" writing to the pod's
 ephemeral storage, and you get nothing. I learned this the painful way.
@@ -180,6 +181,68 @@ you're back.
 
 ---
 
+## Restoring Immich
+
+Two snapshots per night, same shape as Nextcloud:
+
+- `immich-data` — the library PVC (`/data` in the pod: originals under
+  `upload/` and `library/`, profile pictures, server-side backups).
+  `thumbs/` and `encoded-video/` are NOT in the backup — Immich
+  regenerates them, see below.
+- `immich-db` — `pg_dump` of the `immich` database in custom format.
+
+### 1. Bring it up empty, scale the server to 0
+
+Let ArgoCD create the namespace, PVCs, Postgres and Redis, then:
+
+```bash
+kubectl scale deployment immich-server -n immich --replicas=0
+```
+
+Leave Postgres running for step 3.
+
+### 2. Restore the library into the PVC
+
+Pod that mounts `immich-library`, then:
+
+```bash
+restic snapshots --tag immich-data
+restic restore latest --tag immich-data --target /restore-target
+# The snapshot's /data maps to the PVC root.
+```
+
+### 3. Restore the database
+
+```bash
+restic restore latest --tag immich-db --target /tmp/db-restore
+# yields /tmp/db-restore/dump/immich_db.dump
+
+PGPASSWORD=<db_pass> psql -h postgres.immich -U postgres -d postgres \
+  -c "DROP DATABASE immich;" \
+  -c "CREATE DATABASE immich OWNER postgres;"
+
+PGPASSWORD=<db_pass> pg_restore -h postgres.immich -U postgres \
+  -d immich /tmp/db-restore/dump/immich_db.dump
+```
+
+The DB password is in the `immich-secrets` SealedSecret (and the password
+manager). Postgres must be the same paired image from the manifests —
+the dump carries VectorChord-backed tables, a vanilla postgres won't
+load the extension.
+
+### 4. Start the server, regenerate derivatives
+
+```bash
+kubectl scale deployment immich-server -n immich --replicas=1
+```
+
+Log in, confirm the timeline shows assets. Thumbnails will be missing —
+queue the regeneration jobs in the admin UI (Administration → Jobs →
+"Generate Thumbnails", and "Transcode Videos" if needed). The library is
+usable while they grind through.
+
+---
+
 ## Pulling out a single file
 
 You don't always need a full restore. restic can mount the repo as a
@@ -205,6 +268,7 @@ one.)
 |-----------|-------------------|--------|
 | Nextcloud | 2026-06-12        | OK — `restic check` clean, 10% read-data clean (182 packs), DB dump restored + `pg_restore --list` valid (1642 TOC entries, PG 18.4), config + sample dirs restored from B2 sha256-identical to live. One dir "missing" turned out to be created an hour *after* the snapshot — expected. |
 | Gitea     | 2026-06-12        | OK — `restic check --read-data` clean (100% of packs), full restore, `PRAGMA integrity_check` = ok on the restored SQLite DB, all 12 repos present in `/data/git/henry/`. |
+| Immich    | (pending)         | Repo seeded + first snapshot verified on deploy day (2026-06-12), but no test restore yet — do one once the library has real photos in it. |
 
 Notes from the 2026-06-12 run: in-cluster throwaway pods with each
 namespace's `backup-credentials` (the pattern in operations.md) work fine

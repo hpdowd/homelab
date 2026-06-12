@@ -191,7 +191,8 @@ restic snapshots         # list what's in the repo
 restic check             # verify integrity. Cheap. Run after anything weird
 ```
 
-For Gitea, same but swap the URL's last segment.
+For Gitea or Immich, same but swap the URL's last segment
+(`/gitea`, `/immich`).
 
 To run that same check *inside* the cluster using the already-sealed
 credentials:
