@@ -14,14 +14,22 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: metallb-system
+  # MetalLB's controller injects a rotating caBundle into the CRD conversion
+  # webhook at runtime; the chart ships it empty, so the bgppeers CRD showed
+  # a permanent OutOfSync diff. Ignore that one field.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/conversion/webhook/clientConfig/caBundle
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # MetalLB's CRDs are too large for the client-side-apply
-      # last-applied-configuration annotation, which left the bgppeers CRD
-      # permanently OutOfSync. Server-side apply diffs against the live
-      # object instead.
+      # Server-side apply: MetalLB's CRDs are too large for the client-side
+      # last-applied-configuration annotation.
       - ServerSideApply=true
+      # Don't overwrite the ignored caBundle field when syncing.
+      - RespectIgnoreDifferences=true
