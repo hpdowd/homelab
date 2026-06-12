@@ -76,12 +76,30 @@ Install via Helm (or the official manifest). Point its data dir at
 kubectl annotate sc longhorn storageclass.kubernetes.io/is-default-class="true"
 ```
 
-Set the default replica count to 1 (single-worker reality):
+Set the default replica count to 1 (single-worker reality) and keep
+replicas off the control node — it only has the 29G OS disk:
 
 ```bash
-kubectl -n longhorn-system edit setting default-replica-count
-# value: "1"
+kubectl -n longhorn-system patch settings.longhorn.io default-replica-count \
+  --type=merge -p '{"value":"{\"v1\":\"1\",\"v2\":\"1\"}"}'
+kubectl -n longhorn-system patch nodes.longhorn.io k3s-control \
+  --type=merge -p '{"spec":{"allowScheduling":false}}'
 ```
+
+(The node object only exists once Longhorn has started on it — if the
+patch 404s, wait and retry.)
+
+**Verify it actually took, after the first PVCs exist:**
+
+```bash
+kubectl -n longhorn-system get volumes.longhorn.io
+# every volume: robustness "healthy", not "degraded"
+```
+
+This bit once: the setting never got applied, the default stayed 3, and
+every volume sat permanently degraded — with replicas quietly landing on
+the control node's OS disk — until a review caught it months later. A
+degraded volume on this cluster is *always* wrong; see gotchas.md.
 
 Turn on the daily snapshot schedule in the Longhorn UI (retain 7).
 
