@@ -12,9 +12,22 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: gitea
+  # The backup CronJob scales this deployment to 0 for a consistent SQLite
+  # copy. With selfHeal watching replicas, ArgoCD scaled it straight back up
+  # within seconds — every nightly backup actually ran against a live Gitea
+  # (caught 2026-06-12 by watching a manual run). Ignore replicas so the
+  # job's scale-down holds; nothing else manages that field.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: gitea
+      namespace: gitea
+      jsonPointers:
+        - /spec/replicas
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
