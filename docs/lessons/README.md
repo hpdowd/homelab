@@ -27,3 +27,4 @@ Use `TEMPLATE.md` for new entries. Each entry covers: date · context · symptom
 | networking/vodafone-hub-ghost-portforward.md | networking | Vodafone Hub silently wiped port-forward rules after DHCP change |
 | k8s/argocd-selfheal-backup-race.md | k8s | selfHeal reverted the Gitea backup's scale-to-0 within seconds — every "consistent" SQLite backup actually ran against a live Gitea. Fixed with ignoreDifferences on replicas |
 | storage/zfs-snapshot-retention-noop.md | storage | Nightly ZFS prune failed silently since setup (`zfs destroy` multi-arg) — and its selection logic would have deleted the wrong snapshots if it had worked |
+| networking/certmanager-dns01-split-horizon.md | networking | First wildcard issuance stuck twice: Technitium answers the local zone's NS as `technitium.` (poisons the DNS-01 self-check), then the Vodafone hub turned out to drop *all* outbound port 53 — self-check moved to DoH. Also exposed Collabora's silently broken DNS hairpin |

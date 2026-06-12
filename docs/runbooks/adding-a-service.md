@@ -97,6 +97,11 @@ the LAN) that I want to proxy through Traefik for routing uniformity.
    a websecure-only router 404s public traffic. Omitting the annotation
    makes the router serve both entrypoints.
 
+   **No TLS config needed** — Traefik's `default` TLSStore already
+   serves the cert-manager wildcard for `*.henrydowd.dev` on
+   `websecure`, so LAN HTTPS is valid with zero per-service ceremony.
+   Don't add `tls:` sections or cert annotations (ADR 007).
+
 8. **The ArgoCD Application** — drop a file at `k8s/apps/<name>.yaml`
    pointing at the directory you just made:
    ```yaml

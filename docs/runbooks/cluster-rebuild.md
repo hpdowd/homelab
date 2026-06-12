@@ -177,8 +177,10 @@ credential Secret is a bootstrap object that lives only in the cluster,
 not in git. Without it root-app can fetch nothing. Token is in the
 password manager (Gitea → repo read scope).
 `--insecure-skip-server-verification` matters: with Technitium as the
-LAN's DNS, the cluster reaches `git.henrydowd.dev` through Traefik's
-self-signed cert (see gotchas.md):
+LAN's DNS, the cluster reaches `git.henrydowd.dev` through Traefik —
+and at this point in the bootstrap cert-manager doesn't exist yet, so
+Traefik is still on its self-signed default cert. (Once the wildcard
+cert syncs the flag is harmless legacy — see gotchas.md.)
 
 ```bash
 argocd repo add https://git.henrydowd.dev/henry/homelab.git \
@@ -227,7 +229,14 @@ In order of "should come up first":
 2. Traefik (will get 192.168.1.200 from MetalLB)
 3. cloudflared (the SealedSecret with the tunnel token has to decrypt
    cleanly, which means step 4 above worked)
-4. App namespaces, Postgres / Redis, then the apps themselves
+4. cert-manager + the `henrydowd-dev` Certificate in the traefik
+   namespace (its Cloudflare-token SealedSecret also depends on the
+   master key). First issuance takes a few minutes; verify with
+   `kubectl -n traefik get certificate henrydowd-dev` → `READY True`,
+   then LAN HTTPS is valid again. If it sticks at `pending`, read the
+   Challenge's `status.reason` and see
+   `docs/lessons/networking/certmanager-dns01-split-horizon.md`.
+5. App namespaces, Postgres / Redis, then the apps themselves
 
 If something's stuck, the usual suspects: Sealed Secrets master key
 isn't the right one (apps can't read their creds); the ArgoCD patch
