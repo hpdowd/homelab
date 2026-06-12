@@ -69,7 +69,9 @@ spec:
               mountPath: /data
           resources:
             requests: { memory: "512Mi", cpu: "250m" }
-            limits: { memory: "2Gi" }
+            # 2Gi OOMKilled 3x during first library import (2026-06-12) —
+            # idles at ~1.1Gi, thumbnail jobs spike past 2Gi.
+            limits: { memory: "3Gi" }
           # First boot runs DB migrations; version bumps can too. 5s * 60 =
           # 5 min of grace before k8s gives up on a start.
           startupProbe:
