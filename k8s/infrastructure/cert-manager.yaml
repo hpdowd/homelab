@@ -21,9 +21,12 @@ spec:
         # (unresolvable in-cluster), so the propagation check never passes.
         # Force the check through public resolvers — Let's Encrypt validates
         # from outside anyway, so public view is the one that matters.
+        # DoH, not :53 — the Vodafone hub blocks outbound port 53 entirely
+        # (1.1.1.1, 1.0.0.1 and 8.8.8.8 all time out from the LAN).
+        # See docs/lessons/networking/certmanager-dns01-split-horizon.md
         extraArgs:
           - --dns01-recursive-nameservers-only
-          - --dns01-recursive-nameservers=1.1.1.1:53,1.0.0.1:53
+          - --dns01-recursive-nameservers=https://1.1.1.1/dns-query,https://8.8.8.8/dns-query
 
         # Control node is RAM-starved (4GiB, MemAvailable has hit 0.12GiB);
         # keep everything on the worker like the VM stack.
