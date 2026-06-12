@@ -1,9 +1,9 @@
 # Services — what runs where, and how each one is configured
 
-The operational facts about each service that aren't obvious from its
-manifests: hostnames, backends, image/version constraints, and the
-config that has to line up for things to work. The *why* lives in the
-ADRs; the *how a request flows* lives in architecture.md.
+Hostnames, backends, image constraints, and the config that has to line
+up for each service to work — the stuff that isn't obvious from the
+manifests alone. For the reasoning behind the decisions see the ADRs;
+for how a request actually flows see architecture.md.
 
 ## Live services
 
@@ -104,7 +104,7 @@ in the password manager — losing it loses the backups.** The why: ADR
 004. Restore: `docs/runbooks/restore-procedure.md` (including the
 test-restore log).
 
-What is *not* backed up, knowingly:
+Not backed up, on purpose:
 
 - **AMP (LXC 102) and Technitium (LXC 100)** — both on `local-lvm`, so
   neither the nightly ZFS snapshots (tank only) nor vzdump (no jobs

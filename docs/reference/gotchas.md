@@ -1,9 +1,8 @@
 # Gotchas
 
-The sharp edges of this specific setup, collected in one place. Most of
-these were learned the hard way — each links to the lesson or runbook
-with the full story. If something here seems wrong, read the linked doc
-before "fixing" it.
+The sharp edges of this setup. Most were learned the hard way, and each
+entry links to the lesson or runbook with the full story. If one of
+these looks wrong, read the linked doc before fixing it.
 
 ## ArgoCD
 
@@ -22,9 +21,10 @@ orphaned — nothing syncs, nothing errors. See
 **selfHeal fights anything that scales a managed workload.** A job that
 scales a Deployment to 0 (like the Gitea backup) gets reverted within
 seconds — the backup then runs against a live app while still reporting
-success. Any scale-touching automation needs `ignoreDifferences` on
-`/spec/replicas` plus the `RespectIgnoreDifferences=true` sync option in
-that app. See `docs/lessons/k8s/argocd-selfheal-backup-race.md`.
+success. Anything that scales a managed Deployment needs
+`ignoreDifferences` on `/spec/replicas` plus the
+`RespectIgnoreDifferences=true` sync option in that app. See
+`docs/lessons/k8s/argocd-selfheal-backup-race.md`.
 
 **Inline Helm values drift silently.** An indent slip, duplicate
 top-level key (YAML last-wins), or typo'd key in a
@@ -116,9 +116,9 @@ state — don't "fix" it. See
 - Use `VMRule`/`VMServiceScrape` (VictoriaMetrics operator), **not**
   `PrometheusRule`/`ServiceMonitor` — one invalid CRD kind fails the
   whole Application's sync batch.
-- An alert on a metric nobody scrapes never fires. Pair
-  domain-critical alerts with an `absent()` guard (see
-  `LonghornMetricsAbsent` in `homelab-rules.yaml`).
+- An alert on a metric nobody scrapes never fires. Pair the important
+  ones with an `absent()` guard (see `LonghornMetricsAbsent` in
+  `homelab-rules.yaml`).
 - local-path PVCs survive namespace deletion. When reinstalling a Helm
   app after a failed deploy, delete the PVCs explicitly — a reused
   Grafana PVC with a corrupt SQLite crashed every reinstall. See

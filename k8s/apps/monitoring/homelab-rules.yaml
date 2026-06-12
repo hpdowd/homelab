@@ -121,7 +121,7 @@ spec:
         # the first version of this rule compared `== 2` and could never
         # fire. Verified against live series this time.
         # Degraded means a replica is missing; faulted is data-loss
-        # territory. Both deserve immediate attention.
+        # territory. Both need looking at straight away.
         - alert: LonghornVolumeDegraded
           expr: |
             longhorn_volume_robustness{state=~"degraded|faulted"} == 1

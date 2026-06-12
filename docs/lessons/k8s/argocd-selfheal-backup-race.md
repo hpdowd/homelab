@@ -4,8 +4,8 @@
 2026-06-12
 
 ## Time lost
-~1h. No outage — found while verifying the backup pipeline, not because
-anything visibly broke. That's the problem.
+~1h. No outage — found while verifying the backup pipeline. Nothing ever
+looked broken, which is exactly why it lasted as long as it did.
 
 ## Status
 Resolved
@@ -18,9 +18,9 @@ Resolved
   perfect.
 
 ## Symptoms
-None, which is the point. The design says: scale Gitea to 0, back up the
-idle SQLite file, scale back to 1. The job logged "Gitea scaled down" and
-succeeded nightly. Only when watching a manual run live did it show up:
+None. The backup is supposed to scale Gitea to 0, copy the idle SQLite
+file, and scale back to 1. The job logged "Gitea scaled down" and went
+green every night. It only showed up when watching a manual run live:
 
 - The Gitea pod's `creationTimestamp` landed *inside* the backup window
   (recreated seconds after the scale-down).
@@ -33,11 +33,11 @@ succeeded nightly. Only when watching a manual run live did it show up:
   successful scale-down → something restored it between polls.
 - `--show-managed-fields` → `argocd-controller` wrote `replicas` at the
   exact second the pod came back → selfHeal, not the job's trap.
-- First fix attempt *appeared* to fail: re-ran the test seconds after
-  pushing and the race recurred. Dead end explained: the gitea
+- Dead end: the first fix attempt looked like it failed — re-ran the
+  test seconds after pushing and the race recurred. Turned out the gitea
   Application object is itself synced by root-app (~3 min poll), so the
-  new `ignoreDifferences` wasn't live in the cluster yet. Confirm the
-  Application spec in-cluster before re-testing, not just the git state.
+  new `ignoreDifferences` wasn't live in the cluster yet. Check the
+  Application spec in-cluster before re-testing, not just git.
 
 ## Root cause
 `selfHeal: true` reverts any live drift from git within seconds. The
@@ -47,8 +47,8 @@ from a running instance every night. The `trap`/scale-1 logic in the job
 masked nothing — the job still exited 0.
 
 It never produced a corrupt snapshot (3:30am Gitea is idle, WAL
-checkpointed), but the consistency guarantee the whole scale-down dance
-exists for was fictional.
+checkpointed), but the consistency guarantee the scale-down exists for
+wasn't actually there.
 
 ## Fix
 Tell ArgoCD that nothing in git owns `spec.replicas` on this Deployment:

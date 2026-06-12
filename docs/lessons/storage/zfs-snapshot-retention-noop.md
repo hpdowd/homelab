@@ -4,8 +4,8 @@
 2026-06-11
 
 ## Time lost
-~0h — caught during a repo/infra review, not by an outage. Filed because
-of what it *almost* was.
+~0h — caught during a repo/infra review, not by an outage. Filed anyway
+because of how close bug 2 came to deleting real snapshot history.
 
 ## Status
 Resolved
@@ -87,9 +87,9 @@ zfs list -t snapshot -o name | grep daily | sed 's/@.*//' | sort | uniq -c
 ## Prevention
 - The script keeps a header comment pointing back at this lesson so the
   one-liner doesn't quietly come back.
-- General rule this reinforces: **a cleanup job that has never been seen
-  deleting anything should be assumed broken.** Snapshot counts are a
-  one-liner to check; do it whenever touching the host.
+- Rule of thumb: a cleanup job nobody has ever seen delete anything is
+  probably broken. Snapshot counts are a one-liner to check; do it
+  whenever touching the host.
 - Worth considering later: sanoid, which solves exactly this and adds
   monitoring hooks. Accepted the hand-rolled script for now — one pool,
   one schedule.
