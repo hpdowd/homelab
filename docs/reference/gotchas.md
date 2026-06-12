@@ -19,6 +19,13 @@ with no matching top-level `<name>.yaml` Application is silently
 orphaned — nothing syncs, nothing errors. See
 `docs/lessons/k8s/grafana-monitoring-sync-cascade.md`.
 
+**selfHeal fights anything that scales a managed workload.** A job that
+scales a Deployment to 0 (like the Gitea backup) gets reverted within
+seconds — the backup then runs against a live app while still reporting
+success. Any scale-touching automation needs `ignoreDifferences` on
+`/spec/replicas` plus the `RespectIgnoreDifferences=true` sync option in
+that app. See `docs/lessons/k8s/argocd-selfheal-backup-race.md`.
+
 **Inline Helm values drift silently.** An indent slip, duplicate
 top-level key (YAML last-wins), or typo'd key in a
 `spec.source.helm.values: |` block doesn't crash anything — the app goes
