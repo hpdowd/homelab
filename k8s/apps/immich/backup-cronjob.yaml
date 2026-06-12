@@ -1,0 +1,153 @@
+# Daily Immich backup to Backblaze B2 via restic. 04:00 local — third slot in
+# the nightly window (nextcloud 03:00, gitea 03:30), same flaky-upload-link
+# reasoning as the others.
+#
+# Same shape as the Nextcloud job: runs alongside the live pod (podAffinity +
+# read-only mount of the RWO library PVC), pg_dump to an emptyDir, retry loop
+# for the data upload. Own restic repo: hpd.homelab/immich.
+#
+# Excluded: thumbs/ and encoded-video/ are derivatives Immich regenerates on
+# demand — backing them up would roughly double the B2 bill for nothing. The
+# originals live under upload/ and library/, which is what matters.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: immich-backup
+  namespace: immich
+  labels:
+    app: immich-backup
+spec:
+  schedule: "0 4 * * *"
+  timeZone: "Europe/Dublin"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      # 8h ceiling for the first full seed; incrementals take minutes.
+      activeDeadlineSeconds: 28800
+      template:
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: immich-server
+                  topologyKey: kubernetes.io/hostname
+          restartPolicy: OnFailure
+          volumes:
+            - name: library
+              persistentVolumeClaim:
+                claimName: immich-library
+                readOnly: true
+            - name: db-dump
+              emptyDir: {}
+          containers:
+            - name: backup
+              # postgres:14-alpine matches the PG14 in immich's database
+              # image — pg_dump client and server majors line up.
+              image: postgres:14-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  # No `-e` on purpose — retries are handled by hand below.
+                  set -uo pipefail
+
+                  echo "[backup] Installing restic..."
+                  apk add --no-cache --quiet restic
+
+                  echo "[backup] Dumping Immich database..."
+                  if ! PGPASSWORD="${DB_PASSWORD}" pg_dump \
+                        -h postgres.immich.svc.cluster.local \
+                        -U postgres \
+                        -d immich \
+                        --format=custom \
+                        --file=/dump/immich_db.dump; then
+                    echo "[backup] FATAL: database dump failed"
+                    exit 1
+                  fi
+                  echo "[backup] DB dump size: $(du -sh /dump/immich_db.dump | cut -f1)"
+
+                  echo "[backup] Init restic repo if needed..."
+                  restic snapshots --quiet 2>/dev/null || restic init
+
+                  MAX=8
+                  N=1
+                  while [ "$N" -le "$MAX" ]; do
+                    echo "[backup] Data backup attempt ${N}/${MAX}..."
+                    if restic backup /data \
+                          --tag immich-data \
+                          -o s3.connections=2 \
+                          --exclude="/data/thumbs" \
+                          --exclude="/data/encoded-video"; then
+                      echo "[backup] Data backup complete"
+                      break
+                    fi
+                    echo "[backup] Attempt ${N} dropped — sleeping then retrying"
+                    N=$((N + 1))
+                    sleep 20
+                  done
+                  if [ "$N" -gt "$MAX" ]; then
+                    echo "[backup] FATAL: data backup failed after ${MAX} attempts"
+                    exit 1
+                  fi
+
+                  echo "[backup] Backing up database dump..."
+                  N=1
+                  while [ "$N" -le 5 ]; do
+                    if restic backup /dump --tag immich-db -o s3.connections=2; then
+                      break
+                    fi
+                    N=$((N + 1)); sleep 10
+                  done
+
+                  echo "[backup] Pruning old snapshots..."
+                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                    --prune --tag immich-data || true
+                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                    --prune --tag immich-db || true
+
+                  echo "[backup] Done. Current snapshots:"
+                  restic snapshots
+              env:
+                - name: RESTIC_REPOSITORY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: RESTIC_REPOSITORY
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: RESTIC_PASSWORD
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: immich-secrets
+                      key: DB_PASSWORD
+              volumeMounts:
+                - name: library
+                  mountPath: /data
+                  readOnly: true
+                - name: db-dump
+                  mountPath: /dump
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"

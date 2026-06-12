@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-library
+  namespace: immich
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      # Longhorn can grow this online later; it can't shrink. vdb had ~420G
+      # free at creation time (2026-06-12).
+      storage: 200Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-server
+  namespace: immich
+spec:
+  replicas: 1
+  # RWO library PVC — Recreate.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: immich-server
+  template:
+    metadata:
+      labels:
+        app: immich-server
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      containers:
+        - name: immich-server
+          # Keep in lockstep with the machine-learning image AND the postgres
+          # image pairing (see postgres.yaml). Bump all together, checking the
+          # release's docker-compose first.
+          image: ghcr.io/immich-app/immich-server:v2.7.5
+          ports:
+            - containerPort: 2283
+          env:
+            - name: DB_HOSTNAME
+              value: postgres
+            - name: DB_USERNAME
+              value: postgres
+            - name: DB_DATABASE_NAME
+              value: immich
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: immich-secrets, key: DB_PASSWORD }
+            - name: REDIS_HOSTNAME
+              value: redis
+            - name: IMMICH_MACHINE_LEARNING_URL
+              value: http://immich-ml:3003
+            - name: TZ
+              value: Europe/Dublin
+            # Traefik fronts everything — trust X-Forwarded-* from the pod
+            # CIDR so client IPs in logs/sessions are real. Same as Nextcloud.
+            - name: IMMICH_TRUSTED_PROXIES
+              value: "10.42.0.0/16"
+          volumeMounts:
+            - name: library
+              mountPath: /data
+          resources:
+            requests: { memory: "512Mi", cpu: "250m" }
+            limits: { memory: "2Gi" }
+          # First boot runs DB migrations; version bumps can too. 5s * 60 =
+          # 5 min of grace before k8s gives up on a start.
+          startupProbe:
+            httpGet: { path: /api/server/ping, port: 2283 }
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /api/server/ping, port: 2283 }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /api/server/ping, port: 2283 }
+            periodSeconds: 10
+      volumes:
+        - name: library
+          persistentVolumeClaim:
+            claimName: immich-library
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-server
+  namespace: immich
+spec:
+  selector:
+    app: immich-server
+  ports:
+    - port: 2283
+      targetPort: 2283
