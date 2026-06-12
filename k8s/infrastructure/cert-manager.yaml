@@ -16,6 +16,15 @@ spec:
         crds:
           enabled: true
 
+        # DNS-01 self-check must bypass LAN DNS: Technitium is authoritative
+        # for the local henrydowd.dev zone and answers NS with "technitium."
+        # (unresolvable in-cluster), so the propagation check never passes.
+        # Force the check through public resolvers — Let's Encrypt validates
+        # from outside anyway, so public view is the one that matters.
+        extraArgs:
+          - --dns01-recursive-nameservers-only
+          - --dns01-recursive-nameservers=1.1.1.1:53,1.0.0.1:53
+
         # Control node is RAM-starved (4GiB, MemAvailable has hit 0.12GiB);
         # keep everything on the worker like the VM stack.
         nodeSelector:
