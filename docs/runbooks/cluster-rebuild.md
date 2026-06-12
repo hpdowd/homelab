@@ -172,6 +172,20 @@ it and the EndpointSlices that point Traefik at AMP and Proxmox will
 silently not get synced — Traefik will return "no available server"
 and the cause will not be obvious.
 
+**Register the repo credentials** — the repo is private and the
+credential Secret is a bootstrap object that lives only in the cluster,
+not in git. Without it root-app can fetch nothing. Token is in the
+password manager (Gitea → repo read scope).
+`--insecure-skip-server-verification` matters: with Technitium as the
+LAN's DNS, the cluster reaches `git.henrydowd.dev` through Traefik's
+self-signed cert (see gotchas.md):
+
+```bash
+argocd repo add https://git.henrydowd.dev/henry/homelab.git \
+  --username henry --password <token from password manager> \
+  --insecure-skip-server-verification
+```
+
 Now point ArgoCD at this repo:
 
 ```bash

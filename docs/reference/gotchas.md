@@ -26,6 +26,23 @@ success. Anything that scales a managed Deployment needs
 `RespectIgnoreDifferences=true` sync option in that app. See
 `docs/lessons/k8s/argocd-selfheal-backup-race.md`.
 
+**ArgoCD's repo fetch rides the LAN's DNS.** The repo URL is the public
+`git.henrydowd.dev`, so what ArgoCD actually reaches depends on what the
+cluster's upstream resolver answers: public DNS → Cloudflare (valid
+cert), Technitium → Traefik (self-signed → every git-sourced app goes
+`Unknown / ComparisonError` at once). Bit on 2026-06-12 when the LAN's
+default DNS moved to Technitium; the repo connection is now registered
+with `insecure: "true"` (same posture as `argocd login --insecure`).
+Long-term alternatives: cluster-internal repo URL
+(`http://gitea.gitea.svc:3000/...`) or a real cert via cert-manager.
+Symptom to remember: *all* git-sourced apps flip Unknown simultaneously
+while Helm-sourced ones stay Synced.
+
+**The repo credential secret is bootstrap-only, not in git.** ArgoCD's
+access to the private repo lives in a `repo-*` Secret in the argocd
+namespace, created by hand. A rebuilt cluster needs it re-registered
+(rebuild runbook step 6) before root-app can fetch anything.
+
 **Inline Helm values drift silently.** An indent slip, duplicate
 top-level key (YAML last-wins), or typo'd key in a
 `spec.source.helm.values: |` block doesn't crash anything — the app goes
