@@ -33,6 +33,8 @@ spec:
       labels:
         app: immich-ml
     spec:
+      # Same service-link env problem as the server — see server.yaml.
+      enableServiceLinks: false
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
       containers:
