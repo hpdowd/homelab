@@ -115,17 +115,21 @@ spec:
             summary: "Disk > 85% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
             description: "Filesystem usage high. The vdb (Longhorn) and the OS SSD both matter."
 
-        # Longhorn's own metric. 0=unknown, 1=healthy, 2=degraded, 3=faulted.
-        # Degraded means the volume is up but a replica is missing; faulted
-        # is data-loss territory. Both deserve immediate attention.
+        # Longhorn's own metric. This Longhorn version (1.11) exposes
+        # robustness as one 0/1 series per state (label `state`:
+        # unknown/healthy/degraded/faulted), NOT the old single 0–3 gauge —
+        # the first version of this rule compared `== 2` and could never
+        # fire. Verified against live series this time.
+        # Degraded means a replica is missing; faulted is data-loss
+        # territory. Both deserve immediate attention.
         - alert: LonghornVolumeDegraded
           expr: |
-            longhorn_volume_robustness == 2 or longhorn_volume_robustness == 3
+            longhorn_volume_robustness{state=~"degraded|faulted"} == 1
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "Longhorn volume {{ $labels.volume }} degraded/faulted"
+            summary: "Longhorn volume {{ $labels.pvc }} ({{ $labels.pvc_namespace }}) is {{ $labels.state }}"
             description: "RWO single-attach pain point. Check the volume and the worker node."
 
         # Guard for the alert above. This rule spent weeks dead because the
