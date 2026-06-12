@@ -30,6 +30,10 @@ spec:
       labels:
         app: immich-server
     spec:
+      # Kill the legacy docker-link env injection: the `redis` Service makes
+      # kubelet set REDIS_PORT="tcp://ip:6379" in every pod here, and Immich
+      # parses REDIS_PORT as a number -> instant crash loop on boot.
+      enableServiceLinks: false
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
       containers:
