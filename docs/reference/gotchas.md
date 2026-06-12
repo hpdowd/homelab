@@ -33,8 +33,10 @@ cert), Technitium → Traefik (self-signed → every git-sourced app goes
 `Unknown / ComparisonError` at once). Bit on 2026-06-12 when the LAN's
 default DNS moved to Technitium; the repo connection is now registered
 with `insecure: "true"` (same posture as `argocd login --insecure`).
-Long-term alternatives: cluster-internal repo URL
-(`http://gitea.gitea.svc:3000/...`) or a real cert via cert-manager.
+Since 2026-06-12 Traefik serves a real Let's Encrypt wildcard (ADR 007),
+so the flag is no longer load-bearing day-to-day — but it **stays**:
+during a rebuild ArgoCD must fetch the repo *before* cert-manager exists,
+when Traefik is back on its self-signed default.
 Symptom to remember: *all* git-sourced apps flip Unknown simultaneously
 while Helm-sourced ones stay Synced.
 
@@ -64,6 +66,32 @@ with `helm template` against the pinned chart version. See
   silently → 404.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
+- **TLS on the LAN path is one default cert, not per-Ingress config.**
+  The `default` TLSStore in the traefik namespace points `websecure` at
+  the cert-manager wildcard (`henrydowd-dev-tls`). New services need no
+  `tls:` blocks or annotations — they get valid HTTPS for free. Don't
+  add per-Ingress TLS config; one secret covers `*.henrydowd.dev`.
+  (`*.lan` names still get the wildcard → mismatch warning; accepted,
+  see ADR 007.)
+
+## TLS / cert-manager
+
+- The wildcard cert renews automatically (~2/3 of its 90-day life). If
+  a Certificate ever sticks at `Ready: False`, read the **Challenge's
+  `status.reason`** first — it names the exact DNS lookup that failed.
+- The DNS-01 self-check runs over **DoH** (`--dns01-recursive-nameservers`
+  in `k8s/infrastructure/cert-manager.yaml`). Two LAN facts force this
+  and neither is going away: Technitium is authoritative for the local
+  `henrydowd.dev` zone (its NS answer `technitium.` is unresolvable
+  in-cluster), and the Vodafone hub drops outbound port 53 to public
+  resolvers entirely. See
+  `docs/lessons/networking/certmanager-dns01-split-horizon.md`.
+- Corollary: **never hand a pod public resolvers via `dnsConfig`** —
+  plain :53 to 1.1.1.1/8.8.8.8 times out from this LAN. That's what
+  silently broke Collabora's interim WOPI hairpin.
+- The Cloudflare token (Zone:Read + DNS:Edit) is a SealedSecret in the
+  cert-manager namespace — same master-key dependency as everything
+  else sealed.
 
 ## Service-link env vars
 

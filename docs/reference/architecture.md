@@ -65,6 +65,12 @@ What's in the cluster:
   Cloudflare with it, and from then on the cloudflared pod is the
   outbound end of a tunnel that Cloudflare uses as the origin for
   `*.henrydowd.dev`. Zero inbound ports open on my router.
+- **cert-manager** — issues one Let's Encrypt wildcard for
+  `henrydowd.dev` + `*.henrydowd.dev` via DNS-01 against Cloudflare,
+  and a Traefik `TLSStore` named `default` makes it the cert Traefik
+  presents on `websecure` for everything. Exists because of the
+  split-horizon path below: LAN clients hit Traefik directly, so
+  Cloudflare's edge cert never helps them. See ADR 007.
 - **VictoriaMetrics + Grafana + Alertmanager** — monitoring. Picked
   VM single-node over kube-prometheus-stack because it's ~60% lighter
   on RAM. See ADR 005.
@@ -103,6 +109,13 @@ The `*.henrydowd.dev` LAN trick is split-horizon DNS. Public DNS
 resolves it to Cloudflare; LAN DNS (Technitium) returns Traefik
 directly. Same hostname, two answers, traffic stays in-house when
 you're home. Saves bouncing through Cloudflare for no reason.
+
+TLS on this path is Traefik's job, not Cloudflare's — the LAN never
+touches the edge. Traefik's default TLSStore serves the cert-manager
+wildcard (ADR 007), so `https://anything.henrydowd.dev` is
+browser-valid from the LAN. Before that existed, every LAN HTTPS hit
+got Traefik's self-signed default and `git push` needed
+`sslVerify=false`.
 
 ### Someone on the LAN hits amp.henrydowd.dev (external backend)
 
