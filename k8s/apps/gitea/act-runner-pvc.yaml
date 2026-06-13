@@ -1,0 +1,34 @@
+---
+# Holds the Docker daemon's /var/lib/docker for the DinD sidecar. Image
+# layers (the catthehacker act image, kubeconform, any build bases) live
+# here, NOT on the worker's vda root — vda already hit
+# NodeFilesystemSpaceFillingUp at 88%, so DinD storage goes on tank/vdb via
+# Longhorn. Run `docker system prune` periodically if it fills.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: act-runner-dind
+  namespace: gitea
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 15Gi
+---
+# Persists the runner's identity (.runner, written after registration) and
+# the actions cache. Without this, every pod restart re-registers and leaves
+# stale offline runners in the Gitea admin UI.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: act-runner-data
+  namespace: gitea
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi

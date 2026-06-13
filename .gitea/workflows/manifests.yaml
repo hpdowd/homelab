@@ -1,0 +1,37 @@
+name: manifests
+# Guards the repo ArgoCD selfHeals from. Runs on the in-cluster act_runner
+# (light, single-job). Heavy builds belong on GitHub-hosted runners.
+on:
+  push:
+    paths:
+      - "k8s/**"
+      - ".gitea/workflows/manifests.yaml"
+  pull_request:
+    paths:
+      - "k8s/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: Validate manifests
+        # -ignore-missing-schemas skips CRDs we don't vendor schemas for
+        # (ArgoCD Application, SealedSecret, VMRule, etc.) while still
+        # catching real errors in core kinds (Deployment, Service, PVC...).
+        run: |
+          kubeconform \
+            -summary \
+            -strict \
+            -ignore-missing-schemas \
+            -kubernetes-version 1.30.0 \
+            -schema-location default \
+            $(find k8s -name '*.yaml' -o -name '*.yml')
