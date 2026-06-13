@@ -81,9 +81,15 @@ spec:
               value: /certs/client
             - name: DOCKER_TLS_VERIFY
               value: "1"
+            # act_runner is a Go binary; without a soft limit Go's GC grows
+            # the heap toward the cgroup cap and gets OOMKilled mid-job (seen
+            # at both 192Mi and 384Mi). GOMEMLIMIT makes the runtime GC before
+            # the hard limit. Idle RSS is ~10Mi; the headroom is for job runs.
+            - name: GOMEMLIMIT
+              value: "700MiB"
           resources:
-            requests: { memory: "96Mi", cpu: "50m" }
-            limits: { memory: "384Mi" }
+            requests: { memory: "128Mi", cpu: "50m" }
+            limits: { memory: "768Mi" }
           volumeMounts:
             - name: certs
               mountPath: /certs
