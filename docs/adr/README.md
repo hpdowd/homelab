@@ -10,6 +10,7 @@ Each ADR has a **Status** (Accepted / Superseded) and a **Superseded By** line s
 | 005-victoria-metrics-monitoring.md | VictoriaMetrics single-node over kube-prometheus-stack |
 | 006-immich.md | Immich: public before Authelia, raw manifests, 100MB tunnel cap accepted, backed up from day one |
 | 007-certmanager-wildcard-tls.md | cert-manager + Let's Encrypt DNS-01 wildcard as Traefik's default cert — fixes self-signed TLS on the split-horizon LAN path |
+| 008-gitea-actions.md | Gitea Actions: in-cluster act_runner (DinD) for manifest CI; heavy builds (Android) offloaded to GitHub-hosted runners — worker RAM can't host them |
 
 Numbering starts at 004: decisions 001–003 (k3s itself, GitOps via
 ArgoCD, Longhorn PVC over hostPath for the Nextcloud migration) predate

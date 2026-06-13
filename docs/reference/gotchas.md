@@ -101,6 +101,26 @@ your Service crash-loops on boot — Immich's `REDIS_PORT` met the `redis`
 Service this way. `enableServiceLinks: false` on the pod spec turns the
 whole legacy mechanism off.
 
+## Gitea Actions / DinD
+
+- **Match the inner docker bridge MTU to the pod network (1450), or
+  internet-bound TLS from jobs black-holes.** The pod's flannel `eth0` is
+  MTU 1450; docker bridges default to 1500, and act_runner's per-job
+  networks inherit that. Job steps reaching the internet (e.g. `curl
+  github.com`) hang ~2.5min then `curl: (35) ... Connection reset by peer`
+  — large DF packets are silently dropped. `actions/checkout` still works
+  (internal Gitea, small packets), which masks it. Fix: a `daemon.json` in
+  the dind sidecar with `"mtu": 1450` **and** `default-network-opts` for
+  the bridge driver (the latter needs docker ≥ 26; covers act-created
+  networks). Generalises to **any** privileged-docker workload here. See
+  `docs/lessons/k8s/act-runner-dind-mtu-oom.md`.
+- **Give Go workloads `GOMEMLIMIT`, not just a cgroup limit.** act_runner
+  is a Go binary; its GC grows the heap toward the container limit without
+  knowing the cap, so it OOMKills (exit 137) under load even with a ~10Mi
+  idle working set — bit at both 192Mi and 384Mi. Set `GOMEMLIMIT` below
+  the hard limit (700MiB under a 768Mi cap) so the runtime GCs first. Same
+  lesson doc.
+
 ## Longhorn
 
 - RWO volumes mean `strategy: Recreate` on every Deployment that mounts
