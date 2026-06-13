@@ -9,6 +9,7 @@ on:
   pull_request:
     paths:
       - "k8s/**"
+  workflow_dispatch: {}
 
 jobs:
   validate:
