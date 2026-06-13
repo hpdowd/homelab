@@ -113,6 +113,13 @@ spec:
 
               [webhook]
               ALLOWED_HOST_LIST = loopback, 127.0.0.1, 192.168.*, 10.*
+
+              [actions]
+              ENABLED = true
+              # uses: actions/checkout@v4 (no host) resolves against github.com.
+              # The act_runner reaches out to github for action tarballs; only
+              # heavy CI (Android etc.) is offloaded to GitHub-hosted runners.
+              DEFAULT_ACTIONS_URL = github
               EOCONF
           env:
             - name: LFS_JWT_SECRET
