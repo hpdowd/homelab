@@ -32,6 +32,7 @@ only trust root and is not in this repo.
 - **[docs/reference/services.md](docs/reference/services.md)** — what runs where, and the config facts each service depends on.
 - **[docs/reference/gotchas.md](docs/reference/gotchas.md)** — the sharp edges, one paragraph each, linked to the full lessons.
 - **[docs/reference/operations.md](docs/reference/operations.md)** — commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.
+- **[docs/reference/resources.md](docs/reference/resources.md)** — where each component's charts, images, docs and release notes live.
 
 **Runbooks**
 - **[docs/runbooks/cluster-rebuild.md](docs/runbooks/cluster-rebuild.md)** — rebuild from a freshly installed Proxmox. The "if everything dies" runbook.
@@ -49,10 +50,12 @@ only trust root and is not in this repo.
 ```
 homelab/
 ├── docs/
+│   ├── README.md       how the documentation system works — where new knowledge goes
 │   ├── adr/            architecture decision records
 │   ├── lessons/        incident post-mortems by domain
 │   ├── runbooks/       repeatable procedures
 │   ├── reference/      cheat-sheets and architecture walkthrough
+│   ├── plans/          scoped walkthroughs for work not yet done
 │   └── public-export-checklist.md
 └── k8s/
     ├── argocd/         root-app — the only thing ArgoCD needs to be pointed at
