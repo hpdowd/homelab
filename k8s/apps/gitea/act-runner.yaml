@@ -43,6 +43,9 @@ spec:
               mountPath: /certs
             - name: dind-storage
               mountPath: /var/lib/docker
+            - name: config
+              mountPath: /etc/docker/daemon.json
+              subPath: daemon.json
         # The act_runner agent: registers with Gitea, polls for jobs, and
         # drives the dind daemon over TLS on localhost. Lightweight itself.
         - name: runner
