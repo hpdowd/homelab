@@ -73,10 +73,12 @@ pattern as AMP and Proxmox (see architecture.md).
   `collabora`, pinned to the worker.
 - WOPI: `wopi_url = http://collabora.collabora.svc.cluster.local:9980`
   (in-cluster HTTP) · `public_wopi_url = https://collabora.henrydowd.dev`.
-- **INTERIM:** the pod uses `dnsPolicy: None` + public resolvers so its
-  WOPI reachback to `nextcloud.henrydowd.dev` gets Cloudflare's valid
-  cert. Delete once cert-manager issues a real Traefik cert — comment in
-  `k8s/apps/collabora/deployment.yaml`.
+- WOPI reachback to `nextcloud.henrydowd.dev` goes cluster DNS →
+  Technitium → Traefik, and the cert-manager wildcard verifies (openssl
+  return 0 from the pod). The old `dnsPolicy: None` + public-resolver
+  hairpin was **removed 2026-06-12** — it was silently broken anyway
+  (the Vodafone hub drops outbound :53, so the pod could never resolve
+  through it) and ADR 007's real Traefik cert made it unnecessary.
 - The securityContext (AppArmor `Unconfined` **field** + capability
   list) is load-bearing — see gotchas.md.
 - Keep personal wordbooks small — an uploaded hunspell `.dic` caused
@@ -114,6 +116,15 @@ pattern as AMP and Proxmox (see architecture.md).
 - DB: SQLite inside the data PVC — which is why its backup scales the
   deployment to 0 first (see ADR 004).
 - SealedSecret: `lfs-jwt-secret` · `internal-token` · `oauth2-jwt-secret`.
+- **Actions enabled** (`[actions]` in app.ini) — CI on this GitOps repo.
+  An in-cluster `act_runner` (`gitea/act_runner` + `docker:dind`
+  sidecar, privileged, pinned to the worker) registers via the
+  `gitea-act-runner` SealedSecret; PVCs `act-runner-dind` 15Gi (image
+  layers, on tank) + `act-runner-data` 5Gi. The workflow
+  `.gitea/workflows/manifests.yaml` runs kubeconform over `k8s/**`.
+  Heavy builds (e.g. NextKeep Android) are offloaded to GitHub-hosted
+  runners — the worker can't host them. Two bring-up gotchas (DinD MTU
+  1450, act_runner `GOMEMLIMIT`) live in gotchas.md. See ADR 008.
 
 ## Backups (summary)
 
