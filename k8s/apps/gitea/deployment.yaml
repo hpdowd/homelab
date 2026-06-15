@@ -71,6 +71,8 @@ spec:
               ROOT_PATH = /data/gitea/log
               MODE = file
               LEVEL = info
+              ENABLE_ACCESS_LOG = true
+              ACCESS_LOG TEMPLATE = {{.Ctx.RemoteHost}} "{{.RequestID}}" {{.Request.Header.Get "X-Forwarded-For"}} "{{.Request.UserAgent}}" {{.Request.Method}} {{.Request.RequestURI}}
 
               [lfs]
               PATH = /data/gitea/lfs
