@@ -97,6 +97,12 @@ spec:
               [cron.update_checker]
               ENABLED = false
 
+              [cron.archive_cleanup]
+              ENABLED = true
+              RUN_AT_START = true
+              SCHEDULE = @every 1h
+              OLDER_THAN = 6h
+
               [repository.pull-request]
               DEFAULT_MERGE_STYLE = merge
 
