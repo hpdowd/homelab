@@ -1,0 +1,24 @@
+# Scrapes the portfolio's own /metrics (the :9090 metrics port) so the service
+# that surfaces homelab telemetry is itself a monitored target in the same
+# stack — the recursive payoff. Modeled on longhorn-scrape.yaml.
+#
+# VMServiceScrape (VictoriaMetrics operator), NOT ServiceMonitor.
+#
+# This lives in the portfolio namespace, not monitoring: the chart's vmagent
+# runs selectAllByDefault=true with empty scrape selectors (verified live), so
+# it discovers VMServiceScrapes in every namespace. With no namespaceSelector
+# here, it defaults to this object's own namespace, which is where the Service
+# is.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: portfolio
+  namespace: portfolio
+  labels:
+    app.kubernetes.io/part-of: vm-k8s-stack
+spec:
+  selector:
+    matchLabels: { app: portfolio }
+  endpoints:
+    - port: metrics
+      path: /metrics

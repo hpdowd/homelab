@@ -1,0 +1,27 @@
+# Registers the portfolio app with ArgoCD. REQUIRED — the root-app is
+# non-recursive, so the k8s/apps/portfolio/ directory without this matching
+# <name>.yaml would be silently orphaned.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # The .git suffix is load-bearing: the argocd repo credential (which carries
+    # the insecure-TLS workaround for the split-horizon DNS) is keyed to this
+    # exact URL. A URL without .git is treated as a different, uncredentialed
+    # repo and fails to sync.
+    repoURL: https://git.henrydowd.dev/henry/homelab.git
+    targetRevision: HEAD
+    path: k8s/apps/portfolio
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: portfolio
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
