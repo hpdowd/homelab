@@ -174,3 +174,35 @@ spec:
           annotations:
             summary: "No recent backup in {{ $labels.namespace }}"
             description: "No successful backup job completed in > 26h. The daily CronJob may not be running."
+
+    - name: homelab.portfolio
+      rules:
+        # The portfolio's live panels read VictoriaMetrics and Gitea over the
+        # cluster network. The service stays up if one is unreachable (it
+        # degrades gracefully and keeps serving the last good data), but the
+        # page goes stale — worth a warning, not a page. portfolio_upstream_up
+        # is a 1/0 gauge per upstream {vm,gitea}, self-reported by the service
+        # (it scrapes back into VM — the Tier-3 recursion).
+        - alert: PortfolioUpstreamDown
+          expr: |
+            portfolio_upstream_up == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Portfolio upstream {{ $labels.upstream }} unreachable"
+            description: "portfolio_upstream_up{upstream=\"{{ $labels.upstream }}\"} has been 0 for 10m — the live panel fed by {{ $labels.upstream }} is stale. Check that Service and the portfolio pod."
+
+        # Guard for the alert above (same pattern as LonghornMetricsAbsent): if
+        # the portfolio scrape breaks, portfolio_upstream_up disappears and
+        # PortfolioUpstreamDown can never fire — a silent failure. This catches
+        # that, and also trips if the deployment is scaled to zero / removed.
+        - alert: PortfolioMetricsAbsent
+          expr: |
+            absent(portfolio_upstream_up)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Portfolio metrics missing from VictoriaMetrics"
+            description: "portfolio_upstream_up has no series for 15m — the portfolio VMServiceScrape is broken or the pod is down, so PortfolioUpstreamDown is blind. Check the VMServiceScrape and vmagent targets."

@@ -1,0 +1,125 @@
+# The portfolio's own service dashboard, baked into a ConfigMap so the Grafana
+# sidecar auto-loads it (the grafana_dashboard label is the trigger — same
+# mechanism as grafana-dashboard-capacity.yaml).
+#
+# The portfolio is the Tier-3 payoff: the binary that surfaces homelab telemetry
+# is itself a scraped target, so it gets its own board. Every series here is
+# emitted by the service's hand-rolled /metrics (see the portfolio repo's
+# internal/metrics) — the portfolio_ prefix is unique, so no namespace scoping
+# is needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-portfolio
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  homelab-portfolio.json: |
+    {
+      "title": "Portfolio — service health & traffic",
+      "uid": "portfolio",
+      "tags": ["homelab", "portfolio"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Request rate by route",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "targets": [
+            {
+              "expr": "sum by (route) (rate(portfolio_http_requests_total[5m]))",
+              "legendFormat": "{{route}}"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Latency (p50 / p95 / p99)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(portfolio_http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(portfolio_http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p95"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(portfolio_http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p99"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Requests by status code",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "targets": [
+            {
+              "expr": "sum by (code) (rate(portfolio_http_requests_total[5m]))",
+              "legendFormat": "{{code}}"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "In-flight requests",
+          "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "targets": [
+            {
+              "expr": "sum(portfolio_http_requests_in_flight)",
+              "legendFormat": "in flight"
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Upstreams (live-panel data sources)",
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "options": { "colorMode": "background", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            {
+              "expr": "portfolio_upstream_up",
+              "legendFormat": "{{upstream}}",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Running build",
+          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 16 },
+          "options": { "colorMode": "none", "textMode": "name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            {
+              "expr": "portfolio_build_info",
+              "legendFormat": "{{version}} ({{commit}})",
+              "instant": true
+            }
+          ]
+        }
+      ]
+    }
