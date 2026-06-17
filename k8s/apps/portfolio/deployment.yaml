@@ -24,11 +24,11 @@ spec:
         kubernetes.io/hostname: k3s-worker1
       containers:
         - name: portfolio
-          # CI (henry/portfolio -> .gitea/workflows/build.yaml) rewrites this tag
-          # to the immutable :<sha> on every build. :latest only applies to the
-          # very first sync, before CI has run (expect a brief ImagePullBackOff
-          # until the first build pushes an image).
-          image: git.henrydowd.dev/henry/portfolio:latest
+          # Built by GitHub Actions (henry/portfolio is push-mirrored to GitHub;
+          # the in-cluster runner has no Docker daemon) and published to GHCR,
+          # which the cluster pulls anonymously like Immich. CI pins this to the
+          # immutable :<sha>; :latest covers the first sync before CI has run.
+          image: ghcr.io/friedrice04/portfolio:latest
           ports:
             - { name: http, containerPort: 8080 }
             - { name: metrics, containerPort: 9090 }
