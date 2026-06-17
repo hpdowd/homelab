@@ -57,12 +57,12 @@ public-facing pod**.
 
 - **Deploys depend on the Gitea→GitHub mirror + GitHub Actions.** If GitHub is
   down, no new builds (running pods are unaffected).
-- **CD needs `HOMELAB_TOKEN`.** The deployment currently runs `:latest`; without
-  the GitHub Actions secret `HOMELAB_TOKEN` (a Gitea PAT with write to
-  `henry/homelab`) the CI tag-bump step is skipped, so a new build pushes
-  `:latest` but ArgoCD won't roll it out (unchanged manifest = no sync). Add the
-  secret to pin `:<sha>` per build → automatic rollout. Until then a deploy
-  needs `kubectl -n portfolio rollout restart deploy/portfolio`.
+- **CD is fully wired (verified 2026-06-17).** The GitHub Actions secret
+  `HOMELAB_TOKEN` (a Gitea PAT with write to `henry/homelab`) is set, so every
+  build pins the new `ghcr.io/hpdowd/portfolio:<sha>` into
+  `k8s/apps/portfolio/deployment.yaml` and ArgoCD rolls it out automatically —
+  confirmed end-to-end. (Before the secret was set the deployment sat on
+  `:latest`, and a deploy needed `kubectl -n portfolio rollout restart`.)
 - **The GHCR package must stay public** (or the Deployment needs an
   `imagePullSecret`).
 - **One more VM target + ~30–50Mi of worker RAM** for the portfolio pods.
@@ -71,6 +71,8 @@ public-facing pod**.
 ## Related
 
 - docs/lessons/k8s/act-runner-no-docker-daemon.md — why the build moved to GitHub
+- k8s/apps/monitoring/grafana-dashboard-portfolio.yaml + the `homelab.portfolio`
+  rules in homelab-rules.yaml — the service's own Grafana dashboard + upstream alerts
 - ADR 008 — Gitea Actions / GitHub for builds (this ADR extends it)
 - k8s/apps/portfolio/ + k8s/apps/portfolio.yaml
 - Source: git.henrydowd.dev/henry/portfolio (mirror: github.com/hpdowd/portfolio)
