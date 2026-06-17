@@ -1,0 +1,49 @@
+# The portfolio is a single static Go binary that embeds the built site and
+# serves it + /api on :8080, with /metrics + /healthz on a separate :9090 that
+# the Ingress never routes to. It holds NO secrets: VictoriaMetrics needs no
+# auth, and the Gitea activity feed reads a public repo anonymously.
+#
+# No PVC, so RollingUpdate is correct (the Recreate rule only applies to
+# Longhorn RWO volumes). Pinned to the worker like everything else — the control
+# node is scheduling-disabled.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portfolio
+  namespace: portfolio
+spec:
+  replicas: 1
+  strategy: { type: RollingUpdate }
+  selector:
+    matchLabels: { app: portfolio }
+  template:
+    metadata:
+      labels: { app: portfolio }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      containers:
+        - name: portfolio
+          # CI (henry/portfolio -> .gitea/workflows/build.yaml) rewrites this tag
+          # to the immutable :<sha> on every build. :latest only applies to the
+          # very first sync, before CI has run (expect a brief ImagePullBackOff
+          # until the first build pushes an image).
+          image: git.henrydowd.dev/henry/portfolio:latest
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            # Cluster-internal, no auth. Names confirmed via `kubectl get svc`.
+            - { name: VM_URL, value: "http://vmsingle-vm-victoria-metrics-k8s-stack.monitoring.svc:8428" }
+            - { name: GITEA_URL, value: "http://gitea.gitea.svc:3000" }
+            - { name: GITEA_REPO, value: "henry/homelab" }
+          resources:
+            requests: { cpu: "25m", memory: "48Mi" }
+            limits: { memory: "128Mi" }
+          # Probes target the private metrics port, not the public one.
+          readinessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 30

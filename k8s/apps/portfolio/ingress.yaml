@@ -1,0 +1,37 @@
+# The personal site on the apex henrydowd.dev, plus www. The apex needed its own
+# cloudflared tunnel route + Technitium A record — the *.henrydowd.dev wildcard
+# doesn't match the bare zone root — whereas www is already covered by the
+# wildcards. On the LAN the apex resolves via Technitium's apex A record, so
+# there's no .lan host to add here. Only the http port is routed; /metrics and
+# /healthz on :9090 are never exposed to the internet.
+#
+# Conventions: ingressClassName traefik; no router.entrypoints annotation
+# (cloudflared speaks plain HTTP, a websecure-only router 404s the tunnel); no
+# per-Ingress tls: block (the default TLSStore serves the LE wildcard, whose SAN
+# covers henrydowd.dev as well as *.henrydowd.dev).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portfolio
+  namespace: portfolio
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portfolio
+                port: { number: 8080 }
+    - host: www.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portfolio
+                port: { number: 8080 }

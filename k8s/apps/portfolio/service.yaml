@@ -1,0 +1,14 @@
+# Two named ports: `http` (the Ingress target) and `metrics` (the
+# VMServiceScrape target). Naming them is what lets the scrape reference the
+# port by name rather than number.
+apiVersion: v1
+kind: Service
+metadata:
+  name: portfolio
+  namespace: portfolio
+  labels: { app: portfolio }
+spec:
+  selector: { app: portfolio }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
