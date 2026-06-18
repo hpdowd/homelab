@@ -103,6 +103,16 @@ whole legacy mechanism off.
 
 ## Gitea Actions / DinD
 
+- **The dind sidecar gives the *runner* a Docker daemon, not the job
+  steps.** A job container (`catthehacker/ubuntu`) has no
+  `/var/run/docker.sock` and `DOCKER_HOST` isn't propagated, so
+  `docker build`/`push` fail with `docker.sock: no such file or
+  directory` even though `docker login` succeeds (login only writes a
+  config and hits the network). The runner was only ever wired for
+  daemonless jobs (kubeconform); image builds go to GitHub-hosted
+  runners via the push-mirror. Don't assume a job can `docker build`
+  just because a dind sidecar exists. See
+  `docs/lessons/k8s/act-runner-no-docker-daemon.md`.
 - **Match the inner docker bridge MTU to the pod network (1450), or
   internet-bound TLS from jobs black-holes.** The pod's flannel `eth0` is
   MTU 1450; docker bridges default to 1500, and act_runner's per-job
