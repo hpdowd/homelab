@@ -34,6 +34,7 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 | Immich | raw manifests (ADR 006) | `ghcr.io/immich-app/*` — incl. their vectorchord postgres build, pinned by digest | [immich.app/docs](https://immich.app/docs) | [immich-app/immich](https://github.com/immich-app/immich/releases) — **read the notes before every bump**, breaking changes are routine; server/ML/mobile versions move together. GitHub Discussions has the best debugging hit-rate |
 | Postgres (nextcloud) | raw manifests | `docker.io/postgres` (official library) | [postgresql.org/docs](https://www.postgresql.org/docs/) | majors need `pg_upgrade`/dump-restore — never just bump the tag |
 | Redis / Valkey | raw manifests | `docker.io/redis`, `docker.io/valkey/valkey` | — | cache-only here; any maintained tag is fine |
+| Portfolio | self-built — GitHub Actions → GHCR (ADR 009) | `ghcr.io/hpdowd/portfolio` (own image, not upstream) | source: [git.henrydowd.dev/henry/portfolio](https://git.henrydowd.dev/henry/portfolio) · mirror [github.com/hpdowd/portfolio](https://github.com/hpdowd/portfolio) | own repo — no upstream notes; CI re-pins the tag each push |
 
 ## Backup
 

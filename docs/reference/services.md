@@ -15,6 +15,7 @@ for how a request actually flows see architecture.md.
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) |
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
 | Grafana | grafana.lan | grafana.henrydowd.dev | k3s pod (`monitoring` ns) |
+| Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 |
 | Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) |
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 |
@@ -24,6 +25,12 @@ for how a request actually flows see architecture.md.
 Technitium's row is ingress glue only — the DNS server itself runs on
 the LXC, not in the cluster. Same selectorless-Service + EndpointSlice
 pattern as AMP and Proxmox (see architecture.md).
+
+The portfolio sits on the bare apex `henrydowd.dev` (+ `www`) and has no
+`.lan` alias, but split-horizon still applies: Technitium answers the
+apex A record directly, so on the LAN it resolves to Traefik like
+everything else (the `*.henrydowd.dev` wildcard can't match the zone
+root). See ADR 009.
 
 ## Cluster components
 
@@ -126,6 +133,29 @@ pattern as AMP and Proxmox (see architecture.md).
   runners — the worker can't host them. Two bring-up gotchas (DinD MTU
   1450, act_runner `GOMEMLIMIT`) live in gotchas.md. See ADR 008.
 
+## Portfolio (CV site)
+
+- The public CV/personal site on the bare apex `henrydowd.dev` (+
+  `www`). Built from a **separate repo**
+  (`git.henrydowd.dev/henry/portfolio`), not this one — a single static
+  Go binary that embeds the built site and serves it plus a small
+  `/api` on `:8080`, with `/metrics` + `/healthz` on a separate `:9090`
+  the Ingress never routes.
+- **Holds no secrets.** It reads cluster-internal data with no auth —
+  VictoriaMetrics for live stats, and Gitea for this repo's recent
+  commits (the `henry/homelab` repo is public, read anonymously) —
+  wired via `VM_URL`/`GITEA_URL`/`GITEA_REPO` env in the deployment, so
+  a compromise of the public pod leaks nothing.
+- **Self-built image, not upstream:** GitHub Actions builds it and
+  pushes to GHCR (`ghcr.io/hpdowd/portfolio`), pulled anonymously like
+  Immich. The in-cluster runner can't build it (no daemon in-job — see
+  gotchas.md); the build rides the GitHub push-mirror. See ADR 008/009.
+- **Self-monitored:** a `VMServiceScrape` targets `:9090/metrics`, so
+  the service that surfaces homelab telemetry is itself a scraped
+  target; its Grafana dashboard + `homelab.portfolio` upstream alerts
+  live in `k8s/apps/monitoring/`.
+- Stateless — no PVC, `strategy: RollingUpdate`, nothing to back up.
+
 ## Backups (summary)
 
 restic → Backblaze B2, bucket `hpd.homelab`
@@ -148,3 +178,5 @@ Not backed up, on purpose:
   if either accumulates state worth keeping.
 - **QBittorrent (VM 201)** — disposable by design, currently stopped.
 - **Monitoring TSDB** — regenerable, see ADR 005.
+- **Portfolio** — stateless (no PVC); the image is rebuilt from git by
+  CI, so there's nothing to restore.

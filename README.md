@@ -17,6 +17,11 @@ Technitium stay on LXCs and get proxied through the cluster's Traefik
 so the routing is uniform. VictoriaMetrics + Grafana + Alertmanager
 runs in-cluster for metrics, dashboards, and email alerts.
 
+My portfolio site (henrydowd.dev) also runs here as an ordinary app: a
+single Go binary that reads the cluster's own metrics and this repo's
+commits to show live homelab status, scraped by the same stack it
+reports on. See ADR 009.
+
 Public stuff comes in via a Cloudflare Tunnel — no port forwarding,
 no exposed IP. LAN stuff goes through Technitium so the `.lan`
 hostnames just work from inside the house.
