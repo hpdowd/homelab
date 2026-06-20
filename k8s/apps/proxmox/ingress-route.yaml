@@ -1,7 +1,38 @@
-# IngressRoute instead of a plain Ingress because the backend speaks HTTPS
-# with a self-signed cert on :8006 — a plain Ingress can't say "talk https
-# to the backend and skip verification", this + servers-transport.yaml can.
-# Background: docs/lessons/networking/proxmox-502-selfsigned-tunnel.md.
+# Why this is an IngressRoute (not a plain Ingress): the backend speaks HTTPS
+# with a self-signed cert on :8006, so the route must say "talk https to the
+# backend and skip verification" — only IngressRoute + servers-transport.yaml
+# can. Background: docs/lessons/networking/proxmox-502-selfsigned-tunnel.md.
+#
+# Why TWO routes: Proxmox must be reachable over HTTPS *by the browser*, because
+# PVE issues its auth cookie as `Secure` (hardcoded in APIServer Formatter.pm).
+# A plain-HTTP browser silently drops that cookie, so login "succeeds" and then
+# every call 401s. But the public path can't be HTTPS-to-Traefik: cloudflared
+# delivers the tunnel over plain HTTP on `web` and 404s if pinned to websecure
+# (gotchas.md). And a Traefik IngressRoute is only served on websecure if it
+# carries a `tls` block, while a `tls` block makes it TLS-only and 404s `web`
+# (both verified). So the two concerns get one route each:
+#
+#   proxmox            web entrypoint, no tls. Carries the Cloudflare tunnel
+#                      (proxmox.henrydowd.dev, plain HTTP — the browser is still
+#                      HTTPS at CF's edge, so the cookie survives). http://
+#                      proxmox.lan is bounced to HTTPS instead of served plain,
+#                      or its Secure cookie would be dropped on the LAN. The
+#                      redirect is NOT applied to the tunnel host — that would
+#                      make cloudflared redirect-loop.
+#   proxmox-websecure  websecure entrypoint, tls:{}. LAN clients resolve both
+#                      names straight to Traefik (Technitium split-horizon) and
+#                      hit it over HTTPS; TLS terminates with the default
+#                      wildcard cert (TLSStore default, traefik ns).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: proxmox
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -11,6 +42,32 @@ spec:
   entryPoints:
     - web
   routes:
+    - match: Host(`proxmox.henrydowd.dev`)
+      kind: Rule
+      services:
+        - name: proxmox-external
+          port: 8006
+          scheme: https
+          serversTransport: insecure-transport
+    - match: Host(`proxmox.lan`)
+      kind: Rule
+      middlewares:
+        - name: redirect-https
+      services:
+        - name: proxmox-external
+          port: 8006
+          scheme: https
+          serversTransport: insecure-transport
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: proxmox-websecure
+  namespace: proxmox
+spec:
+  entryPoints:
+    - websecure
+  routes:
     - match: Host(`proxmox.lan`) || Host(`proxmox.henrydowd.dev`)
       kind: Rule
       services:
@@ -18,3 +75,4 @@ spec:
           port: 8006
           scheme: https
           serversTransport: insecure-transport
+  tls: {}
