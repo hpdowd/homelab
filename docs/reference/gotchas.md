@@ -62,6 +62,17 @@ with `helm template` against the pinned chart version. See
 - **Never pin `router.entrypoints: websecure`.** cloudflared hits
   Traefik over plain HTTP on `web`; a websecure-only router 404s every
   public hit. Applies to every TLS-behind-Cloudflare service.
+- **An HTTPS-native backend with a `Secure` auth cookie (Proxmox) needs
+  HTTPS on the LAN too — as a *second* IngressRoute.** PVE issues its
+  auth cookie `Secure`, so a plain-HTTP browser drops it and login 401s
+  right after it "succeeds". A CRD IngressRoute is served on `websecure`
+  only with a `tls` block, and that block makes it TLS-only (404s the
+  plain `web` tunnel) — so it can't be one route. Proxmox runs two:
+  `proxmox` (`web`, no tls — the tunnel, plus an http→https redirect on
+  `proxmox.lan` so muscle-memory doesn't 401) and `proxmox-websecure`
+  (`tls: {}`, LAN HTTPS). Plain Ingresses dodge this — the
+  kubernetesIngress provider gives them websecure for free. See
+  `docs/lessons/networking/proxmox-401-secure-cookie-plain-http.md`.
 - A missing or misnamed Middleware reference drops the whole router
   silently → 404.
 - Diagnose Traefik vs tunnel:
