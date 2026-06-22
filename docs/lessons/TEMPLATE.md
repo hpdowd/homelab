@@ -23,13 +23,13 @@ Resolved | Ongoing | Mitigated (root cause unconfirmed)
 - Frequency: one-off / intermittent / on every <trigger>.
 
 ## Investigation
-What you actually checked, **including dead ends** — the wrong turns are
+What you actually checked, **including dead ends**, the wrong turns are
 often the most useful part for the next person (or future you).
 - Hypothesis 1 → ruled out because ...
 - Hypothesis 2 → confirmed by ...
 
 ## Root cause
-The actual mechanism, stated plainly. Not "it was broken" — *why* it broke.
+The actual mechanism, stated plainly. Not "it was broken", *why* it broke.
 
 ## Fix
 ```bash
@@ -45,7 +45,7 @@ How you confirmed it was actually fixed (not just "looks better"):
 ```
 
 ## Prevention
-What stops this recurring — a config change, a guard rail, an alert, a runbook,
+What stops this recurring, a config change, a guard rail, an alert, a runbook,
 or "accepted risk, will revisit if it returns".
 
 ## Related

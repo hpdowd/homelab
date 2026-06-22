@@ -2,10 +2,10 @@
 
 The gating factor for "should I add service X" is RAM on the worker node.
 This is the report that answers it for the current state, plus how to
-re-run it. Pairs with the Grafana "Homelab — Capacity & RAM headroom"
+re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
-> **Status update 2026-06-12:** both candidates below are deployed —
+> **Status update 2026-06-12:** both candidates below are deployed,
 > Collabora (phase 6d) and Immich (phase 6c, ADR 006). Immich went in on
 > a ~6-day baseline showing a 7.9GiB worker minimum; post-deploy idle is
 > ~6.8GiB available. The feasibility numbers below are kept as the
@@ -16,25 +16,25 @@ dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
 The host's tight ~6GB free is **not** the constraint for in-cluster
 workloads. The worker VM (301) reserves its full 14GiB from the host the
-moment it boots, idle or not — that RAM is already spent from the host's
+moment it boots, idle or not; that RAM is already spent from the host's
 point of view. Most of it sits unused inside the VM. So filling it costs
 the host nothing; the only question is whether a new workload fits inside
-the worker VM's 13.59GiB usable (`MemTotal` — the 14GiB reservation minus
+the worker VM's 13.59GiB usable (`MemTotal`, the 14GiB reservation minus
 kernel-reserved).
 
 This flips the usual instinct: adding services that live *inside* the
 worker is "free" against the host budget. Adding another LXC/VM is not.
 
-## Snapshot — 2026-06-10
+## Snapshot: 2026-06-10
 
 Verifying the claim "worker1 generally sits under 50% of its 14GiB and
 almost never exceeds it." Pulled from VictoriaMetrics.
 
 **⚠️ Data window caveat:** the VM TSDB only held ~4.2 days at the time of
-this report — it was reset when the monitoring stack was redeployed
+this report; it was reset when the monitoring stack was redeployed
 (`vm-operator` svc age ~4d). So this verifies the *current steady state*
 with all present workloads, **not** a long baseline. See "Re-evaluate"
-below — this is exactly why the note exists.
+below; this is exactly why the note exists.
 
 Worker1 genuine used memory (`MemTotal − MemAvailable`, excludes
 reclaimable cache), 1214 samples @5min over ~4.2 days:
@@ -51,7 +51,7 @@ reclaimable cache), 1214 samples @5min over ~4.2 days:
 - `MemAvailable` never dropped below **8.35GiB** (the `NodeMemoryLowWorker`
   alert fires at <2GiB).
 - Swap effectively zero (≤1Mi).
-- `kubectl top node` showed 44% / 6.1GiB at the same moment — that's the
+- `kubectl top node` showed 44% / 6.1GiB at the same moment; that's the
   cadvisor working-set figure, which counts more than node-exporter's
   "genuine used". Both agree: comfortably under 50%.
 
@@ -63,7 +63,7 @@ Other headroom at snapshot time:
 - Pod memory **requests** total only 2.6GiB on worker (most pods declare
   none), **limits** total 8.91GiB. Genuine working set ~4.7GiB.
 - CPU: 2.15 / 8 cores requested, ~3% utilisation. Not a constraint.
-- Longhorn vdb: **69 / 491GiB used (14%)** — ~422GiB free.
+- Longhorn vdb: **69 / 491GiB used (14%)**, ~422GiB free.
 - OS root (worker): 17 / 28.8GiB (59%).
 
 **Workable budget for new in-cluster workloads:** to stay above the 2GiB
@@ -74,7 +74,7 @@ Other headroom at snapshot time:
 
 Figures below are **estimates from each project's resource profile, not
 measured on this box.** The real test is deploying with limits and
-watching — especially the first bulk import.
+watching, especially the first bulk import.
 
 | Workload | Est. footprint | Read |
 |---|---|---|
@@ -122,9 +122,9 @@ kubectl top pods -A --sort-by=memory | head -20
 This report is a 4-day snapshot. **Re-run it when:**
 
 - the worker has a meaningfully longer baseline (≥2–3 weeks of TSDB) so
-  peaks aren't hidden by the short window — the 2026-06-10 figures came
+  peaks aren't hidden by the short window, the 2026-06-10 figures came
   from only ~4.2 days because the TSDB had just been reset;
-- **after each new service is added** (Collabora, then Immich) — re-pull
+- **after each new service is added** (Collabora, then Immich), re-pull
   the distribution and, for Immich specifically, watch `MemAvailable`
   through the first full library import, which is the real worst case;
 - before deciding whether *both* Collabora and Immich can coexist

@@ -1,8 +1,8 @@
-# ADR 004 — Offsite backups with restic to Backblaze B2
+# ADR 004: Offsite backups with restic to Backblaze B2
 
 **Status:** Accepted
 **Date:** 2026-06
-**Superseded By:** —
+**Superseded By:** None
 
 ## What problem this solves
 
@@ -12,7 +12,7 @@ there's only one worker), and the pre-migration ZFS snapshot lived on the same
 two physical disks. RAID-1 handles a single disk failing. It doesn't handle
 the machine being stolen, a fire, ransomware, or me running the wrong
 `zfs destroy`. Until there was an offsite copy, the migrated LXCs couldn't be
-torn down either — they were the last independent backup.
+torn down either; they were the last independent backup.
 
 So the goal: a copy of the important data that's outside the house, encrypted,
 and survives me typing the wrong command.
@@ -30,7 +30,7 @@ A few quick notes on each:
   backup pod on the same node, which is the only way to mount a Longhorn RWO
   volume "read-only on the side" without detaching it from the running app.
   The Postgres DB gets `pg_dump`'d into an emptyDir and backed up as its own
-  tagged snapshot — file data and DB are restored independently.
+  tagged snapshot, file data and DB are restored independently.
 - **Gitea** takes the opposite approach: scale the Deployment to 0, mount
   the volume, back up, scale back to 1. Gitea uses SQLite, and a hot copy of
   a SQLite file is a recipe for a torn read. A few minutes of downtime at
@@ -40,21 +40,21 @@ A few quick notes on each:
   transfer once in a while, especially during the initial 37GB Nextcloud seed.
   restic uploads pack files and tracks what's already in the repo, so a re-run
   picks up where the last one died. The Nextcloud job wraps `restic backup`
-  in a retry loop and lowers `s3.connections` to 2 — both small things that
+  in a retry loop and lowers `s3.connections` to 2, both small things that
   add up to "the seed actually finished".
 
 ## What I considered and didn't pick
 
 - **Longhorn's built-in S3 backup.** Volume-level snapshot. Simpler, but it's
-  crash-consistent, not application-consistent — restoring a half-written
+  crash-consistent, not application-consistent, restoring a half-written
   Postgres data dir is a bad time. Kept as a secondary safety net via
   Longhorn's local scheduled snapshots, just not the primary offsite path.
 - **`gitea dump`.** Gitea's blessed backup command. Two problems: it expects
   Gitea to be down for a consistent dump anyway (so no downtime saved), and
   each run produces a fresh ZIP. restic can't dedupe across ZIPs the way it
   can across a raw filesystem, so daily retention gets expensive fast. The
-  one downside of the raw-volume approach — needing to run
-  `gitea admin regenerate hooks` after a restore — is documented in the
+  one downside of the raw-volume approach, needing to run
+  `gitea admin regenerate hooks` after a restore, is documented in the
   restore runbook.
 - **Velero.** Full cluster-backup tool. Overkill for two services. Worth
   revisiting if there are more apps.

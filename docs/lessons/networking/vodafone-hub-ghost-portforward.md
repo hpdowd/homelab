@@ -4,19 +4,19 @@
 2026-05-27
 
 ## Time lost
-~2h — the misleading UI sent debugging in the wrong direction
+~2h, the misleading UI sent debugging in the wrong direction
 
 ## Status
-Resolved — root cause understood; rules re-created.
+Resolved, root cause understood; rules re-created.
 
 ## Context
 - **System / component:** Vodafone Ultra Hub (consumer router).
-- **Scope:** Inbound port forwarding — specifically the WireGuard UDP port, which depends on a port-forward from the router to LXC 101.
+- **Scope:** Inbound port forwarding, specifically the WireGuard UDP port, which depends on a port-forward from the router to LXC 101.
 - **State before:** Working remote access. Then DHCP range settings on the router were changed.
 
 ## Symptoms
 - Remote access (WireGuard) stopped working from outside the LAN.
-- The router's port-forwarding page **still showed the rules as present and valid** — so by inspection nothing looked wrong.
+- The router's port-forwarding page **still showed the rules as present and valid**; so by inspection nothing looked wrong.
 - Despite the rules appearing correct in the UI, no traffic was actually being forwarded.
 
 ## Investigation
@@ -31,12 +31,12 @@ Changing the DHCP range settings on the Vodafone Hub silently wiped the existing
 Delete and re-create the port-forward rule(s) from scratch. Do not trust a rule that "looks fine" after any DHCP or network change on this router.
 
 ## Verification
-Confirm the forward works from **outside** the LAN (mobile data, not Wi-Fi) — e.g. WireGuard handshake completes. UI presence is not proof.
+Confirm the forward works from **outside** the LAN (mobile data, not Wi-Fi), e.g. WireGuard handshake completes. UI presence is not proof.
 
 ## Prevention
 - After any DHCP or network-settings change on the Vodafone Hub, re-verify port forwards from an external network. Treat the UI display as untrustworthy.
-- This is a consumer-router limitation, not fixable in config. It's a reason the long-term plan avoids depending on this router for WAN exposure — Cloudflare tunnels sidestep it for HTTP services; only WireGuard's UDP port still needs the forward.
+- This is a consumer-router limitation, not fixable in config. It's a reason the long-term plan avoids depending on this router for WAN exposure; Cloudflare tunnels sidestep it for HTTP services; only WireGuard's UDP port still needs the forward.
 
 ## Related
-- `infra/wireguard-lxc-dstate-freeze.md` — WireGuard LXC operational notes
+- `infra/wireguard-lxc-dstate-freeze.md`, WireGuard LXC operational notes
 - The WireGuard UDP port-forward to LXC 101 is the only remaining dependency on this router for remote access

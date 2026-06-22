@@ -1,4 +1,4 @@
-# Incident: Nextcloud AIO outage — Proxmox LXC firewall blocking port 11000
+# Incident: Nextcloud AIO outage, Proxmox LXC firewall blocking port 11000
 
 ## Date
 2026-05-28
@@ -10,8 +10,8 @@
 Resolved.
 
 ## Context
-- **System / component:** Nextcloud All-in-One (AIO) on LXC 104 — pre-migration, before Nextcloud moved into the k3s cluster.
-- **Scope:** Nextcloud only — the AIO Apache frontend listens on port 11000.
+- **System / component:** Nextcloud All-in-One (AIO) on LXC 104, pre-migration, before Nextcloud moved into the k3s cluster.
+- **Scope:** Nextcloud only, the AIO Apache frontend listens on port 11000.
 - **State before:** Reviewing and adjusting Proxmox firewall settings on the LXC.
 
 ## Symptoms
@@ -23,7 +23,7 @@ Resolved.
 - The Proxmox firewall was enabled on the LXC (`firewall=1`) without an allow rule for port 11000, so inbound traffic was being dropped at the hypervisor level.
 
 ## Root cause
-The Proxmox firewall was active on LXC 104 but had no allow rule for port **11000**, so nothing could reach the Nextcloud AIO Apache frontend. The container networking and the app were fine — the hypervisor-level firewall was silently dropping the traffic.
+The Proxmox firewall was active on LXC 104 but had no allow rule for port **11000**, so nothing could reach the Nextcloud AIO Apache frontend. The container networking and the app were fine; the hypervisor-level firewall was silently dropping the traffic.
 
 ## Fix
 - Added a firewall rule permitting port 11000 to the LXC.
@@ -37,4 +37,4 @@ Nextcloud reachable immediately after the rule was added. Admin ports confirmed 
 - Document each container's required inbound ports alongside its firewall state so "firewall on, no rules" doesn't silently black-hole a service.
 
 ## Related
-- Superseded context: Nextcloud has since migrated into k3s — ingress is now handled by Traefik, not the LXC firewall. The general lesson applies to every remaining LXC (Technitium, WireGuard, AMP).
+- Superseded context: Nextcloud has since migrated into k3s; ingress is now handled by Traefik, not the LXC firewall. The general lesson applies to every remaining LXC (Technitium, WireGuard, AMP).

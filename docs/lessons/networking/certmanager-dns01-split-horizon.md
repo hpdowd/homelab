@@ -1,10 +1,10 @@
-# Incident: cert-manager DNS-01 self-check stuck — split-horizon DNS, then a router that eats port 53
+# Incident: cert-manager DNS-01 self-check stuck, split-horizon DNS, then a router that eats port 53
 
 ## Date
 2026-06-12
 
 ## Time lost
-~1h (caught on first deploy of cert-manager, not in production use — but it
+~1h (caught on first deploy of cert-manager, not in production use, but it
 also exposed that Collabora's WOPI reachback had been silently broken)
 
 ## Status
@@ -29,24 +29,24 @@ Resolved
   ```
 
 ## Investigation
-- TXT records were *created fine* — the Cloudflare token worked (zone read
+- TXT records were *created fine*, the Cloudflare token worked (zone read
   + dns_records edit verified by hand). Not a credentials problem.
 - The first error names `technitium.` as a hostname cert-manager tried to
-  dial. That's not a Cloudflare nameserver — it's the NS record of
+  dial. That's not a Cloudflare nameserver; it's the NS record of
   Technitium's **local** `henrydowd.dev` zone. → layer 1 confirmed.
 - After fixing layer 1 with `--dns01-recursive-nameservers=1.1.1.1:53,...`:
   i/o timeouts. Tested from the workstation (same LAN): `dig @1.1.1.1`,
-  `@1.0.0.1`, `@8.8.8.8` all time out, UDP **and** TCP — so the block is
+  `@1.0.0.1`, `@8.8.8.8` all time out, UDP **and** TCP; so the block is
   LAN-wide at the router, not a cluster egress problem. DoH
   (`https://1.1.1.1/dns-query`) goes through fine and showed the challenge
   TXT already propagated. → layer 2 confirmed.
 - Side discovery: Collabora's interim WOPI hairpin (`dnsPolicy: None`,
-  nameservers 1.1.1.1/1.0.0.1) depends on exactly what the router blocks —
+  nameservers 1.1.1.1/1.0.0.1) depends on exactly what the router blocks,
   `getent hosts nextcloud.henrydowd.dev` from the collabora pod fails with
   "not found". Document editing was broken and nothing alerted.
 
 ## Root cause
-Two independent layers, same theme — *in-cluster consumers that need the
+Two independent layers, same theme, *in-cluster consumers that need the
 public view of henrydowd.dev can't get it*:
 
 1. **Split-horizon DNS poisons cert-manager's self-check.** Before asking
@@ -54,8 +54,8 @@ public view of henrydowd.dev can't get it*:
    authoritative NS and queries it for the `_acme-challenge` TXT. That
    lookup goes pod → CoreDNS → node resolver → **Technitium**, which is
    authoritative for the local zone and answers with its own NS record:
-   the bare name `technitium.` — unresolvable in-cluster. The check loops
-   forever. (Even if it resolved, Technitium would never serve the TXT —
+   the bare name `technitium.`, unresolvable in-cluster. The check loops
+   forever. (Even if it resolved, Technitium would never serve the TXT,
    the real record lives in Cloudflare.)
 2. **The Vodafone hub silently drops outbound port 53** to external
    resolvers (Cloudflare and Google, UDP and TCP). Any "just use 1.1.1.1"
@@ -85,11 +85,11 @@ echo | openssl s_client -connect 192.168.1.200:443 -servername immich.henrydowd.
 ## Prevention
 - Flags live in the committed helm values; a rebuild gets them for free.
   If a future Certificate sticks at `pending`, read the Challenge's
-  `status.reason` first — it names the exact lookup that failed.
+  `status.reason` first; it names the exact lookup that failed.
 - General rule for this LAN, now twice-proven: **plain DNS to public
   resolvers does not work from anywhere on this network.** Anything that
   needs the public view must use DoH/DoT or go through Technitium's
-  encrypted upstream. Don't hand pods `nameservers: [1.1.1.1]` — that's
+  encrypted upstream. Don't hand pods `nameservers: [1.1.1.1]`; that's
   what silently killed Collabora's hairpin.
 - The hairpin itself is gone: with the wildcard cert on Traefik, Collabora
   resolves `nextcloud.henrydowd.dev` via normal cluster DNS → Technitium →

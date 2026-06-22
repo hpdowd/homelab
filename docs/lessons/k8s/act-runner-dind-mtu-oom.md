@@ -1,10 +1,10 @@
-# Incident: Gitea act_runner bring-up — DinD MTU black-hole + Go-GC OOM
+# Incident: Gitea act_runner bring-up, DinD MTU black-hole + Go-GC OOM
 
 ## Date
 2026-06-13
 
 ## Time lost
-~1.5h (bring-up debugging; no user-facing outage — Actions was new)
+~1.5h (bring-up debugging; no user-facing outage, Actions was new)
 
 ## Status
 Resolved
@@ -12,7 +12,7 @@ Resolved
 ## Context
 - **System / component:** `act-runner` Deployment in the `gitea` namespace
   (act_runner agent + privileged `docker:dind` sidecar), k3s-worker1.
-- **Scope:** Gitea Actions only — a new feature being stood up (ADR 008).
+- **Scope:** Gitea Actions only, a new feature being stood up (ADR 008).
   No existing service affected.
 - **State before:** Fresh deployment. Goal: manifest CI (kubeconform over
   `k8s/**`) running on every push.
@@ -25,7 +25,7 @@ Three distinct failures, in order:
    runner ... terminated reason=OOMKilled exitCode=137  (limit 192Mi)
    ```
 2. After raising to 384Mi the pod ran, **but the CI job failed** at the
-   "install kubeconform" step — and only after a long hang:
+   "install kubeconform" step, and only after a long hang:
    ```text
    curl: (35) OpenSSL SSL_connect: Connection reset by peer in connection to github.com:443
    gzip: stdin: unexpected end of file
@@ -37,16 +37,16 @@ Three distinct failures, in order:
    after starting.
 3. After the MTU fix, a job would **succeed but the runner still OOMKilled
    mid-run** at 384Mi (exit 137), restart, and re-register. Idle RSS was
-   ~10Mi — the spike was during job execution.
+   ~10Mi, the spike was during job execution.
 
 ## Investigation
 - **OOM #1 (192Mi):** assumed a startup spike, bumped to 384Mi. Wrong
-  assumption that it was startup-only — see OOM #2.
+  assumption that it was startup-only, see OOM #2.
 - **curl reset to github:** ruled out DNS (checkout resolved/cloned fine;
   act_runner itself fetched the `checkout` action from github). Ruled out
-  a real github outage (reproduced locally — kubeconform downloaded and
+  a real github outage (reproduced locally, kubeconform downloaded and
   validated the repo cleanly: `Valid: 59, Invalid: 0`). So the *manifests
-  and the command were fine* — the failure was environmental, inside the
+  and the command were fine*, the failure was environmental, inside the
   job container, only on internet-bound TLS. The ~2.5min hang-then-reset
   is the signature of large packets being silently dropped (PMTU
   black-hole), not a refused connection.
@@ -56,7 +56,7 @@ Three distinct failures, in order:
     → eventual reset. Local Gitea traffic stayed small, so checkout worked.
 - **OOM #2 (384Mi, mid-job):** the act_runner agent is a Go binary. Go's
   GC grows the heap toward the cgroup limit and doesn't know the cgroup
-  cap unless told — so it over-allocated under job load and got
+  cap unless told; so it over-allocated under job load and got
   OOMKilled despite a ~10Mi idle working set.
 
 ## Root cause
@@ -70,10 +70,10 @@ Two independent bring-up defects:
 ## Fix
 Both declarative, in `k8s/apps/gitea/`:
 
-- **MTU** — `daemon.json` (in the act-runner ConfigMap, mounted at
+- **MTU:** `daemon.json` (in the act-runner ConfigMap, mounted at
   `/etc/docker/daemon.json` in the dind sidecar), pins every bridge,
   including act_runner's per-job networks (`default-network-opts`, needs
-  docker ≥ 26 — we run docker:27-dind):
+  docker ≥ 26, we run docker:27-dind):
   ```json
   {
     "mtu": 1450,
@@ -81,7 +81,7 @@ Both declarative, in `k8s/apps/gitea/`:
   }
   ```
   Commit `5b08df3` (`fix(gitea): pin dind bridge mtu to 1450 ...`).
-- **OOM** — runner mem limit 192→384→**768Mi** plus a soft
+- **OOM**: runner mem limit 192→384→**768Mi** plus a soft
   `GOMEMLIMIT=700MiB` so Go GCs before the hard cap. Commits the mem-bump
   and `5de40c0` (`... 384Mi->768Mi + GOMEMLIMIT ...`).
 

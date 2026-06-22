@@ -1,4 +1,4 @@
-# Collabora CODE — slow cold document load: auditable investigation log
+# Collabora CODE: slow cold document load (auditable investigation log)
 
 *Homelab k3s cluster · namespace `collabora` · pod pinned to `k3s-worker1`*
 
@@ -7,10 +7,10 @@
 Every conclusion below is tagged with the evidence it rests on so it can be
 re-audited. Tags:
 
-- **[FACT]** — directly observed in a command output or log line (quoted/derived).
-- **[INFERENCE]** — reasoning from facts; may be wrong; the reasoning is shown.
-- **[UNRESOLVED]** — a known gap or tension that is *not* yet explained.
-- **[CORRECTION]** — something asserted earlier in the investigation that was later
+- **[FACT]:** directly observed in a command output or log line (quoted/derived).
+- **[INFERENCE]:** reasoning from facts; may be wrong; the reasoning is shown.
+- **[UNRESOLVED]:** a known gap or tension that is *not* yet explained.
+- **[CORRECTION]:** something asserted earlier in the investigation that was later
   shown wrong; recorded so it is not re-trusted.
 
 The goal is that the next reader can challenge any **[INFERENCE]** against the
@@ -44,27 +44,27 @@ inheriting a clean-looking but unproven story.
 ## 3. Current applied config (confirmed unless noted)
 
 - **Image:** `collabora/code:25.04.10.3.1` (downgraded from `26.04.1.4.1` during
-  investigation). [FACT — user applied]
+  investigation). [FACT, user applied]
 - **securityContext.capabilities.add:** `["SYS_ADMIN","MKNOD","SYS_CHROOT","FOWNER"]`
-  [FACT — `kubectl get pod ... -o jsonpath` returned `{"add":["SYS_ADMIN","MKNOD","SYS_CHROOT","FOWNER"]}`]
+  [FACT, `kubectl get pod ... -o jsonpath` returned `{"add":["SYS_ADMIN","MKNOD","SYS_CHROOT","FOWNER"]}`]
 - **AppArmor:** `unconfined` via
-  `container.apparmor.security.beta.kubernetes.io/code: unconfined`. [FACT — applied]
+  `container.apparmor.security.beta.kubernetes.io/code: unconfined`. [FACT, applied]
 - **extra_params (current):** `--o:ssl.enable=false --o:ssl.termination=true --o:logging.level=trace`
-  [FACT — user pasted this exact value]
+  [FACT, user pasted this exact value]
   - **[CORRECTION]** `--o:mount_namespaces=false` is **NOT** in the current params.
     It was present early in the build and was removed. At one point during the
-    investigation it was claimed to be the cause of the copy behaviour — **that claim
+    investigation it was claimed to be the cause of the copy behaviour, **that claim
     was wrong** (the user confirmed the flag was already absent when the copy was still
     happening). Do not reintroduce or blame this flag.
-- **dnsPolicy:** `None`; **dnsConfig.nameservers:** `[1.1.1.1, 1.0.0.1]`. [FACT — in manifest]
+- **dnsPolicy:** `None`; **dnsConfig.nameservers:** `[1.1.1.1, 1.0.0.1]`. [FACT, in manifest]
   - Purpose: make the WOPI reachback resolve the *public* Nextcloud name to the
     Cloudflare edge so it gets a valid cert instead of Traefik's self-signed one.
 - **Probes (current):** Startup `httpGet /hosting/discovery` (failureThreshold reduced
   to 30); Readiness `httpGet /hosting/discovery`; Liveness `tcpSocket :9980`.
-  [FACT — `kubectl describe pod`]
+  [FACT, `kubectl describe pod`]
 - **Nextcloud richdocuments:** `wopi_url = http://collabora.collabora.svc.cluster.local:9980`
   (in-cluster, plain HTTP); `public_wopi_url = https://collabora.henrydowd.dev`.
-  [FACT — occ output]
+  [FACT, occ output]
 - **Suggested but NOT confirmed applied:** `dictionaries=en_GB en_US`,
   `--o:num_prespawn_children=3`. Not present in the pasted params; treat as not applied.
 
@@ -78,7 +78,7 @@ inheriting a clean-looking but unproven story.
   ~1000m for roughly the final 10 s before editable. (Sampled ~every 15–20 s, so 3–4
   points across the load; all consistent with a linear climb to a 1-core ceiling.)
 - `kubectl top nodes`: worker ~42% memory (~6GB/14GiB), CPU ~3%.
-- Restart count **0**; no OOMKill. [FACT — `kubectl get pods`, `describe`]
+- Restart count **0**; no OOMKill. [FACT, `kubectl get pods`, `describe`]
 
 ### 4.2 `serverloadtimings` line (trace log) [FACT]
 Raw counters (microseconds), chronological:
@@ -112,9 +112,9 @@ Derived phase durations:
 | **loadDocumentEnd → firstTileSent** | **~48.46 s** | **dominant cost** |
 | wopiPostReceived → firstTileSent | ~52.45 s | ≈ wall clock (+client ≈55s) |
 
-Also in this log block [FACT]: the kit's document URL is the **public** name —
-`https://nextcloud.henrydowd.dev:443/index.php/apps/richdocuments/wopi/files/5192_...`
-— i.e. the file fetch used the public/hairpin path and still completed in ~207 ms.
+Also in this log block [FACT]: the kit's document URL is the **public** name,
+`https://nextcloud.henrydowd.dev:443/index.php/apps/richdocuments/wopi/files/5192_...`,
+i.e. the file fetch used the public/hairpin path and still completed in ~207 ms.
 
 ### 4.3 Process attribution via `/proc/[pid]/stat` during the uneditable window [FACT]
 - At the start of the open: `coolwsd` is the top CPU consumer.
@@ -168,7 +168,7 @@ CapBnd: 00000000a82425fb      (bounding set includes requested caps)
 
 ---
 
-## 5. Hypotheses considered — with the evidence that decided each
+## 5. Hypotheses considered, with the evidence that decided each
 
 | # | Hypothesis | Why considered | Evidence | Verdict |
 |---|---|---|---|---|
@@ -192,7 +192,7 @@ CapBnd: 00000000a82425fb      (bounding set includes requested caps)
 - These have **not been reconciled on a single timeline.** It is an [INFERENCE], not a
   proven fact, that the 48 s is the copy. It is plausible the copy (spare-kit
   preparation) overlaps/blocks the pipeline such that the "first tile" can't be sent
-  until a copied jail is ready — but the timestamps of the `linkOrCopy` log lines were
+  until a copied jail is ready, but the timestamps of the `linkOrCopy` log lines were
   **not** measured against the 48 s window.
 - **Check to resolve:** on a cold open, capture timestamps of the `Mounting is
   disabled` / `linkOrCopy ...` lines and compare their span to the
@@ -207,7 +207,7 @@ CapBnd: 00000000a82425fb      (bounding set includes requested caps)
   reasons (unverified): CODE stopped *attempting* the mount and switched to a clean
   copy path once caps were requested; or coolmount/coolforkit carry file capabilities
   independent of pid 1's `CapEff`; or effective caps differ in the child process from
-  pid 1. The next model should **not** assume "the cap is entirely ineffective" — only
+  pid 1. The next model should **not** assume "the cap is entirely ineffective", only
   that **pid 1's `CapEff` is 0**, which is the measured fact.
 
 ---
@@ -233,7 +233,7 @@ Confidence: links 1–3 are facts; link 4 is well-supported; link 5 depends on �
 being resolved; link 6 is **unverified** (the suspected cause of the empty `CapEff`).
 
 ### Checks that confirm or refute the chain
-- **§6.1 timestamp check** (copy span vs 48 s gap) — confirms/refutes that the copy is
+- **§6.1 timestamp check** (copy span vs 48 s gap), confirms/refutes that the copy is
   the cost (links 4–5).
 - **uid-drop check** (link 6):
   ```

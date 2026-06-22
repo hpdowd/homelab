@@ -1,7 +1,7 @@
 # Restoring from the B2 backups
 
 This is the runbook I'll be very glad exists if I ever need it. It covers
-Nextcloud and Gitea — both backed up to Backblaze B2 by the daily restic
+Nextcloud and Gitea, both backed up to Backblaze B2 by the daily restic
 CronJobs.
 
 ## What you need before you start
@@ -19,13 +19,13 @@ CronJobs.
 A note on which repo path to use: the restic repo URL ends in
 `/nextcloud`, `/gitea`, or `/immich`. Swap the suffix depending on what
 you're restoring.
-And the URL has to start with `s3:https://` — without the `s3:` prefix,
+And the URL has to start with `s3:https://`, without the `s3:` prefix,
 restic treats it as a local-disk path, "succeeds" writing to the pod's
 ephemeral storage, and you get nothing. I learned this the painful way.
 
 ---
 
-## Step 0 — Get restic talking to B2
+## Step 0: Get restic talking to B2
 
 On a machine with restic installed:
 
@@ -44,7 +44,7 @@ corrupted for 6 months and I never noticed". Run it now, not after you've
 nuked the only good copy of the data.
 
 If you don't have restic locally but the cluster is up, run it inside a
-pod — the `backup-credentials` secret already has everything you need:
+pod; the `backup-credentials` secret already has everything you need:
 
 ```bash
 kubectl run restic-restore -n <namespace> --rm -it --restart=Never \
@@ -58,9 +58,9 @@ kubectl run restic-restore -n <namespace> --rm -it --restart=Never \
 
 Two snapshots come out of each Nextcloud backup, tagged separately:
 
-- `nextcloud-data` — the contents of the `/var/www/html` PVC (files, app
+- `nextcloud-data`, the contents of the `/var/www/html` PVC (files, app
   state, `config.php`, the lot).
-- `nextcloud-db` — a Postgres `pg_dump` in custom format.
+- `nextcloud-db`, a Postgres `pg_dump` in custom format.
 
 You restore both. Order doesn't matter strictly but it's easier to do data
 first then DB.
@@ -68,7 +68,7 @@ first then DB.
 ### 1. Bring the app up empty, then take it offline
 
 Let ArgoCD deploy Nextcloud + Postgres + Redis so the PVCs and Postgres
-actually exist. Then scale Nextcloud to 0 — you don't want it writing while
+actually exist. Then scale Nextcloud to 0, you don't want it writing while
 you're restoring underneath it:
 
 ```bash
@@ -88,7 +88,7 @@ restic restore latest --tag nextcloud-data --target /restore-target
 # The snapshot's /data maps to the PVC's contents.
 ```
 
-Make sure ownership ends up as `www-data` (UID 33) — Nextcloud will refuse
+Make sure ownership ends up as `www-data` (UID 33), Nextcloud will refuse
 to read files it doesn't own. `chown -R 33:33 /restore-target` if you need
 to.
 
@@ -123,14 +123,14 @@ kubectl exec -n nextcloud $POD -- su -s /bin/sh www-data -c "php occ files:scan 
 kubectl exec -n nextcloud $POD -- su -s /bin/sh www-data -c "php occ status"
 ```
 
-`occ files:scan --all` reconciles the filesystem with the database — if any
+`occ files:scan --all` reconciles the filesystem with the database, if any
 files weren't tracked in the DB (or the DB references files that aren't
 there) this rebuilds the index.
 
 **Important:** the `instanceid` / `secret` / `passwordsalt` values in
 `config.php` must match the DB you just restored. They're held in the
 SealedSecret. If you rebuilt the cluster, make sure that SealedSecret was
-restored before Nextcloud started — otherwise every encrypted field
+restored before Nextcloud started, otherwise every encrypted field
 (passwords, share tokens) is unreadable and looks like data corruption.
 
 ---
@@ -148,7 +148,7 @@ kubectl scale deployment gitea -n gitea --replicas=0
 
 ### 2. Restore the volume
 
-Same pattern as Nextcloud — pod that mounts `gitea-data`, then:
+Same pattern as Nextcloud, pod that mounts `gitea-data`, then:
 
 ```bash
 restic snapshots --tag gitea-data
@@ -156,7 +156,7 @@ restic restore latest --tag gitea-data --target /restore-target
 # The snapshot's /data maps to the PVC root.
 ```
 
-### 3. Regenerate git hooks — DO NOT SKIP
+### 3. Regenerate git hooks: DO NOT SKIP
 
 A raw-volume restore brings back the data files but the per-repo git hooks
 have absolute paths and assumptions baked in. If anything changed (image
@@ -185,11 +185,11 @@ you're back.
 
 Two snapshots per night, same shape as Nextcloud:
 
-- `immich-data` — the library PVC (`/data` in the pod: originals under
+- `immich-data`, the library PVC (`/data` in the pod: originals under
   `upload/` and `library/`, profile pictures, server-side backups).
-  `thumbs/` and `encoded-video/` are NOT in the backup — Immich
+  `thumbs/` and `encoded-video/` are NOT in the backup, Immich
   regenerates them, see below.
-- `immich-db` — `pg_dump` of the `immich` database in custom format.
+- `immich-db`, `pg_dump` of the `immich` database in custom format.
 
 ### 1. Bring it up empty, scale the server to 0
 
@@ -226,7 +226,7 @@ PGPASSWORD=<db_pass> pg_restore -h postgres.immich -U postgres \
 ```
 
 The DB password is in the `immich-secrets` SealedSecret (and the password
-manager). Postgres must be the same paired image from the manifests —
+manager). Postgres must be the same paired image from the manifests,
 the dump carries VectorChord-backed tables, a vanilla postgres won't
 load the extension.
 
@@ -236,7 +236,7 @@ load the extension.
 kubectl scale deployment immich-server -n immich --replicas=1
 ```
 
-Log in, confirm the timeline shows assets. Thumbnails will be missing —
+Log in, confirm the timeline shows assets. Thumbnails will be missing,
 queue the regeneration jobs in the admin UI (Administration → Jobs →
 "Generate Thumbnails", and "Transcode Videos" if needed). The library is
 usable while they grind through.
@@ -272,6 +272,6 @@ one.)
 
 Notes from the 2026-06-12 run: in-cluster throwaway pods with each
 namespace's `backup-credentials` (the pattern in operations.md) work fine
-for this. Give the pod an `ephemeral-storage` limit — a full restore of
+for this. Give the pod an `ephemeral-storage` limit, a full restore of
 the Nextcloud data set fills the worker's root disk and gets the pod
 evicted. Restore a bounded `--include` instead.

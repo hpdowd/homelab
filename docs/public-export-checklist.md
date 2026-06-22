@@ -14,12 +14,12 @@ publishing an internal network map.
 
 ### Hostnames and domains
 - [ ] Internal hostnames (`*.lan`)
-- [ ] Real public domain (`henrydowd.dev`) — replace with `<your-domain>` or a placeholder
+- [ ] Real public domain (`henrydowd.dev`), replace with `<your-domain>` or a placeholder
 - [ ] Cloudflare tunnel ID / tunnel name
 - [ ] Git repo URL (`git.henrydowd.dev/henry/homelab`)
 
 ### Credentials and secrets
-- [ ] SealedSecret YAML blobs (they're safe to commit in the private repo but look alarming out of context — annotate or strip)
+- [ ] SealedSecret YAML blobs (they're safe to commit in the private repo but look alarming out of context, annotate or strip)
 - [ ] Backblaze B2 bucket name, endpoint URL, and region (`hpd.homelab`, `s3.eu-central-003.backblazeb2.com`)
 - [ ] Any `RESTIC_REPOSITORY` values that include the real bucket path
 - [ ] Email addresses in Alertmanager config
@@ -32,11 +32,11 @@ publishing an internal network map.
 
 ## What to keep (scrubbed versions are fine)
 
-- All the architecture decisions, ADRs, and lessons — the reasoning is the value
+- All the architecture decisions, ADRs, and lessons; the reasoning is the value
 - Kubernetes manifests with real structure, placeholder values substituted
 - Runbooks and reference docs with IPs replaced by placeholders
 - Phase plan and migration history (the "what" and "why", not the "where")
-- Incident post-mortems — these are high-signal portfolio content
+- Incident post-mortems; these are high-signal portfolio content
 
 ## Public repo conventions
 

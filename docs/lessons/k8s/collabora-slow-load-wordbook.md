@@ -4,7 +4,7 @@
 2026-06-09 → 2026-06-11 (symptom present for weeks before being investigated)
 
 ## Time lost
-~2 days of active debugging — most of it spent confirming and fixing a *second,
+~2 days of active debugging, most of it spent confirming and fixing a *second,
 coincident* pathology (jail-copy fallback) that turned out not to be the cause.
 
 ## Status
@@ -51,10 +51,10 @@ Condensed hypothesis trail, including the dead ends:
   `mount(2)`, and the deprecated AppArmor *annotation* never applied on k3s 1.35.
   Switching to the `securityContext.appArmorProfile: {type: Unconfined}` **field**
   (plus the capability list feeding CODE's file-caps helpers) got bind-mounted
-  jails: setup 48 s of copying → **6 ms**. Real fix, worth keeping —
+  jails: setup 48 s of copying → **6 ms**. Real fix, worth keeping,
   **but the symptom was unchanged**, proving the copy was coincident, not causal.
 - Misreading along the way: pid 1 `CapEff=0` was taken as "caps not applied";
-  it is the *healthy* state — CODE uses file capabilities on `coolmount` /
+  it is the *healthy* state, CODE uses file capabilities on `coolmount` /
   `coolforkit-caps`, which only need the caps in the *bounding set*.
 - perf profile finally pointed at `DictionaryNeo` → wordbook presets → found it.
 
@@ -66,8 +66,8 @@ settings (2026-04-01), stored at
 
 On every cold open, CODE's presets mechanism downloaded it into the kit jail
 (`presetsInstall` ~3.4 s), then `DictionaryNeo` parsed and **sort-inserted all
-51,573 entries on first spellcheck** — between `loadDocumentEnd` and
-`firstTileSent` — which is comparison-quadratic (~10⁹ `cmpDicEntry` calls plus
+51,573 entries on first spellcheck**, between `loadDocumentEnd` and
+`firstTileSent`; which is comparison-quadratic (~10⁹ `cmpDicEntry` calls plus
 `rtl_uString` refcount churn) ≈ 48 s on the then-crippled vCPU. Warm sessions
 were instant because the assigned kit had already paid the cost.
 
@@ -97,7 +97,7 @@ AppArmor/capability settings commented so they don't look like cruft.
 
 ## Verification
 - Wordbook dir now contains only `standard.dic` (300 B, 35 genuine entries).
-- Cold open after fix: editable in seconds — confirmed by user 2026-06-11.
+- Cold open after fix: editable in seconds, confirmed by user 2026-06-11.
 - Bind-mounted jails still active after restart
   (`Using Mount Namespaces: true`, jail setup ~6 ms).
 
@@ -117,7 +117,7 @@ AppArmor/capability settings commented so they don't look like cruft.
 ## Related
 - Raw investigation logs: [v2](collabora-slow-load-investigation-v2.md) ·
   [v3](collabora-slow-load-investigation-v3.md) (includes corrections register)
-- `k8s/apps/collabora/deployment.yaml` — commented security/config choices
-- `docs/reference/capacity-headroom.md` — Collabora sizing (unrelated to incident)
+- `k8s/apps/collabora/deployment.yaml`, commented security/config choices
+- `docs/reference/capacity-headroom.md`, Collabora sizing (unrelated to incident)
 - Upstream context: CollaboraOnline/online#14087 (different trigger, same
   jail-copy fallback family)
