@@ -7,7 +7,7 @@ The order matters. Each step assumes the previous ones are done.
 
 ## 0. Before you start
 
-Pull these out of the password manager first — without them you can't
+Pull these out of the password manager first, without them you can't
 restore anything:
 
 - `RESTIC_PASSWORD` and the B2 access keys
@@ -15,7 +15,7 @@ restore anything:
   encryption pair). Also kept on local disk somewhere safe
 - Cloudflare API token (needed to recreate the tunnel, if it's gone)
 - The git repo URL + a way to read it (this repo lives in Gitea, but if
-  the cluster is gone there's no Gitea — so keep a clone on a laptop)
+  the cluster is gone there's no Gitea; so keep a clone on a laptop)
 
 If the Sealed Secrets key is gone, every `SealedSecret` in this repo is
 unrecoverable. You'd have to re-seal them all from the password manager,
@@ -29,10 +29,10 @@ Install Proxmox, get networking working with static IPs, then create
 the ZFS mirror pool called `tank`. Wire up the LXCs that have to exist
 outside k3s:
 
-- 100 Technitium — DNS. Without it, `*.lan` doesn't work.
-- 101 WireGuard — VPN + cloudflare-ddns. Don't break this one if
+- 100 Technitium, DNS. Without it, `*.lan` doesn't work.
+- 101 WireGuard, VPN + cloudflare-ddns. Don't break this one if
   you're remote.
-- 102 AMP — game server, optional to bring up early.
+- 102 AMP, game server, optional to bring up early.
 
 Restore their `tank` subvolumes from the ZFS snapshot backup if you
 have one, otherwise install fresh.
@@ -41,8 +41,8 @@ have one, otherwise install fresh.
 
 Two VMs:
 
-- **300 control** — 2 vCPU, 4GiB RAM, static `192.168.1.10`
-- **301 worker1** — 8 vCPU, 14GB RAM, static `192.168.1.11`, plus a
+- **300 control:** 2 vCPU, 4GiB RAM, static `192.168.1.10`
+- **301 worker1:** 8 vCPU, 14GB RAM, static `192.168.1.11`, plus a
   500GB virtual disk (`vdb`) carved out of `tank` for Longhorn
 
 Install k3s on both. The control node first:
@@ -77,10 +77,10 @@ kubectl annotate sc longhorn storageclass.kubernetes.io/is-default-class="true"
 ```
 
 Set the replica count to 1 (single-worker reality) and keep replicas
-off the control node — it only has the 29G OS disk. **Two knobs, both
+off the control node; it only has the 29G OS disk. **Two knobs, both
 matter:** the `default-replica-count` setting only covers volumes whose
 StorageClass doesn't say otherwise, and the stock `longhorn`
-StorageClass hardcodes `numberOfReplicas: "3"` — so new PVCs ignore the
+StorageClass hardcodes `numberOfReplicas: "3"`; so new PVCs ignore the
 setting unless the StorageClass (via its source ConfigMap) is fixed too:
 
 ```bash
@@ -97,7 +97,7 @@ kubectl -n longhorn-system patch nodes.longhorn.io k3s-control \
   --type=merge -p '{"spec":{"allowScheduling":false}}'
 ```
 
-(The node object only exists once Longhorn has started on it — if the
+(The node object only exists once Longhorn has started on it, if the
 patch 404s, wait and retry. Confirm with
 `kubectl get sc longhorn -o jsonpath='{.parameters.numberOfReplicas}'`.)
 
@@ -109,8 +109,8 @@ kubectl -n longhorn-system get volumes.longhorn.io
 ```
 
 This bit once: the setting never got applied, the default stayed 3, and
-every volume sat permanently degraded — with replicas quietly landing on
-the control node's OS disk — until a review caught it months later. A
+every volume sat permanently degraded, with replicas quietly landing on
+the control node's OS disk, until a review caught it months later. A
 degraded volume on this cluster is *always* wrong; see gotchas.md.
 
 Turn on the daily snapshot schedule in the Longhorn UI (retain 7).
@@ -134,7 +134,7 @@ kubectl apply -f <path-to>/sealed-secrets-master-key.yaml
 kubectl rollout restart deployment sealed-secrets-controller -n kube-system
 ```
 
-Verify with `kubeseal --fetch-cert` — the returned cert should match
+Verify with `kubeseal --fetch-cert`, the returned cert should match
 your backed-up one.
 
 ## 5. MetalLB
@@ -156,7 +156,7 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 ```
 
 **The bootstrap patch** (this *must* be applied before ArgoCD starts
-syncing things — the external-LXC services depend on it):
+syncing things, the external-LXC services depend on it):
 
 ```bash
 kubectl patch configmap argocd-cm -n argocd --type merge -p '{
@@ -169,18 +169,18 @@ kubectl rollout restart deployment argocd-server -n argocd
 
 This removes `EndpointSlice` from ArgoCD's default exclusion list. Skip
 it and the EndpointSlices that point Traefik at AMP and Proxmox will
-silently not get synced — Traefik will return "no available server"
+silently not get synced, Traefik will return "no available server"
 and the cause will not be obvious.
 
-**Register the repo credentials** — the repo is private and the
+**Register the repo credentials:** the repo is private and the
 credential Secret is a bootstrap object that lives only in the cluster,
 not in git. Without it root-app can fetch nothing. Token is in the
 password manager (Gitea → repo read scope).
 `--insecure-skip-server-verification` matters: with Technitium as the
-LAN's DNS, the cluster reaches `git.henrydowd.dev` through Traefik —
+LAN's DNS, the cluster reaches `git.henrydowd.dev` through Traefik,
 and at this point in the bootstrap cert-manager doesn't exist yet, so
 Traefik is still on its self-signed default cert. (Once the wildcard
-cert syncs the flag is harmless legacy — see gotchas.md.)
+cert syncs the flag is harmless legacy, see gotchas.md.)
 
 ```bash
 argocd repo add https://git.henrydowd.dev/henry/homelab.git \
@@ -194,7 +194,7 @@ Now point ArgoCD at this repo:
 kubectl apply -f k8s/argocd/root-app.yaml
 ```
 
-`root-app` discovers everything else — including the `argocd-ingress`
+`root-app` discovers everything else, including the `argocd-ingress`
 app, which syncs `argocd-cmd-params-cm` (`server.insecure: "true"`) and
 the `argocd.lan` Ingress. **But a ConfigMap change does not auto-restart
 `argocd-server`**, so even after root-app reports synced, the server is
@@ -210,7 +210,7 @@ and serve cleanly behind Traefik at `argocd.lan`.
 
 Watch the sync progress in the ArgoCD UI. During a fresh bootstrap the
 `argocd.lan` ingress doesn't exist yet (it's one of the things being
-synced), so use the port-forward here — this is correct for bootstrap,
+synced), so use the port-forward here; this is correct for bootstrap,
 not drift:
 
 ```bash
@@ -259,7 +259,7 @@ data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 - Public hostnames resolve and load. Test from outside the LAN
   (mobile data, not WiFi) to confirm cloudflared is doing its job.
 - LAN hostnames work and stay LAN-local (Technitium split-horizon).
-- Logging in everywhere — Nextcloud especially, because if the
+- Logging in everywhere, Nextcloud especially, because if the
   identity values in the SealedSecret didn't restore correctly, every
   encrypted field is unreadable.
 - The backup CronJobs run successfully overnight. `restic check`

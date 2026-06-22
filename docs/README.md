@@ -1,7 +1,7 @@
 # How this repo documents itself
 
 The structure is recorded in the top-level README; each subdirectory README
-indexes its own files. This page records the *system* — where a new piece of
+indexes its own files. This page records the *system*, where a new piece of
 knowledge goes and the rules that keep the docs trustworthy.
 
 ## Where does this go?
@@ -16,7 +16,7 @@ knowledge goes and the rules that keep the docs trustworthy.
 | a multi-step build that hasn't happened yet | `plans/` | when the work is scoped; a plan that's been executed should say so at the top and point to the ADR/lessons it produced |
 
 If it's none of these, it probably belongs in a manifest comment next to the
-thing it describes — constraints live closest to what they constrain (see the
+thing it describes, constraints live closest to what they constrain (see the
 `enableServiceLinks` or AppArmor comments for the style).
 
 ## Rules
@@ -25,22 +25,22 @@ thing it describes — constraints live closest to what they constrain (see the
   version number; they say where to look (`grep -rn targetRevision k8s/`).
   Anything duplicated will drift, and drifted docs are worse than none.
 - **The top-level README is a map, not a document.** It orients and links;
-  content lives behind the links. It is also the public face of the repo —
+  content lives behind the links. It is also the public face of the repo,
   staleness shows there first.
-- **`gotchas.md` is the index of sharp edges** — one paragraph each, linked
+- **`gotchas.md` is the index of sharp edges:** one paragraph each, linked
   to the full lesson. If a gotcha has no lesson behind it, that's allowed;
   a lesson without a gotcha entry is a filing error.
 - **Every subdirectory README has a file index table.** Adding a file means
-  adding its row — the READMEs are the indexes, there is no other catalog.
+  adding its row; the READMEs are the indexes, there is no other catalog.
 - **ADR numbering is permanent.** 001–003 predate the habit and stay
   reserved. Reversed decisions get `Status: Superseded` + a pointer, never
   a rewrite.
-- **Commit messages are terse lowercase one-liners** — what changed and the
+- **Commit messages are terse lowercase one-liners:** what changed and the
   load-bearing why, e.g. `traefik: disable 60s readTimeout (v3 default) --
   killed lan uploads >60s`. No prose bodies, no trailers.
 - **`HOMELAB.md` is gitignored on purpose.** It's the machine-local context
-  file for AI-assisted sessions — kept current, never committed. Nothing in
+  file for AI-assisted sessions, kept current, never committed. Nothing in
   the repo may depend on it; anything durable in it that humans need must
   also exist in `docs/`.
-- **Public sharing goes through `public-export-checklist.md`** — this is a
+- **Public sharing goes through `public-export-checklist.md`:** this is a
   private operational repo; the checklist is the gate, not good intentions.

@@ -1,10 +1,10 @@
-# Incident: act_runner jobs can't reach the dind daemon — `docker build` fails
+# Incident: act_runner jobs can't reach the dind daemon, `docker build` fails
 
 ## Date
 2026-06-17
 
 ## Time lost
-~1h (debugging; no user-facing outage — the portfolio wasn't live yet)
+~1h (debugging; no user-facing outage, the portfolio wasn't live yet)
 
 ## Status
 Resolved (image build moved to GitHub-hosted runners)
@@ -12,7 +12,7 @@ Resolved (image build moved to GitHub-hosted runners)
 ## Context
 - **System / component:** the `act-runner` Deployment in `gitea` (agent +
   privileged `docker:dind` sidecar) from ADR 008.
-- **Scope:** the first workflow that tried to `docker build` an image — the
+- **Scope:** the first workflow that tried to `docker build` an image, the
   portfolio. Every prior job had been kubeconform (no Docker).
 - **State before:** portfolio CI added as `.gitea/workflows/build.yaml` to build
   the image, push it to the Gitea registry, and bump the homelab tag.
@@ -28,7 +28,7 @@ Job 'build' failed
 The pod sat in `ImagePullBackOff` on the image that was never pushed.
 
 ## Investigation
-**Including the dead ends — they were most of the time:**
+**Including the dead ends: they were most of the time:**
 - **"It's memory"** (first instinct, matching the NextKeep pattern) → wrong: the
   portfolio image is tiny; this never reached a resource limit.
 - **"It's the Dockerfile"** → reproduced the build locally with `podman build`:
@@ -54,7 +54,7 @@ The dind sidecar gives **the runner** a Docker daemon (to spawn job containers),
 
 ## Fix
 Move the image build off the in-cluster runner entirely, onto GitHub's free
-hosted runners (which have a real Docker daemon) — per ADR 008's "builds that
+hosted runners (which have a real Docker daemon), per ADR 008's "builds that
 don't fit the worker go to GitHub" principle; here it's not heaviness but the
 missing daemon. The Gitea portfolio repo push-mirrors to GitHub;
 `.github/workflows/build.yml` builds and pushes to GHCR. The in-cluster
@@ -67,7 +67,7 @@ jobs:
 so the in-cluster runner picks the workflow up (Gitea also reads
 `.github/workflows/`) but skips it instead of re-failing.
 
-*Alternative not taken:* wire docker-in-job on the shared runner — mount the dind
+*Alternative not taken:* wire docker-in-job on the shared runner, mount the dind
 TLS certs + inject `DOCKER_HOST` into jobs, or switch dind to a non-TLS socket.
 Rejected: fiddly, destabilises a runner shared with the cluster-guarding
 kubeconform CI, and ADR 008 already sends builds to GitHub.
@@ -81,7 +81,7 @@ kubectl -n portfolio get pods          # portfolio-... 1/1 Running (pulled GHCR 
 ```
 
 ## Prevention
-- **The in-cluster act_runner is for daemonless jobs only** — kubeconform, lint,
+- **The in-cluster act_runner is for daemonless jobs only:** kubeconform, lint,
   unit tests that don't build images. Any container-image build goes to
   GitHub-hosted runners via the push-mirror. Recorded in ADR 009.
 - Sharper restatement of the NextKeep rule: *the dind sidecar gives the runner

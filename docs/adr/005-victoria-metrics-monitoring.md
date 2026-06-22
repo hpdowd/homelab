@@ -1,12 +1,12 @@
-# ADR 005 — Monitoring: VictoriaMetrics single-node, off Longhorn, pinned to the worker
+# ADR 005: VictoriaMetrics monitoring, single-node, off Longhorn, pinned to the worker
 
 **Status:** Accepted
 **Date:** 2026-06
-**Superseded By:** —
+**Superseded By:** None
 
 ## What problem this solves
 
-I want real visibility into the cluster — metrics, dashboards, alerts —
+I want real visibility into the cluster (metrics, dashboards, alerts)
 before I add anything else heavy (Immich, mostly). Without it I'm guessing
 at "is this node out of RAM?" and "did the backup run?" and that's not OK
 for things I depend on.
@@ -19,7 +19,7 @@ that wants 1.5GB is out.
 
 The other constraint is disk. The 500GB Longhorn vdb is finite, and writes
 to it cost extra because Longhorn replicates them. A TSDB doing 10s scrapes
-hammers that, and the metrics it's writing are regenerable — losing them is
+hammers that, and the metrics it's writing are regenerable, losing them is
 fine.
 
 ## What I picked
@@ -40,14 +40,14 @@ fine.
    30 days, which is plenty for "what changed recently".
 
 3. **The heavy components are all pinned to the worker.** vmsingle, vmalert,
-   alertmanager, grafana, kube-state-metrics — every one of them lives on
+   alertmanager, grafana, kube-state-metrics, every one of them lives on
    k3s-worker1. The control node is tight on RAM and I don't want a
    monitoring spike to fight the API server for memory. The one exception
    is node-exporter, which is a DaemonSet and runs on both nodes on purpose:
    I want host metrics from control too.
 
 4. **Alerts go to email for now, ntfy probably later.** Email needs nothing
-   running on my side — Proton handles SMTP. ntfy is nicer for phone
+   running on my side, Proton handles SMTP. ntfy is nicer for phone
    notifications but means another service to run. Alertmanager's `receiver`
    block is a one-line swap when I get round to it. The SMTP password is in
    a SealedSecret *and* in my password manager, same as
@@ -59,7 +59,7 @@ fine.
    `homelab-rules.yaml` and cover the things that have actually bitten me
    or that I'd want to know about quietly: memory and swap pressure,
    OOMKills, CrashLoopBackOff, disk filling up, Longhorn going degraded,
-   and — biggest — backups failing or going silently missing. A silently
+   and, biggest, backups failing or going silently missing. A silently
    broken backup is the failure mode I lose sleep over.
 
 ## Consequences I should remember
@@ -77,7 +77,7 @@ fine.
   eventual Immich. If control ever struggles, that comes from host slack,
   not from robbing the worker.
 
-## Addendum — 2026-06-08: Grafana datasource provisioning
+## Addendum (2026-06-08): Grafana datasource provisioning
 
 The chart's default Grafana integration installs the `victoriametrics-datasource` plugin and
 provisions a datasource of that plugin type. On this cluster the plugin coordinate 404s on the
@@ -91,21 +91,21 @@ which is not worth a fatal startup dependency. The chart's datasources **sidecar
 avoid a second provisioned default colliding with the inline one. See
 `docs/lessons/k8s/grafana-monitoring-sync-cascade.md`.
 
-## Addendum — 2026-06-09: SMTP relay is Brevo, not Proton
+## Addendum (2026-06-09): SMTP relay is Brevo, not Proton
 
-Decision 4 above assumed email "needs nothing running on my side — Proton handles SMTP." That was
+Decision 4 above assumed email "needs nothing running on my side, Proton handles SMTP." That was
 wrong: Proton's public SMTP (`smtp.protonmail.ch`) **cannot authenticate without the ProtonMail
-Bridge**, which is a desktop app and won't run in-cluster. The relay was also never actually wired —
+Bridge**, which is a desktop app and won't run in-cluster. The relay was also never actually wired,
 the config referenced a password-mount mechanism that didn't exist.
 
 **Decision:** use **Brevo** as the SMTP relay (`smtp-relay.brevo.com:587`, STARTTLS). Free tier is
-ample for homelab alert volume and it authenticates with a plain SMTP key — no bridge, nothing to
+ample for homelab alert volume and it authenticates with a plain SMTP key, no bridge, nothing to
 run. Alertmanager pulls the key from the existing `alertmanager-smtp` SealedSecret, mounted by the
 operator at `/etc/vm/secrets/alertmanager-smtp/` via `alertmanager.spec.secrets`, and references it
 file-based with `smtp_auth_password_file` (password never inlined). `smtp_from`
 `homelab-monitor@henrydowd.dev`, `smtp_require_tls: true`.
 
 Once delivery worked, a backlog of always-firing chart alerts (k3s control-plane false positives)
-flushed into the inbox and had to be triaged separately — see
+flushed into the inbox and had to be triaged separately, see
 `docs/lessons/k8s/k3s-control-plane-false-positives.md`. ntfy-for-phone (decision 4) is still the
 likely later swap; the receiver block remains a one-line change.

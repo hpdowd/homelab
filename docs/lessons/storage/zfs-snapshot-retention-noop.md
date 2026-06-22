@@ -4,7 +4,7 @@
 2026-06-11
 
 ## Time lost
-~0h — caught during a repo/infra review, not by an outage. Filed anyway
+~0h, caught during a repo/infra review, not by an outage. Filed anyway
 because of how close bug 2 came to deleting real snapshot history.
 
 ## Status
@@ -20,7 +20,7 @@ Resolved
 ## Symptoms
 - Every dataset under `tank` held **12** `daily-*` snapshots instead of 7,
   growing by one per day, forever.
-- No error ever surfaced — cron output goes nowhere without an MTA, and
+- No error ever surfaced: cron output goes nowhere without an MTA, and
   the snapshot half of the `&&` chain succeeded nightly, so the docs'
   "retain 7" claim looked true from a distance.
 
@@ -44,8 +44,8 @@ Two independent bugs in the prune leg:
    hands it dozens, so it exits with a usage error and deletes nothing.
 2. **The retention logic was wrong anyway.** `zfs list -t snapshot` sorts
    by name across *all* datasets, so `head -n -7` keeps the last 7 *lines
-   of the whole listing* — i.e. 7 snapshots of whichever dataset sorts
-   last — and marks every daily on every other dataset for destruction.
+   of the whole listing*, i.e. 7 snapshots of whichever dataset sorts
+   last, and marks every daily on every other dataset for destruction.
 
 Bug 1 masked bug 2. The only reason the pool never lost its snapshot
 history to bug 2 is that bug 1 made the whole prune fail first. A
@@ -91,7 +91,7 @@ zfs list -t snapshot -o name | grep daily | sed 's/@.*//' | sort | uniq -c
   probably broken. Snapshot counts are a one-liner to check; do it
   whenever touching the host.
 - Worth considering later: sanoid, which solves exactly this and adds
-  monitoring hooks. Accepted the hand-rolled script for now — one pool,
+  monitoring hooks. Accepted the hand-rolled script for now, one pool,
   one schedule.
 
 ## Related

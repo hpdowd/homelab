@@ -1,7 +1,7 @@
-# Resources — where everything comes from
+# Resources: where everything comes from
 
 Per-component pointers: where the chart/manifest lives, which registry the
-images come from, where the docs and release notes are. **No versions here** —
+images come from, where the docs and release notes are. **No versions here**,
 versions live in the manifests, nowhere else:
 
 ```bash
@@ -61,7 +61,7 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 - **Docker Hub rate limits**: anonymous pulls are throttled per-IP. Normal
   operation never notices; a cluster rebuild pulling 40+ images in an hour
   can. If a rebuild hits `429`s, wait, or authenticate the pull.
-- **Never `latest`, never floating majors** — every image and chart in this
+- **Never `latest`, never floating majors:** every image and chart in this
   repo is pinned exactly; Immich's postgres/valkey are pinned by digest
   because upstream moves their tags.
 - **CRD schema lookups** (the wrong-kind/wrong-key gotchas):
@@ -74,10 +74,10 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 
 1. Release notes for everything between current and target (not just the target).
 2. Charts: `helm show values <chart> --version <target>` diffed against current
-   rendered values — renamed/removed keys are dropped **silently**
+   rendered values, renamed/removed keys are dropped **silently**
    (`docs/lessons/k8s/argocd-comparisonerror-silent-values.md`).
 3. Switch the docs site's version picker to the target before reading.
-4. Render before committing, `argocd app get` after syncing — pods staying up
+4. Render before committing, `argocd app get` after syncing, pods staying up
    proves nothing (same lesson).
 5. Stateful apps (Nextcloud, Postgres, Immich): check whether the bump runs a
    migration; if yes, confirm last night's backup verified before syncing.

@@ -1,6 +1,6 @@
 # homelab
 
-My homelab. Lives on one Dell Optiplex under the desk — Proxmox on the
+My homelab. Lives on one Dell Optiplex under the desk, Proxmox on the
 metal, a tiny k3s cluster on top, most of my services in there.
 
 This repo is the source of truth. ArgoCD watches `main` and reconciles
@@ -22,33 +22,33 @@ single Go binary that reads the cluster's own metrics and this repo's
 commits to show live homelab status, scraped by the same stack it
 reports on. See ADR 009.
 
-Public stuff comes in via a Cloudflare Tunnel — no port forwarding,
+Public stuff comes in via a Cloudflare Tunnel, no port forwarding,
 no exposed IP. LAN stuff goes through Technitium so the `.lan`
 hostnames just work from inside the house.
 
-Secrets are committed as **SealedSecrets** — encrypted against the
+Secrets are committed as **SealedSecrets**, encrypted against the
 in-cluster controller's public key. The controller's private key is the
 only trust root and is not in this repo.
 
 ## Where to look
 
 **Reference**
-- **[docs/reference/architecture.md](docs/reference/architecture.md)** — how the pieces fit together. Start here.
-- **[docs/reference/services.md](docs/reference/services.md)** — what runs where, and the config facts each service depends on.
-- **[docs/reference/gotchas.md](docs/reference/gotchas.md)** — the sharp edges, one paragraph each, linked to the full lessons.
-- **[docs/reference/operations.md](docs/reference/operations.md)** — commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.
-- **[docs/reference/resources.md](docs/reference/resources.md)** — where each component's charts, images, docs and release notes live.
+- **[docs/reference/architecture.md](docs/reference/architecture.md):** how the pieces fit together. Start here.
+- **[docs/reference/services.md](docs/reference/services.md):** what runs where, and the config facts each service depends on.
+- **[docs/reference/gotchas.md](docs/reference/gotchas.md):** the sharp edges, one paragraph each, linked to the full lessons.
+- **[docs/reference/operations.md](docs/reference/operations.md):** commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.
+- **[docs/reference/resources.md](docs/reference/resources.md):** where each component's charts, images, docs and release notes live.
 
 **Runbooks**
-- **[docs/runbooks/cluster-rebuild.md](docs/runbooks/cluster-rebuild.md)** — rebuild from a freshly installed Proxmox. The "if everything dies" runbook.
-- **[docs/runbooks/restore-procedure.md](docs/runbooks/restore-procedure.md)** — restore Nextcloud or Gitea from the offsite backups.
-- **[docs/runbooks/adding-a-service.md](docs/runbooks/adding-a-service.md)** — pattern walkthrough for dropping in a new service.
+- **[docs/runbooks/cluster-rebuild.md](docs/runbooks/cluster-rebuild.md):** rebuild from a freshly installed Proxmox. The "if everything dies" runbook.
+- **[docs/runbooks/restore-procedure.md](docs/runbooks/restore-procedure.md):** restore Nextcloud or Gitea from the offsite backups.
+- **[docs/runbooks/adding-a-service.md](docs/runbooks/adding-a-service.md):** pattern walkthrough for dropping in a new service.
 
 **Architecture Decision Records**
-- **[docs/adr/](docs/adr/)** — the *why* behind key decisions (backups, monitoring). Each ADR has a Status and Superseded By field.
+- **[docs/adr/](docs/adr/):** the *why* behind key decisions (backups, monitoring). Each ADR has a Status and Superseded By field.
 
 **Incident log**
-- **[docs/lessons/](docs/lessons/)** — post-mortems filed by domain (`infra/`, `k8s/`, `networking/`, `storage/`, `backup/`). Template at `docs/lessons/TEMPLATE.md`.
+- **[docs/lessons/](docs/lessons/):** post-mortems filed by domain (`infra/`, `k8s/`, `networking/`, `storage/`, `backup/`). Template at `docs/lessons/TEMPLATE.md`.
 
 ## Layout
 

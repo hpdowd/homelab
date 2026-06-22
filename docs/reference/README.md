@@ -1,6 +1,6 @@
 # Reference
 
-Cheat-sheets for the tools used day-to-day. Not tutorials — just the commands and patterns that come up repeatedly in this specific setup.
+Cheat-sheets for the tools used day-to-day. Not tutorials; just the commands and patterns that come up repeatedly in this specific setup.
 
 | File | Contents |
 |---|---|

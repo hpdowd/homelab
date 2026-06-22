@@ -1,6 +1,6 @@
 # Cloudflare WARP on Arch + Wayland
 
-WARP is configured here as a **backup remote-access path** — use it to reach the homelab or router UI when WireGuard or the router port-forward is down.
+WARP is configured here as a **backup remote-access path**; use it to reach the homelab or router UI when WireGuard or the router port-forward is down.
 
 The WARP GUI fails to initialize on Wayland under a minimal tiling WM (no system tray). The daemon and CLI work fine. Use `warp-cli` exclusively; don't chase the GUI error.
 
@@ -31,5 +31,5 @@ warp-cli settings
 
 ## Notes
 
-- **Local Domain Fallback** (Zero Trust settings): routes `.lan` queries to Technitium when using WARP for private-network access — configure this so LAN hostnames resolve correctly over WARP.
+- **Local Domain Fallback** (Zero Trust settings): routes `.lan` queries to Technitium when using WARP for private-network access, configure this so LAN hostnames resolve correctly over WARP.
 - Zero Trust / Teams enrolment if needed: `warp-cli teams-enroll <team>.cloudflareaccess.com`

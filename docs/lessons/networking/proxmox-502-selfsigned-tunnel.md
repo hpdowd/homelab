@@ -1,4 +1,4 @@
-# Incident: Proxmox 502 over Cloudflare tunnel — self-signed cert on :8006
+# Incident: Proxmox 502 over Cloudflare tunnel, self-signed cert on :8006
 
 ## Date
 2026-05-27
@@ -19,7 +19,7 @@ Resolved.
 - The Proxmox UI itself was reachable directly on the LAN at `https://192.168.1.2:8006`.
 
 ## Investigation
-- Direct LAN access worked, so Proxmox and the UI were healthy — the failure was in the tunnel → backend hop.
+- Direct LAN access worked, so Proxmox and the UI were healthy, the failure was in the tunnel → backend hop.
 - Proxmox serves its UI over HTTPS with a **self-signed certificate**. The tunnel connector was rejecting the upstream TLS because the cert couldn't be verified.
 
 ## Root cause
@@ -32,7 +32,7 @@ Set `noTLSVerify: true` on the tunnel ingress rule for the Proxmox service so th
 `proxmox.henrydowd.dev` loaded the UI through the tunnel after the change.
 
 ## Prevention
-This is a **repeatable pattern** — any HTTPS backend with a self-signed cert exposed through a proxy needs TLS verification disabled on that upstream hop. In the current k3s setup the equivalent is the Traefik `ServersTransport` with `insecureSkipVerify: true` on the Proxmox `IngressRoute`.
+This is a **repeatable pattern**; any HTTPS backend with a self-signed cert exposed through a proxy needs TLS verification disabled on that upstream hop. In the current k3s setup the equivalent is the Traefik `ServersTransport` with `insecureSkipVerify: true` on the Proxmox `IngressRoute`.
 
 ## Related
 - Current implementation: `k8s/apps/proxmox/servers-transport.yaml` (`insecureSkipVerify: true`) + `ingress-route.yaml` (`scheme: https`).

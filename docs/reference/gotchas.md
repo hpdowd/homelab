@@ -9,18 +9,18 @@ these looks wrong, read the linked doc before fixing it.
 **The EndpointSlice exclusion patch must be reapplied after any cluster
 rebuild.** ArgoCD's default `resource.exclusions` filter out
 EndpointSlices, so the hand-written slices that point Traefik at AMP and
-Proxmox silently never sync — "no available server" with no obvious
+Proxmox silently never sync, "no available server" with no obvious
 cause. The patch (and the required `argocd-server` restart) is step 6 of
 `docs/runbooks/cluster-rebuild.md`.
 
 **root-app discovers `k8s/apps/*.yaml` non-recursively.** A subdirectory
 with no matching top-level `<name>.yaml` Application is silently
-orphaned — nothing syncs, nothing errors. See
+orphaned, nothing syncs, nothing errors. See
 `docs/lessons/k8s/grafana-monitoring-sync-cascade.md`.
 
 **selfHeal fights anything that scales a managed workload.** A job that
 scales a Deployment to 0 (like the Gitea backup) gets reverted within
-seconds — the backup then runs against a live app while still reporting
+seconds; the backup then runs against a live app while still reporting
 success. Anything that scales a managed Deployment needs
 `ignoreDifferences` on `/spec/replicas` plus the
 `RespectIgnoreDifferences=true` sync option in that app. See
@@ -34,7 +34,7 @@ cert), Technitium → Traefik (self-signed → every git-sourced app goes
 default DNS moved to Technitium; the repo connection is now registered
 with `insecure: "true"` (same posture as `argocd login --insecure`).
 Since 2026-06-12 Traefik serves a real Let's Encrypt wildcard (ADR 007),
-so the flag is no longer load-bearing day-to-day — but it **stays**:
+so the flag is no longer load-bearing day-to-day, but it **stays**:
 during a rebuild ArgoCD must fetch the repo *before* cert-manager exists,
 when Traefik is back on its self-signed default.
 Symptom to remember: *all* git-sourced apps flip Unknown simultaneously
@@ -47,7 +47,7 @@ namespace, created by hand. A rebuilt cluster needs it re-registered
 
 **Inline Helm values drift silently.** An indent slip, duplicate
 top-level key (YAML last-wins), or typo'd key in a
-`spec.source.helm.values: |` block doesn't crash anything — the app goes
+`spec.source.helm.values: |` block doesn't crash anything, the app goes
 `Unknown`/`ComparisonError` or silently ignores the key while live pods
 keep running the old spec. After editing inline values check
 `argocd app get <app>`, not just the pods; validate non-trivial edits
@@ -56,21 +56,21 @@ with `helm template` against the pinned chart version. See
 
 ## Traefik / ingress
 
-- `ingressClassName: traefik` on every Ingress — classless ingresses
+- `ingressClassName: traefik` on every Ingress, classless ingresses
   only work via the default-class fallback, and a missing class is
   silently 404.
 - **Never pin `router.entrypoints: websecure`.** cloudflared hits
   Traefik over plain HTTP on `web`; a websecure-only router 404s every
   public hit. Applies to every TLS-behind-Cloudflare service.
 - **An HTTPS-native backend with a `Secure` auth cookie (Proxmox) needs
-  HTTPS on the LAN too — as a *second* IngressRoute.** PVE issues its
+  HTTPS on the LAN too, as a *second* IngressRoute.** PVE issues its
   auth cookie `Secure`, so a plain-HTTP browser drops it and login 401s
   right after it "succeeds". A CRD IngressRoute is served on `websecure`
   only with a `tls` block, and that block makes it TLS-only (404s the
-  plain `web` tunnel) — so it can't be one route. Proxmox runs two:
-  `proxmox` (`web`, no tls — the tunnel, plus an http→https redirect on
+  plain `web` tunnel); so it can't be one route. Proxmox runs two:
+  `proxmox` (`web`, no tls, the tunnel, plus an http→https redirect on
   `proxmox.lan` so muscle-memory doesn't 401) and `proxmox-websecure`
-  (`tls: {}`, LAN HTTPS). Plain Ingresses dodge this — the
+  (`tls: {}`, LAN HTTPS). Plain Ingresses dodge this, the
   kubernetesIngress provider gives them websecure for free. See
   `docs/lessons/networking/proxmox-401-secure-cookie-plain-http.md`.
 - A missing or misnamed Middleware reference drops the whole router
@@ -80,7 +80,7 @@ with `helm template` against the pinned chart version. See
 - **TLS on the LAN path is one default cert, not per-Ingress config.**
   The `default` TLSStore in the traefik namespace points `websecure` at
   the cert-manager wildcard (`henrydowd-dev-tls`). New services need no
-  `tls:` blocks or annotations — they get valid HTTPS for free. Don't
+  `tls:` blocks or annotations; they get valid HTTPS for free. Don't
   add per-Ingress TLS config; one secret covers `*.henrydowd.dev`.
   (`*.lan` names still get the wildcard → mismatch warning; accepted,
   see ADR 007.)
@@ -89,7 +89,7 @@ with `helm template` against the pinned chart version. See
 
 - The wildcard cert renews automatically (~2/3 of its 90-day life). If
   a Certificate ever sticks at `Ready: False`, read the **Challenge's
-  `status.reason`** first — it names the exact DNS lookup that failed.
+  `status.reason`** first; it names the exact DNS lookup that failed.
 - The DNS-01 self-check runs over **DoH** (`--dns01-recursive-nameservers`
   in `k8s/infrastructure/cert-manager.yaml`). Two LAN facts force this
   and neither is going away: Technitium is authoritative for the local
@@ -97,18 +97,18 @@ with `helm template` against the pinned chart version. See
   in-cluster), and the Vodafone hub drops outbound port 53 to public
   resolvers entirely. See
   `docs/lessons/networking/certmanager-dns01-split-horizon.md`.
-- Corollary: **never hand a pod public resolvers via `dnsConfig`** —
+- Corollary: **never hand a pod public resolvers via `dnsConfig`**,
   plain :53 to 1.1.1.1/8.8.8.8 times out from this LAN. That's what
   silently broke Collabora's interim WOPI hairpin.
 - The Cloudflare token (Zone:Read + DNS:Edit) is a SealedSecret in the
-  cert-manager namespace — same master-key dependency as everything
+  cert-manager namespace, same master-key dependency as everything
   else sealed.
 
 ## Service-link env vars
 
 kubelet injects docker-link-style vars (`<SVC>_PORT=tcp://ip:port`) for
 every Service in the namespace. An app that reads an env var named like
-your Service crash-loops on boot — Immich's `REDIS_PORT` met the `redis`
+your Service crash-loops on boot, Immich's `REDIS_PORT` met the `redis`
 Service this way. `enableServiceLinks: false` on the pod spec turns the
 whole legacy mechanism off.
 
@@ -128,8 +128,8 @@ whole legacy mechanism off.
   internet-bound TLS from jobs black-holes.** The pod's flannel `eth0` is
   MTU 1450; docker bridges default to 1500, and act_runner's per-job
   networks inherit that. Job steps reaching the internet (e.g. `curl
-  github.com`) hang ~2.5min then `curl: (35) ... Connection reset by peer`
-  — large DF packets are silently dropped. `actions/checkout` still works
+  github.com`) hang ~2.5min then `curl: (35) ... Connection reset by peer`,
+  large DF packets are silently dropped. `actions/checkout` still works
   (internal Gitea, small packets), which masks it. Fix: a `daemon.json` in
   the dind sidecar with `"mtu": 1450` **and** `default-network-opts` for
   the bridge driver (the latter needs docker ≥ 26; covers act-created
@@ -138,31 +138,31 @@ whole legacy mechanism off.
 - **Give Go workloads `GOMEMLIMIT`, not just a cgroup limit.** act_runner
   is a Go binary; its GC grows the heap toward the container limit without
   knowing the cap, so it OOMKills (exit 137) under load even with a ~10Mi
-  idle working set — bit at both 192Mi and 384Mi. Set `GOMEMLIMIT` below
+  idle working set, bit at both 192Mi and 384Mi. Set `GOMEMLIMIT` below
   the hard limit (700MiB under a 768Mi cap) so the runtime GCs first. Same
   lesson doc.
 
 ## Longhorn
 
 - RWO volumes mean `strategy: Recreate` on every Deployment that mounts
-  one — RollingUpdate deadlocks waiting for the PVC to detach.
+  one, RollingUpdate deadlocks waiting for the PVC to detach.
 - A CronJob sharing a RWO PVC with a live pod needs `podAffinity` to
   co-schedule on the same node, or it hits Multi-Attach errors.
-- Replica count is **1, worker only** (single usable storage node — see
+- Replica count is **1, worker only** (single usable storage node, see
   ADR 005's RAM/disk reasoning). Two places control it and both have
   bitten: the `default-replica-count` *setting*, and the
   `numberOfReplicas` *parameter* baked into the `longhorn` StorageClass
-  (which wins for every dynamically provisioned PVC — the first Immich
+  (which wins for every dynamically provisioned PVC, the first Immich
   volumes came up degraded at 3 replicas hours after the setting was
   fixed). The SC is regenerated from the `longhorn-storageclass`
   ConfigMap; fix it there, commands in cluster-rebuild.md step 3.
   Verify after any Longhorn reinstall *and after adding any service*:
-  `kubectl -n longhorn-system get volumes.longhorn.io` — every volume
+  `kubectl -n longhorn-system get volumes.longhorn.io`, every volume
   should say `healthy`, not `degraded`.
 
 ## restic / backups
 
-- `RESTIC_REPOSITORY` must start with `s3:https://` — without the `s3:`
+- `RESTIC_REPOSITORY` must start with `s3:https://`, without the `s3:`
   prefix restic "succeeds" against the pod's ephemeral disk and the
   bucket stays empty.
 - `RESTIC_PASSWORD` exists only in the password manager. Losing it is
@@ -173,21 +173,21 @@ whole legacy mechanism off.
 ## Sealed Secrets
 
 The controller's master key must be restored **before** ArgoCD syncs
-anything — a fresh controller generates a new key and every SealedSecret
+anything, a fresh controller generates a new key and every SealedSecret
 in the repo fails to decrypt. `kubeseal --fetch-cert` should match the
 backed-up cert. See `docs/runbooks/cluster-rebuild.md` step 4.
 
 ## Nextcloud identity
 
 `instanceid`/`secret`/`passwordsalt` in `config.php` must match the
-imported DB — they're in the `nextcloud-secrets` SealedSecret. Restore
+imported DB; they're in the `nextcloud-secrets` SealedSecret. Restore
 the SealedSecret before the pod first starts, not after, or sessions and
 encrypted fields break.
 
 ## WireGuard LXC (101)
 
 Never `pct enter` it (or SSH into it through the tunnel) while the VPN
-is active — network-namespace conflict freezes the container in D-state
+is active, network-namespace conflict freezes the container in D-state
 and only a host hard-reboot recovers. Use a LAN session or the host
 console with the VPN disconnected. See
 `docs/lessons/infra/wireguard-lxc-dstate-freeze.md`.
@@ -202,24 +202,24 @@ editing. (Bit the cloudflare-ddns move to LXC 101.)
 ## Collabora securityContext
 
 `appArmorProfile: {type: Unconfined}` must be the securityContext
-**field** — the deprecated annotation silently doesn't apply on
+**field:** the deprecated annotation silently doesn't apply on
 k3s ≥ 1.30, the default cri-containerd profile denies `mount(2)`, and
 CODE falls back to copying the whole LO tree per kit jail (~6ms → ~48s).
 The capability list feeds *file capabilities* on
 `coolmount`/`coolforkit-caps`; pid 1 showing `CapEff=0` is the healthy
-state — don't "fix" it. See
+state, don't "fix" it. See
 `docs/lessons/k8s/collabora-slow-load-wordbook.md`.
 
 ## Monitoring
 
 - Use `VMRule`/`VMServiceScrape` (VictoriaMetrics operator), **not**
-  `PrometheusRule`/`ServiceMonitor` — one invalid CRD kind fails the
+  `PrometheusRule`/`ServiceMonitor`, one invalid CRD kind fails the
   whole Application's sync batch.
 - An alert on a metric nobody scrapes never fires. Pair the important
   ones with an `absent()` guard (see `LonghornMetricsAbsent` in
   `homelab-rules.yaml`).
 - local-path PVCs survive namespace deletion. When reinstalling a Helm
-  app after a failed deploy, delete the PVCs explicitly — a reused
+  app after a failed deploy, delete the PVCs explicitly, a reused
   Grafana PVC with a corrupt SQLite crashed every reinstall. See
   `docs/lessons/k8s/grafana-pvc-corruption.md`.
 
@@ -241,6 +241,6 @@ kubectl get namespace monitoring -o json | \
 
 ## Helm charts
 
-Verify versions with `helm search repo <chart>` before pinning — never
+Verify versions with `helm search repo <chart>` before pinning, never
 trust a version from memory. All chart `targetRevision`s in this repo
 are pinned exactly; bumps are deliberate commits.

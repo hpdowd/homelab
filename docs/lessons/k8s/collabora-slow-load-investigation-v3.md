@@ -1,10 +1,10 @@
-# Collabora CODE — slow cold document load: auditable investigation log (v3)
+# Collabora CODE: slow cold document load (auditable investigation log, v3)
 
 *Homelab k3s cluster · namespace `collabora` · pod pinned to `k3s-worker1`*
 *Supersedes v2. v2's §6 unresolved items are both resolved below; v2's leading
 hypothesis (§7) and candidate fix (§8) are REFUTED and replaced.*
 
-> **RESOLVED 2026-06-11 — H11 confirmed and fixed. See §11.** Root cause: a
+> **RESOLVED 2026-06-11: H11 confirmed and fixed. See §11.** Root cause: a
 > 588 KB / 51,573-entry hunspell `en_GB.dic` had been uploaded as the personal
 > *wordbook* for user `henry` in Nextcloud Office settings
 > (`appdata_*/richdocuments/userconfig/henry/wordbook/English (British).dic`,
@@ -19,22 +19,22 @@ hypothesis (§7) and candidate fix (§8) are REFUTED and replaced.*
 Every conclusion is tagged with the evidence it rests on so it can be
 re-audited:
 
-- **[FACT]** — directly observed in command output or log lines (quoted/derived).
-- **[INFERENCE]** — reasoning from facts; may be wrong; reasoning shown.
-- **[UNRESOLVED]** — a known gap that is *not* yet explained.
-- **[CORRECTION]** — something asserted earlier and later shown wrong; recorded
+- **[FACT]:** directly observed in command output or log lines (quoted/derived).
+- **[INFERENCE]:** reasoning from facts; may be wrong; reasoning shown.
+- **[UNRESOLVED]:** a known gap that is *not* yet explained.
+- **[CORRECTION]:** something asserted earlier and later shown wrong; recorded
   so it is not re-trusted.
-- **[REFUTED]** — a previously-leading theory disproven by experiment.
+- **[REFUTED]:** a previously-leading theory disproven by experiment.
 
 The single most important methodological lesson of this investigation so far:
 **two pathologies overlapped in time and one was mistaken for the cause of the
-other.** The jail-copy fallback was real, expensive, and fixable — and fixing
+other.** The jail-copy fallback was real, expensive, and fixable, and fixing
 it changed nothing about the symptom. Treat any remaining "X happens during the
 slow window" observation as correlation until an intervention proves causation.
 
 ---
 
-## 1. Symptom [FACT — unchanged through all interventions]
+## 1. Symptom [FACT, unchanged through all interventions]
 
 - Cold open of a document: editor frame ~7 s; **editable at ~55 s**.
 - docx and xlsx near-identical (~55 s, measured repeatedly across weeks,
@@ -48,13 +48,13 @@ slow window" observation as correlation until an intervention proves causation.
 
 - k3s v1.35.5+k3s1, containerd 2.2.3-k3s1. Control VM `192.168.1.10`
   (Debian 13, ~3.5 GiB RAM), worker `k3s-worker1` VM 301 `192.168.1.11`
-  (Debian 13 trixie, kernel 6.12.90, 14 GiB). [FACT — `kubectl get nodes -o wide`]
+  (Debian 13 trixie, kernel 6.12.90, 14 GiB). [FACT, `kubectl get nodes -o wide`]
 - **Worker vCPU model: `x86-64-v2-AES`** (`qm config 301`), presenting in-guest
   as `QEMU Virtual CPU version 2.5+`, **no AVX/AVX2**. [FACT]
   - x86-64-v2 tops out at SSE4.2. The host (i5-14500T) supports x86-64-v3.
     A generic vCPU model also causes the guest kernel to apply worst-case
     speculative-execution mitigations. [FACT re flags; INFERENCE re mitigations
-    impact — magnitude unmeasured]
+    impact, magnitude unmeasured]
 - Ingress: Traefik (MetalLB `192.168.1.200`); Cloudflare tunnel for WAN; WOPI
   discovery direction uses in-cluster HTTP
   (`wopi_url = http://collabora.collabora.svc.cluster.local:9980`); kit
@@ -65,21 +65,21 @@ slow window" observation as correlation until an intervention proves causation.
 Repo (`k8s/apps/collabora/deployment.yaml`, ArgoCD-managed) [FACT]:
 
 - Image `collabora/code:25.04.10.3.1`.
-- `securityContext.appArmorProfile: { type: Unconfined }` — **the field, not
+- `securityContext.appArmorProfile: { type: Unconfined }`, **the field, not
   the deprecated annotation** (this distinction turned out to be load-bearing;
   see §5.1).
 - `capabilities.add: [SYS_ADMIN, MKNOD, SYS_CHROOT, FOWNER, CHOWN]`.
 - `extra_params: --o:ssl.enable=false --o:ssl.termination=true` (no logging
   flag in repo).
-- `dictionaries: en_GB en_US` (hunspell selection — NOT the same subsystem as
+- `dictionaries: en_GB en_US` (hunspell selection, NOT the same subsystem as
   the wordbooks in §7).
 - dnsPolicy None / Cloudflare resolvers; probes as before.
 
-**[UNRESOLVED U7 — config hygiene]** The live pod at 2026-06-11 01:15 emitted
+**[UNRESOLVED U7: config hygiene]** The live pod at 2026-06-11 01:15 emitted
 `TRC`-level log lines although the repo `extra_params` contains no logging
 flag. Live deployment and Git may have diverged (manual edit for debugging?).
 Check `kubectl get application collabora -n argocd -o jsonpath='{.status.sync.status}'`
-and the live container env, reconcile before final measurements — trace
+and the live container env, reconcile before final measurements, trace
 logging is itself a per-tile cost and contaminates timings.
 
 ---
@@ -111,7 +111,7 @@ logging is itself a per-tile cost and contaminates timings.
 - Mechanism [INFERENCE, strongly supported]: CODE's privilege model uses
   **file capabilities** on helper binaries. These activate at exec() provided
   the capability is in the process's **bounding set** (supplied by the pod's
-  capability list). pid 1's `CapEff = 0` is the *expected healthy state* —
+  capability list). pid 1's `CapEff = 0` is the *expected healthy state*,
   coolwsd runs as the unprivileged `cool` user.
 - This resolves v2 §6.2 entirely: the `coolmount: Operation not permitted`
   errors stopped when the bounding set gained the caps; the *mount self-test*
@@ -119,12 +119,12 @@ logging is itself a per-tile cost and contaminates timings.
   denies the `mount(2)` syscall regardless of capabilities**, and the
   annotation-based "unconfined" never applied on k3s v1.35 (annotation
   deprecated since K8s 1.30 in favour of the field). [INFERENCE for the deny
-  mechanism — consistent with all observations and with public reports of the
+  mechanism, consistent with all observations and with public reports of the
   same failure family, e.g. CollaboraOnline/online#14087 (a different trigger,
   uid-65534 self-test, same fallback behaviour); FACT that field works and
   annotation state showed enforce]
 
-### 5.2 Mount fix verified — jail copy ELIMINATED [FACT]
+### 5.2 Mount fix verified: jail copy ELIMINATED [FACT]
 
 Restart at 2026-06-11 01:15, startup log:
 
@@ -147,7 +147,7 @@ Cold open re-measured with bind-mounted jails: **still ~55 s, unchanged.**
 
 - **[REFUTED]** v2's leading hypothesis (copy fallback as cause of the
   55 s symptom). The copy was a real, coincident pathology.
-- **[REFUTED]** v2 §8 candidate fix (`privileged: true`) — built on the
+- **[REFUTED]** v2 §8 candidate fix (`privileged: true`), built on the
   invalid `CapEff` reasoning (§5.1) and now moot.
 - v2 §6.1 (reconciling the 48 s gap with the copy) is thereby resolved by
   experiment: they were **not** causally linked.
@@ -170,7 +170,7 @@ Key deductions:
 - **forkit's lifetime CPU is ~1.3 s** → the expensive work is NOT general
   LO initialization at pod start (preinit would have paid it once in forkit).
   It is **triggered per document load, inside the kit**. [INFERENCE, strong]
-- A `subforkit_001` exists — part of the 25.04 per-config/presets machinery.
+- A `subforkit_001` exists, part of the 25.04 per-config/presets machinery.
   Its role here is uncharacterized. [FACT of existence; UNRESOLVED U5]
 
 ### 5.5 I/O accounting during the burn [FACT]
@@ -178,7 +178,7 @@ Key deductions:
 For the busy kit: `read_bytes: 0`; `rchar` grew ~515 KB → ~1.4 MB across the
 window, then stopped. Persistent fds: `/dev/urandom`, `types.rdb`,
 `offapi.rdb`, `oovbaapi.rdb`, `th_en_US_v2.dat` (UNO type registries +
-thesaurus — long-lived, unremarkable).
+thesaurus, long-lived, unremarkable).
 
 - The work is **pure computation**, not file scanning at the read() level.
 - **[CORRECTION]** An intermediate claim that `read_bytes: 0` "formally killed"
@@ -195,7 +195,7 @@ thesaurus — long-lived, unremarkable).
 fontconfig caches present: 7 in container rootfs, 7 in systemplate.
 (With §5.7, fonts are excluded as the hot path; recorded for completeness.)
 
-### 5.7 CPU profile of the burning kit [FACT — decisive but thin]
+### 5.7 CPU profile of the burning kit [FACT, decisive but thin]
 
 `perf record -F 99 -g -p <kitbroker> -- sleep 30` on the worker VM
 (possible because kit processes are visible in the VM PID namespace and the
@@ -215,7 +215,7 @@ entry order, `cmpDicEntry` is the entry comparator) and the `rtl_uString`
 refcount churn those comparisons generate.
 
 **Capture-quality caveat [FACT]:** only **19 samples** (~0.19 s of CPU at
-99 Hz) were collected — the attach raced the burn window (or attached to a
+99 Hz) were collected, the attach raced the burn window (or attached to a
 near-idle/previous kitbroker and caught only a sliver of activity). The
 symbol pattern is internally coherent and highly specific, so the
 *direction* is trusted; the *percentages* are not. Re-capture required
@@ -245,23 +245,23 @@ symbol pattern is internally coherent and highly specific, so the
 1. [FACT §5.7] During the slow window the document's kit spends its CPU in
    `DictionaryNeo::cmpDicEntry` / `isSorted` + string refcounting.
 2. [FACT] `DictionaryNeo` is the LO implementation of **wordbooks** (user/
-   custom dictionaries, `.dic` files in the user profile — e.g. `standard.dic`,
+   custom dictionaries, `.dic` files in the user profile, e.g. `standard.dic`,
    ignore-lists), distinct from hunspell language dictionaries (the
    `dictionaries=en_GB en_US` env var is hunspell and unrelated).
 3. [FACT, v2 §4.2] The original timings include a `presetsInstall` phase
-   (~3.42 s) — CODE 25.04's mechanism for downloading per-user/system presets
+   (~3.42 s), CODE 25.04's mechanism for downloading per-user/system presets
    **from the WOPI host (Nextcloud richdocuments)** into the kit's jail at
    document-load time. Presets include wordbooks. The `subforkit` machinery
    (§5.4) belongs to the same feature.
 4. [INFERENCE] A wordbook delivered via presets (or shipped in the profile) is
    parsed and sorted by `DictionaryNeo` on first spellcheck during initial
-   layout/render — i.e. *after* `loadDocumentEnd` (a WSD-side dispatch
+   layout/render, i.e. *after* `loadDocumentEnd` (a WSD-side dispatch
    timestamp) and *before* `firstTileSent`, exactly where the 48 s gap sits.
 5. [INFERENCE] The duration implies a pathological input or algorithm:
    an oversized wordbook, a malformed file parsed as an enormous entry list,
    or an unsorted wordbook triggering comparison-heavy (potentially quadratic)
    insertion. The ~3.4 s `presetsInstall` (download/install only) is itself
-   suspiciously large for what should be tiny files — consistent with a large
+   suspiciously large for what should be tiny files, consistent with a large
    payload.
 6. [OPEN, H12] The crippled vCPU may multiply whatever n is involved; it is
    unlikely to be the sole cause of a 48 s fixed cost but could turn "annoying"
@@ -279,18 +279,18 @@ percentages (not to the symbol identification itself).
   capture.
 - **U3** Mechanism of the ~48 s: n (size) vs algorithm (unsorted/quadratic) vs
   vCPU multiplier; also re-confirm post-fix that the gap still sits at
-  `loadDocumentEnd → firstTileSent` (fresh `serverloadtimings` needed — the
+  `loadDocumentEnd → firstTileSent` (fresh `serverloadtimings` needed, the
   old one predates the mount fix).
 - **U4** H12 experiment not yet run (`cpu: host`).
 - **U5** Role of `subforkit_001`: one per configId? Created per user? Does a
   *new* subforkit appear per cold open?
 - **U6** Why pptx is slower still (minor; revisit after root cause).
-- **U7** Live-pod vs Git config divergence (trace logging) — §3.
+- **U7** Live-pod vs Git config divergence (trace logging), §3.
 
 ## 8. Next data to collect (exact commands, in priority order)
 
 1. **Verified full-window perf capture** (on `k3s-worker1`, arm BEFORE the
-   open; expect thousands of samples — if you again get <100, the attach
+   open; expect thousands of samples, if you again get <100, the attach
    raced and you should use the system-wide variant below):
    ```bash
    while ! pgrep kitbroker >/dev/null; do sleep 0.1; done
@@ -345,7 +345,7 @@ percentages (not to the symbol identification itself).
   Nextcloud (personal and/or admin Office settings); re-time. If the payload
   was garbage (e.g. a non-dictionary file served as a wordbook), file an
   upstream issue against richdocuments/CollaboraOnline with the perf profile
-  and the offending file — strong portfolio artifact.
+  and the offending file, strong portfolio artifact.
 - **If preset sync itself is the problem and no content fix exists:** look for
   a richdocuments/coolwsd toggle to disable wordbook preset sync; document the
   trade-off (no personal dictionaries in-editor).
@@ -356,45 +356,45 @@ percentages (not to the symbol identification itself).
     nearly free with bind-mounted jails).
   - Resolve U7 (Git/live divergence) and drop any debug logging.
   - Consider the leaner-caps experiment: with namespace mounting active
-    (`adms_info_namespaces=true`), `SYS_ADMIN` may be droppable — test by
+    (`adms_info_namespaces=true`), `SYS_ADMIN` may be droppable, test by
     removing it and confirming `Using Mount Namespaces: true` survives a
     restart.
 
 ## 10. Corrections register (do not re-trust)
 
-- **C1** (v2): `--o:mount_namespaces=false` blamed for the copy — wrong; flag
+- **C1** (v2): `--o:mount_namespaces=false` blamed for the copy, wrong; flag
   was absent while copying occurred.
-- **C2** (v2): "AppArmor rejected as sole cause" — the rejection test
+- **C2** (v2): "AppArmor rejected as sole cause", the rejection test
   (`CapEff` after annotation change) was invalid twice over: the annotation
   never applied, and `CapEff=0` at pid 1 is the healthy state under the
   file-capabilities model. AppArmor *was* the cause of the copy fallback.
-- **C3** (v2 §7/§8): copy-as-root-cause and `privileged: true` as fix — both
+- **C3** (v2 §7/§8): copy-as-root-cause and `privileged: true` as fix, both
   refuted; the copy was coincident, and `privileged` would have "worked" only
   by disabling AppArmor as a side effect while teaching the wrong lesson.
-- **C4** (this session): "`read_bytes: 0` formally excludes fonts" —
+- **C4** (this session): "`read_bytes: 0` formally excludes fonts",
   overclaimed; mmap'd I/O is invisible to those counters. Fonts were properly
   excluded only by the symbol profile.
 - **C5** (v2 §4.3): "`coolforkit-caps` is the top consumer, therefore not
-  fc-cache/soffice" — kit processes never exec a new binary (LO runs in-process
+  fc-cache/soffice"; kit processes never exec a new binary (LO runs in-process
   under the forkit-derived name), so process-name attribution could not
   distinguish copying from any in-process LO work. The same blindness produced
   both the original copy attribution and the unsound H5 rejection.
 
 ---
 
-## 11. Resolution (2026-06-11) — H11 CONFIRMED, fix applied
+## 11. Resolution (2026-06-11): H11 CONFIRMED, fix applied
 
 ### Evidence chain [FACT unless noted]
 
 1. Nextcloud appdata inventory found
-   `data/appdata_oc81lq0v51gk/richdocuments/userconfig/henry/wordbook/English (British).dic`
-   — **587,750 bytes, 51,577 lines**, mtime 2026-04-01 11:12. The only other
+   `data/appdata_oc81lq0v51gk/richdocuments/userconfig/henry/wordbook/English (British).dic`,
+   **587,750 bytes, 51,577 lines**, mtime 2026-04-01 11:12. The only other
    wordbook, `standard.dic`, is 300 bytes (35 genuine personal entries) and is
    untouched.
 2. File content: `OOoUserDict1` wordbook header, then the line `51573`
    (a hunspell *entry-count* header, meaningless in a wordbook), then the full
    hunspell en_GB wordlist **including affix flags** (`éclat/M`, `émigré/S`,
-   …). I.e. a raw hunspell `en_GB.dic` was uploaded as a personal wordbook —
+   …). I.e. a raw hunspell `en_GB.dic` was uploaded as a personal wordbook,
    it provides zero spellcheck value in this form (en_GB hunspell is already
    active via `dictionaries=en_GB en_US`; flagged entries never match).
 3. Mechanism [INFERENCE, strongly supported]: richdocuments serves user
@@ -402,7 +402,7 @@ percentages (not to the symbol identification itself).
    the system scope, and v2's `presetsInstall ~3.42 s` matches fetching the
    588 KB payload. On first spellcheck during initial layout (between
    `loadDocumentEnd` and `firstTileSent`), `DictionaryNeo` parses the file and
-   sort-inserts 51,573 entries — comparison-quadratic on this input
+   sort-inserts 51,573 entries, comparison-quadratic on this input
    (~10⁹ `cmpDicEntry` calls + `rtl_uString` churn), matching the §5.7 perf
    profile, the 1-core peg, the fixed ~55 s independent of document type, and
    the instant second session (kit already paid the cost).
@@ -429,7 +429,7 @@ percentages (not to the symbol identification itself).
 
 - H12 / U4: vCPU `x86-64-v2-AES` → `cpu: host` on VMs 300/301 (correct
   setting regardless; was likely a multiplier on the quadratic burn).
-- U5 (subforkit role), U6 (pptx delta) — moot if retest is fast.
+- U5 (subforkit role), U6 (pptx delta), moot if retest is fast.
 - After confirmed fast: add `--o:num_prespawn_children=2`; test dropping
   `SYS_ADMIN` while confirming `Using Mount Namespaces: true` survives.
 - Guardrail idea: richdocuments accepted a 588 KB upload as a wordbook with
