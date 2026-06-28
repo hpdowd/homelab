@@ -5,6 +5,21 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-06-27:** worker VM shrunk **14→12GiB** (now
+> 11.6GiB usable, `node.status.capacity.memory` = 12184516Ki) to hand
+> ~2GiB back to the host for an AMP game server. The worker is the only
+> RAM lever left: ZFS ARC is already capped at 2.3GiB (10%, sitting at
+> ~1.2), and control stays at 4GiB (its 3.5GiB shrink was cancelled,
+> see below). Live at shrink time: worker 7.0GiB working set (59%), no
+> OOM or `MemoryPressure` through a graceful `qm shutdown`/`start`; host
+> `free -h` available rose ~4.3→~6GiB. The cycle did trigger a transient
+> Longhorn-reattach crashloop **alert storm** (benign, self-resolved):
+> `docs/lessons/k8s/worker-reboot-alert-storm.md`. Software-only
+> game-server budget is now **~4-5GiB** (small servers, Valheim, PZ,
+> Nomifactory at 3-4GiB heap); moderate modpacks and SkyFactory wait for
+> a separate box. **The "13.59GiB usable" figures below predate this
+> shrink** and read against the old 14GiB worker.
+
 > **Status update 2026-06-12:** both candidates below are deployed,
 > Collabora (phase 6d) and Immich (phase 6c, ADR 006). Immich went in on
 > a ~6-day baseline showing a 7.9GiB worker minimum; post-deploy idle is
