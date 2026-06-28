@@ -222,6 +222,26 @@ state, don't "fix" it. See
   app after a failed deploy, delete the PVCs explicitly, a reused
   Grafana PVC with a corrupt SQLite crashed every reinstall. See
   `docs/lessons/k8s/grafana-pvc-corruption.md`.
+- **A worker reboot fires a stale crashloop alert storm.** Longhorn
+  volumes reattach uncleanly on boot, so PVC-mounting pods crash-restart
+  for a few minutes; meanwhile the alerter (also on the worker) is down,
+  then flushes the whole batch on recovery, ~20 min late, for pods that
+  are already healthy. `PodCrashLooping` is a restart-*rate* threshold
+  (`increase[15m] > 3`, `for 5m`) and can't tell a reboot from a real
+  crashloop. Triage by the *absence* of `PodOOMKilled`/`NodeMemoryLowWorker`
+  (memory) and `LonghornVolumeDegraded` persisting (storage): only
+  `PodCrashLooping` clustered after a reboot = benign, self-resolves. See
+  `docs/lessons/k8s/worker-reboot-alert-storm.md`.
+- **`PortfolioMetricsAbsent` re-fires after every portfolio restart.**
+  `portfolio_upstream_up` is populated lazily ("on last use"), so until
+  the app actually fetches an upstream (a real `/api/*` hit, not a
+  `/healthz` probe or static `/`), no series exists and `absent()` fires
+  for 15m, even though the pod is healthy and being scraped. A single
+  live page load creates the series and it resolves. The durable fix is
+  in the **portfolio repo**: pre-register the gauge at 0 for each known
+  upstream (`vm`, `gitea`) at startup so the series always exist, then
+  `absent()` only fires on a genuinely broken pipeline and
+  `PortfolioUpstreamDown` can evaluate from boot.
 
 ## Stuck namespace Terminating (vm-operator pattern)
 
