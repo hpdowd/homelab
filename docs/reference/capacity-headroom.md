@@ -5,6 +5,18 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-06-28:** control VM raised **4→5GiB** (now 4.74GiB
+> usable; `MemAvailable` recovered ~0.7→~2.9GiB). This was *not* fallout
+> from the worker shrink: the 2026-06-27 worker reboot's Longhorn
+> salvage/rebuild bloated the control-node `longhorn-manager` ~150MiB for
+> hours, which on the thin 4GiB control node tripped `NodeMemoryLowControl`
+> after the crashloop storm had cleared
+> (`docs/lessons/k8s/worker-reboot-alert-storm.md`). 1GiB over 512MiB
+> because 512 covers that spike but not the multi-day apiserver/kine drift.
+> Net of both VM changes the host keeps ~1GiB of the worker shrink's 2GiB,
+> so the software-only game-server budget is **~3.5-4GiB** (worker 12GiB +
+> control 5GiB = 17GB fixed of ~24).
+
 > **Status update 2026-06-27:** worker VM shrunk **14→12GiB** (now
 > 11.6GiB usable, `node.status.capacity.memory` = 12184516Ki) to hand
 > ~2GiB back to the host for an AMP game server. The worker is the only
