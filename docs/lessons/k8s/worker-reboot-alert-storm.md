@@ -7,7 +7,7 @@
 ~1h diagnosis. No actual outage.
 
 ## Status
-Resolved (benign, no fix needed; the value is the triage runbook)
+Resolved. The crashloop storm is benign; the delayed second act (control-node `longhorn-manager` memory) needed a manager restart.
 
 ## Context
 - **System / component:** k3s-worker1 (VM 301) and cluster-wide alerting (`homelab-rules` VMRule).
@@ -66,6 +66,47 @@ Triage from the alert *set* first, before touching kubectl. The discriminator:
 So: `PodCrashLooping` *without* `PodOOMKilled`/`NodeMemoryLowWorker`, pods now showing minutes-old-and-stable restart ages, equals reboot noise. Wait it out.
 
 Accepted risk: the monitoring stack lives on the only worker, so it is blind to its own node's reboot and re-fires a batch on every cycle. If it becomes annoying, options are an inhibit rule for the post-restart window, or moving Alertmanager off the worker.
+
+## Delayed second act: control-node longhorn-manager bloat (2026-06-28)
+
+~7h after the reboot, `NodeMemoryLowControl` fired (control `MemAvailable`
+< 0.75GiB). It looked unrelated, control was never rebooted, and two
+hypotheses were wrong before the real one:
+
+- **Not the apiserver** (suspected my own heavy `kubectl` querying): its RSS
+  just oscillates 1.6-1.8GiB with no step.
+- **Not gradual drift:** control sat flat at ~0.9GiB available for a week.
+
+The actual cause: the control-node `longhorn-manager` (the controller
+leader) sat flat at ~490MiB for a week, then **stepped +150MiB to ~640MiB
+between 1 and 5 hours after the reboot** and held it. The reboot had
+faulted/AutoSalvaged all 8 volumes; the manager then ran the rebuild/resync
+plus the recurring snapshot/trim/backup jobs on every reattached volume
+(logs for the window: 121 salvage / 28 snapshot / 14 trim / 14 backup),
+growing its Go heap. On a 4GiB control node with ~0.9GiB headroom that
+crossed the 0.75GiB floor, hours after the crashloop storm had already
+cleared, which is why it didn't look reboot-related.
+
+Diagnosis tell: a clean +150MiB step in **one pod** hours after the reboot,
+no new pod scheduled on control, no apiserver step. A `MemAvailable` drop
+means *anonymous* (non-reclaimable) memory grew, so diff per-pod
+`container_memory_working_set_bytes` and per-process
+`process_resident_memory_bytes` over the window to find the one that stepped.
+
+Fix, reclaim the held heap by bouncing the manager (safe, no replicas on
+control, volumes stay attached):
+
+```bash
+kubectl delete pod -n longhorn-system -l app=longhorn-manager \
+  --field-selector spec.nodeName=k3s-control
+# control MemAvailable 0.74 -> 0.95 GiB; all 8 volumes stayed healthy
+```
+
+Prevention: this recurs on **every** worker reboot. Durable fix is control
+4->5GiB (affordable from the 2026-06-27 worker-shrink headroom; +512MiB
+covers the spike but not the multi-day apiserver/kine drift, so 1GiB is the
+fix-once size). The control-node manager is ~490MiB of dead weight on a node
+with zero replicas, so excluding control from Longhorn is the alternative.
 
 ## Related
 - Gotchas: `docs/reference/gotchas.md` (Monitoring).
