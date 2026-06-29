@@ -1,0 +1,25 @@
+# Registers the file-parser app with ArgoCD. REQUIRED — the root-app is
+# non-recursive, so the k8s/apps/file-parser/ directory without this matching
+# <name>.yaml would be silently orphaned.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: file-parser
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # The .git suffix is load-bearing: the argocd repo credential (insecure-TLS
+    # workaround for split-horizon DNS) is keyed to this exact URL.
+    repoURL: https://git.henrydowd.dev/henry/homelab.git
+    targetRevision: HEAD
+    path: k8s/apps/file-parser
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: file-parser
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
