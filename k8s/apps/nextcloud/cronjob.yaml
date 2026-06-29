@@ -21,6 +21,19 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          # The data PVC is RWO (ReadWriteOnce) and attaches to whichever node
+          # the main nextcloud pod runs on. Without this affinity the scheduler
+          # can land the cron pod on a different node, where the volume can't
+          # attach (Multi-Attach error); the run then hangs until
+          # activeDeadlineSeconds and fails. Co-locate with the main pod so the
+          # cron pod always shares its node and its already-attached volume.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: nextcloud
+                  topologyKey: kubernetes.io/hostname
           containers:
             - name: cron
               image: nextcloud:33-apache
