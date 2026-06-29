@@ -1,0 +1,14 @@
+# Runtime config for the parser web service.
+#   PRINTER_URI    - the network printer's IPP Everywhere endpoint; the pod prints
+#                    straight to it (no intermediate print host to keep powered on).
+#                    If the printer uses a different resource path, discover it with
+#                    `ipptool -tv <printer-uri> get-printer-attributes.test`.
+#   MAX_UPLOAD_MB  - reject larger uploads (413).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: file-parser-config
+  namespace: file-parser
+data:
+  PRINTER_URI: "ipp://192.168.1.40/ipp/print"
+  MAX_UPLOAD_MB: "25"

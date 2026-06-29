@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-parser
+  namespace: file-parser
+  labels: { app: file-parser }
+spec:
+  selector: { app: file-parser }
+  ports:
+    - { name: http, port: 80, targetPort: http }

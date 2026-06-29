@@ -1,0 +1,63 @@
+# FastAPI front-end for the file parser: upload a PDF report, get an .xlsx back,
+# then download it or print a worksheet to the network printer over IPP.
+# Stateless — each request uses a private memory-backed temp dir that is deleted
+# afterwards, so nothing persists between sessions. The image bundles LibreOffice
+# (xlsx->PDF) so it is large and slow to start; give it memory headroom.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-parser
+  namespace: file-parser
+spec:
+  replicas: 1
+  strategy: { type: RollingUpdate }
+  selector:
+    matchLabels: { app: file-parser }
+  template:
+    metadata:
+      labels: { app: file-parser }
+    spec:
+      # Pinned to the worker like everything else — the control node is
+      # scheduling-disabled.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: file-parser
+          # Built by GitHub Actions (henry/file-parser is push-mirrored to
+          # GitHub; the in-cluster runner has no Docker daemon) and published to
+          # GHCR, which the cluster pulls anonymously like portfolio. CI pins
+          # this to the immutable :<sha>; :latest covers the first sync before CI
+          # has run.
+          image: ghcr.io/hpdowd/file-parser:latest
+          ports:
+            - { name: http, containerPort: 8000 }
+          envFrom:
+            - configMapRef: { name: file-parser-config }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "1Gi" }   # LibreOffice is memory-hungry
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          volumeMounts:
+            # All writes (per-request temp dirs + LibreOffice profile/HOME) land
+            # here, keeping the root filesystem read-only. Memory-backed so report
+            # data never touches disk.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi

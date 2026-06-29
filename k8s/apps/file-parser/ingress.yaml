@@ -1,0 +1,27 @@
+# Inbound web UI only. Covered by the *.henrydowd.dev wildcard (cloudflared tunnel
+# route + LE wildcard cert), so no new Cloudflare tunnel route or DNS record is
+# needed. Conventions match the other apps: ingressClassName traefik; no
+# router.entrypoints annotation (cloudflared speaks plain HTTP); no per-Ingress
+# tls block (the default TLSStore serves the LE wildcard).
+#
+# IMPORTANT: this app handles sensitive data. Unlike the public apps it MUST sit
+# behind a Cloudflare Access policy on this hostname (Zero Trust > Access >
+# Applications), restricted to the specific people allowed to use it. The Ingress
+# does no authentication.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: file-parser
+  namespace: file-parser
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: secure.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: file-parser
+                port: { number: 80 }
