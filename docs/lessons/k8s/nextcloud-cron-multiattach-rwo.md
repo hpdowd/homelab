@@ -94,9 +94,11 @@ kubectl get events -n nextcloud --field-selector type=Warning
 - The rule was already in HOMELAB.md ("Longhorn RWO: CronJobs sharing a RWO PVC
   must use podAffinity"); the gap was implementation. **Any CronJob/Job mounting
   an app's RWO PVC needs podAffinity to the app pod, full stop.**
-- Outstanding: `nextcloud-backup` mounts the same `nextcloud-data` PVC and has no
-  affinity either — same latent bug, will fire intermittently. Apply the same
-  podAffinity there. (immich/gitea backup CronJobs worth auditing for the same.)
+- Audited the other RWO-mounting CronJobs while here — all three backup jobs
+  already carry the affinity and were never affected: `nextcloud-backup`
+  (`app: nextcloud`), `gitea-backup` (`app: gitea`), `immich-backup`
+  (`app: immich-server`). The pattern was established for the backup jobs; the
+  small every-5-min `nextcloud-cron` was simply the one that got overlooked.
 - When a Job fails pre-container-start, check namespace `Warning` events for
   `FailedAttachVolume` before digging into pod logs — the logs will be empty.
 
