@@ -31,11 +31,12 @@ publishing an internal network map.
 - [ ] ZFS snapshot names that embed dates
 
 ### Third-party / personal data (do not advertise it exists)
-- [ ] `file-parser` / `secure.henrydowd.dev` + `secure.dowd.ie` — handles **(police) incident data**. Scrubbing IPs and domains is not enough: the
-      manifests' comments name the data source and workflow ("Daily
-      Incidents PDF", print-to-Brother). Default is to **exclude this app from
-      the public mirror entirely** rather than publish a scrubbed version. If
-      kept, strip every reference to incident data and the printing
+- [ ] `file-parser` / `secure.henrydowd.dev` + `secure.dowd.ie` — handles
+      **police incident data**. Scrubbing IPs and domains is not enough: the
+      manifests' comments name the data source and workflow ("Daily Incidents
+      PDF", print-to-Brother). Default is to **exclude this app from the
+      public mirror entirely** rather than publish a scrubbed version. If
+      kept, strip every reference to the incident data and the printing
       workflow, not just the IP/host.
 - [ ] Confirm the app's *source* repo (`ghcr.io/hpdowd/file-parser`) is private — it
       holds the parsing logic and any sample PDFs, which is the larger exposure.
