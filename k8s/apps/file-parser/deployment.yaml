@@ -32,7 +32,7 @@ spec:
           # GHCR, which the cluster pulls anonymously like portfolio. CI pins
           # this to the immutable :<sha>; :latest covers the first sync before CI
           # has run.
-          image: ghcr.io/hpdowd/file-parser:sha-17e8f89
+          image: ghcr.io/hpdowd/file-parser:sha-4f650da
           ports:
             - { name: http, containerPort: 8000 }
           envFrom:
@@ -56,8 +56,18 @@ spec:
             # here, keeping the root filesystem read-only. Memory-backed so report
             # data never touches disk.
             - { name: tmp, mountPath: /tmp }
+            # Optional Sec 19 region map (station -> region code/contact name;
+            # see parse_incidents.load_region_map). Never in the repo or the
+            # image — only this Secret, sealed via sealed-secret.yaml, carries
+            # the real names. Mounted read-only at the app's default
+            # REGION_MAP_PATH, so no extra env var is needed.
+            - { name: region-map, mountPath: /etc/region-map, readOnly: true }
       volumes:
         - name: tmp
           emptyDir:
             medium: Memory
             sizeLimit: 512Mi
+        - name: region-map
+          secret:
+            secretName: file-parser-region-map
+            optional: true   # feature is simply off if the secret isn't present
