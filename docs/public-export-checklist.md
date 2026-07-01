@@ -38,6 +38,15 @@ publishing an internal network map.
       public mirror entirely** rather than publish a scrubbed version. If
       kept, strip every reference to the incident data and the printing
       workflow, not just the IP/host.
+- [ ] `file-parser-region-map` (`k8s/apps/file-parser/sealed-secret.yaml`,
+      added 2026-07-01) — a SealedSecret carrying a real person-name/region
+      map for the Sec 19 matching feature. The ciphertext is cluster-specific
+      and useless outside it (same as any other SealedSecret here), but its
+      *existence* + the `deployment.yaml`/`STATUS.md` comments describing what
+      it's for are still a "this handles police data with real names" signal —
+      covered by excluding `file-parser` entirely above, not a separate gap,
+      but don't forget it if `file-parser` is ever exported piecemeal instead
+      of wholesale.
 - [ ] Confirm the app's *source* repo (`ghcr.io/hpdowd/file-parser`) is private — it
       holds the parsing logic and any sample PDFs, which is the larger exposure.
 
