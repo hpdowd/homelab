@@ -1,12 +1,19 @@
 # Inbound web UI only, on two hostnames. secure.henrydowd.dev is covered by the
-# *.henrydowd.dev wildcard (cloudflared tunnel route + LE wildcard cert), no new
-# route/DNS needed there. secure.dowd.ie is a separate Cloudflare zone — its own
-# tunnel public hostname route + Zero Trust Access application already set up
-# in the dashboard (not in this repo). Neither host is on the LAN/Technitium;
-# both are tunnel/internet-only. Conventions match the other apps:
-# ingressClassName traefik; no router.entrypoints annotation (cloudflared
-# speaks plain HTTP); no per-Ingress tls block (the default TLSStore serves the
-# LE wildcard, irrelevant here since neither host resolves on the LAN).
+# *.henrydowd.dev wildcard (cloudflared tunnel route + LE wildcard cert +
+# Technitium split-horizon), no new route/DNS needed there. secure.dowd.ie is a
+# separate Cloudflare zone — its own tunnel public hostname route + Zero Trust
+# Access application already set up in the dashboard (not in this repo), and
+# its own Technitium record for LAN resolution.
+#
+# secure.dowd.ie needs its own `tls:` block below: the shared TLSStore
+# `default` only carries the henrydowd.dev wildcard (one TLSStore, one
+# defaultCertificate, cluster-wide), which doesn't match dowd.ie. This loads
+# `dowd-ie-tls` (k8s/infrastructure/cert-manager-config/dowd-ie-cert.yaml) as
+# an SNI-specific cert for just this host — deliberate exception to the
+# "no per-Ingress tls: blocks" convention (ADR 007), which only holds for
+# hosts already covered by the shared wildcard. Doesn't touch the `web`
+# (plain-HTTP) entrypoint the tunnel uses, so secure.henrydowd.dev and the
+# tunnel path for both hosts are unaffected.
 #
 # IMPORTANT: this app handles sensitive data. Unlike the public apps it MUST sit
 # behind a Cloudflare Access policy on both hostnames (Zero Trust > Access >
@@ -19,6 +26,10 @@ metadata:
   namespace: file-parser
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - secure.dowd.ie
+      secretName: dowd-ie-tls
   rules:
     - host: secure.henrydowd.dev
       http:
