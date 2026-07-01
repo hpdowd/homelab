@@ -1,0 +1,21 @@
+# Second wildcard, separate zone from henrydowd-dev-cert.yaml — dowd.ie can't
+# share that Certificate (one cert = one Traefik TLSStore defaultCertificate,
+# and only one TLSStore named "default" may exist cluster-wide). Lives in the
+# traefik namespace for the same cross-namespace-secret reason as the other one.
+#
+# Not wired into the TLSStore: it's presented via a per-Ingress `tls:` block
+# (secure.dowd.ie in k8s/apps/file-parser/ingress.yaml) instead, so the
+# henrydowd.dev default cert is untouched for every other host.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dowd-ie
+  namespace: traefik
+spec:
+  secretName: dowd-ie-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - dowd.ie
+    - "*.dowd.ie"
