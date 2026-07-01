@@ -14,7 +14,7 @@ publishing an internal network map.
 
 ### Hostnames and domains
 - [ ] Internal hostnames (`*.lan`)
-- [ ] Real public domain (`henrydowd.dev`), replace with `<your-domain>` or a placeholder
+- [ ] Real public domains (`henrydowd.dev` and `dowd.ie`), replace with `<your-domain>` or a placeholder
 - [ ] Cloudflare tunnel ID / tunnel name
 - [ ] Git repo URL (`git.henrydowd.dev/henry/homelab`)
 
@@ -31,12 +31,12 @@ publishing an internal network map.
 - [ ] ZFS snapshot names that embed dates
 
 ### Third-party / personal data (do not advertise it exists)
-- [ ] `file-parser` / `incidents.henrydowd.dev` — handles **(police) incident
-      data**. Scrubbing IPs and domains is not enough: the manifests' comments name
-      the data source and workflow ("Daily Incidents PDF", print-to-Brother).
-      Default is to **exclude this app from the public mirror entirely** rather than
-      publish a scrubbed version. If kept, strip every reference to incident
-      data and the printing workflow, not just the IP/host.
+- [ ] `file-parser` / `secure.henrydowd.dev` + `secure.dowd.ie` — handles **(police) incident data**. Scrubbing IPs and domains is not enough: the
+      manifests' comments name the data source and workflow ("Daily
+      Incidents PDF", print-to-Brother). Default is to **exclude this app from
+      the public mirror entirely** rather than publish a scrubbed version. If
+      kept, strip every reference to incident data and the printing
+      workflow, not just the IP/host.
 - [ ] Confirm the app's *source* repo (`ghcr.io/hpdowd/file-parser`) is private — it
       holds the parsing logic and any sample PDFs, which is the larger exposure.
 
