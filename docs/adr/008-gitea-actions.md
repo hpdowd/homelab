@@ -1,8 +1,9 @@
 # ADR 008: Gitea Actions, in-cluster runner for manifest CI, GitHub for heavy builds
 
-**Status:** Accepted
+**Status:** Accepted — runner execution model superseded by ADR 010
 **Date:** 2026-06-13
-**Superseded By:** None
+**Superseded By:** ADR 010 (runner model only: DinD → host executor; the
+in-cluster manifest CI and GitHub-for-heavy-builds decisions still stand)
 
 ## What problem this solves
 

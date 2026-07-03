@@ -10,8 +10,9 @@ Each ADR has a **Status** (Accepted / Superseded) and a **Superseded By** line s
 | 005-victoria-metrics-monitoring.md | VictoriaMetrics single-node over kube-prometheus-stack |
 | 006-immich.md | Immich: public before Authelia, raw manifests, 100MB tunnel cap accepted, backed up from day one |
 | 007-certmanager-wildcard-tls.md | cert-manager + Let's Encrypt DNS-01 wildcard as Traefik's default cert — fixes self-signed TLS on the split-horizon LAN path |
-| 008-gitea-actions.md | Gitea Actions: in-cluster act_runner (DinD) for manifest CI; heavy builds (Android) offloaded to GitHub-hosted runners — worker RAM can't host them |
+| 008-gitea-actions.md | Gitea Actions: in-cluster act_runner (DinD) for manifest CI; heavy builds (Android) offloaded to GitHub-hosted runners — worker RAM can't host them (runner model superseded by 010) |
 | 009-portfolio.md | Portfolio site: one static Go binary, GHCR image built by GitHub Actions, self-monitored on the apex; no secret on the public-facing pod |
+| 010-act-runner-host-executor.md | act_runner moved to the host executor — drops the privileged DinD sidecar; jobs run daemonless in the runner pod (supersedes 008's runner model) |
 
 Numbering starts at 004: decisions 001–003 (k3s itself, GitOps via
 ArgoCD, Longhorn PVC over hostPath for the Nextcloud migration) predate

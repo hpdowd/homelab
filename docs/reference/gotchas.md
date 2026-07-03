@@ -114,6 +114,11 @@ whole legacy mechanism off.
 
 ## Gitea Actions / DinD
 
+> **As of ADR 010 the runner uses the host executor — there is no DinD
+> sidecar.** The docker-daemon and bridge-MTU entries below are historical
+> (kept for the reasoning, and in case a privileged-docker workload ever
+> returns); the `GOMEMLIMIT` entry still applies to the host-mode runner.
+
 - **The dind sidecar gives the *runner* a Docker daemon, not the job
   steps.** A job container (`catthehacker/ubuntu`) has no
   `/var/run/docker.sock` and `DOCKER_HOST` isn't propagated, so
