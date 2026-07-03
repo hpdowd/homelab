@@ -1,0 +1,47 @@
+# Network isolation for the incident-data app — the most sensitive workload in
+# the cluster, so it gets deny-by-default in BOTH directions:
+#   - nothing reaches it except the HTTP port, and only from inside the cluster
+#     (Traefik fronts it; Cloudflare Access is the auth layer at the edge);
+#   - it can only reach the two things it actually needs — DNS and the printer.
+# A compromise of any other pod therefore can't touch it, and a compromise of
+# THIS pod can't be used to pivot into the rest of the cluster or the LAN.
+#
+# k3s enforces NetworkPolicy out of the box — its kube-router netpol controller
+# runs *inside* the k3s process (there is no separate pod), active unless k3s
+# was started with --disable-network-policy. Verify enforcement empirically
+# after rollout: a pod in another namespace should NOT be able to reach
+# file-parser:8000, while Traefik still can.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: file-parser
+  namespace: file-parser
+spec:
+  podSelector: {} # every pod in the namespace (just file-parser)
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # HTTP only, and only from in-cluster. 10.42.0.0/16 is the pod CIDR, which
+    # covers the Traefik pod and kubelet health probes; the two node IPs are
+    # listed as well so a probe sourced from a node's LAN address still passes.
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 8000 }
+  egress:
+    # DNS. Egress to the CoreDNS Service ClusterIP is DNAT'd to the CoreDNS pod
+    # before the policy is evaluated, so this must select the kube-system
+    # namespace, not the service IP.
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # The network printer (IPP). The only thing this app talks to outbound —
+    # see PRINTER_URI in configmap.yaml (ipp://192.168.1.40 -> TCP 631).
+    - to:
+        - ipBlock: { cidr: 192.168.1.40/32 }
+      ports:
+        - { protocol: TCP, port: 631 }
