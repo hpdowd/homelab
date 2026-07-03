@@ -1,6 +1,10 @@
 name: manifests
-# Guards the repo ArgoCD selfHeals from. Runs on the in-cluster act_runner
-# (light, single-job). Heavy builds belong on GitHub-hosted runners.
+# Guards the repo ArgoCD selfHeals from. Runs on the in-cluster act_runner in
+# HOST executor mode — steps run directly in the runner container (no Docker
+# daemon), so this workflow uses only tools baked into that image: git, wget,
+# tar, sha256sum. No Node.js actions (the runner image has no node), which is
+# why checkout is a hand-rolled git clone rather than actions/checkout.
+# Heavy builds belong on GitHub-hosted runners.
 on:
   push:
     paths:
@@ -15,13 +19,29 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Hand-rolled checkout: actions/checkout is a Node.js action and the
+      # host-mode runner has no node. GITHUB_REF is the pushed branch
+      # (refs/heads/...) or the PR merge ref (refs/pull/N/merge) — fetching it
+      # covers both events. Anonymous clone over the in-cluster Gitea Service
+      # (public repo, no token, no tunnel round-trip).
+      - name: Checkout
+        run: |
+          git init -q .
+          git remote get-url origin >/dev/null 2>&1 \
+            || git remote add origin "http://gitea.gitea.svc.cluster.local:3000/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${GITHUB_REF}"
+          git checkout -q -f FETCH_HEAD
 
       - name: Install kubeconform
+        # Pinned by version AND sha256. The runner image has no curl, so wget
+        # (busybox + ssl_client) fetches the release; verify before trusting it.
         run: |
-          curl -sSL \
-            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C /usr/local/bin kubeconform
+          wget -q -O kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          echo "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73  kubeconform.tar.gz" \
+            | sha256sum -c -
+          tar -xzf kubeconform.tar.gz -C /usr/local/bin kubeconform
+          rm kubeconform.tar.gz
           kubeconform -v
 
       - name: Validate manifests

@@ -4,43 +4,27 @@ metadata:
   name: act-runner-config
   namespace: gitea
 data:
-  # Mounted into the dind sidecar at /etc/docker/daemon.json. The pod's eth0
-  # (flannel VXLAN) is MTU 1450, but docker bridges default to 1500 — job
-  # containers then black-hole large TLS packets to the internet (github curl
-  # resets after ~2.5min). Pin every bridge, including the per-job networks
-  # act_runner creates, to 1450. default-network-opts needs docker >= 26.
-  daemon.json: |
-    {
-      "mtu": 1450,
-      "default-network-opts": {
-        "bridge": { "com.docker.network.driver.mtu": "1450" }
-      }
-    }
   # act_runner reads this via the CONFIG_FILE env in the deployment.
   config.yaml: |
     log:
       level: info
     runner:
-      # One job at a time — this runner is sized for fast manifest CI, not
-      # parallel heavy builds. Heavy work (NextKeep Android) runs on
-      # GitHub-hosted runners instead.
+      # One job at a time — this runner only lint-validates manifests. Heavy
+      # work (NextKeep Android) runs on GitHub-hosted runners instead.
       capacity: 1
       timeout: 1h
       fetch_timeout: 5s
       fetch_interval: 2s
-      # The left side is the workflow's `runs-on:` value; the right side is
-      # the image the job runs in. catthehacker/ubuntu mirrors the
-      # GitHub-hosted ubuntu image closely enough for actions/checkout etc.
+      # HOST executor. `:host` runs the job's steps directly in the runner
+      # container instead of spawning a per-job container through a Docker
+      # daemon — which is what let us delete the privileged dind sidecar. The
+      # job therefore only has the tools baked into the act_runner image
+      # (git, wget+ssl_client, tar, sha256sum), so the workflow is written to
+      # use those and no Node.js actions. The left side is the workflow's
+      # `runs-on:` value.
       labels:
-        - "ubuntu-latest:docker://catthehacker/ubuntu:act-22.04"
-        - "ubuntu-22.04:docker://catthehacker/ubuntu:act-22.04"
+        - "ubuntu-latest:host"
+        - "ubuntu-22.04:host"
     cache:
       enabled: true
       dir: "/data/cache"
-    container:
-      network: "bridge"
-      # Job containers themselves are NOT privileged; only the dind sidecar
-      # that hosts them is. valid_volumes empty = workflows can't bind-mount
-      # arbitrary host paths.
-      privileged: false
-      valid_volumes: []

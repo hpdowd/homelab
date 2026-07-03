@@ -5,8 +5,8 @@ metadata:
   namespace: gitea
 spec:
   replicas: 1
-  # Recreate, not RollingUpdate: both PVCs are Longhorn RWO, so only one pod
-  # can mount them at a time (same constraint as the gitea deployment).
+  # Recreate, not RollingUpdate: runner-data is a Longhorn RWO PVC, so only one
+  # pod can mount it at a time (same constraint as the gitea deployment).
   strategy:
     type: Recreate
   selector:
@@ -22,44 +22,31 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
       containers:
-        # Docker-in-Docker: hosts the per-job containers act_runner spawns.
-        # This is the one privileged container in the stack; it's confined to
-        # the worker and runs only Henry's own workflows. Nested job
-        # containers count against THIS container's memory cgroup, so the
-        # limit here is effectively the per-job ceiling — sized for light
-        # manifest CI, not heavy builds (those go to GitHub-hosted runners).
-        - name: dind
-          image: docker:27-dind
-          securityContext:
-            privileged: true
-          env:
-            - name: DOCKER_TLS_CERTDIR
-              value: /certs
-          resources:
-            requests: { memory: "256Mi", cpu: "100m" }
-            limits: { memory: "1Gi" }
-          volumeMounts:
-            - name: certs
-              mountPath: /certs
-            - name: dind-storage
-              mountPath: /var/lib/docker
-            - name: config
-              mountPath: /etc/docker/daemon.json
-              subPath: daemon.json
-        # The act_runner agent: registers with Gitea, polls for jobs, and
-        # drives the dind daemon over TLS on localhost. Lightweight itself.
+        # act_runner in HOST executor mode: registers with Gitea, polls for
+        # jobs, and runs each job's steps directly in THIS container. There is
+        # no Docker daemon and no privileged sidecar — this was the cluster's
+        # only privileged workload, now an ordinary unprivileged pod. Jobs are
+        # manifest-lint CI only (git + wget + kubeconform); heavy builds still
+        # go to GitHub-hosted runners.
         - name: runner
           image: gitea/act_runner:0.2.11
-          # dind needs a few seconds to write the client cert; retry until the
-          # daemon answers before launching the runner, otherwise the first
-          # job after a pod start can fail to reach docker.
           command:
             - sh
             - -c
             - |
-              until [ -f /certs/client/cert.pem ]; do
-                echo "waiting for dind TLS certs..."; sleep 2
-              done
+              # One-time migration to the host executor: the persisted
+              # registration in /data/.runner pins the OLD docker:// label
+              # mapping, so the daemon would keep trying to reach a Docker
+              # daemon that no longer exists. Drop it and let run.sh
+              # re-register with the host labels from config.yaml (the
+              # registration token is reusable). Idempotent: a host-mode
+              # .runner has no docker:// to match. Once a host-mode run is
+              # confirmed this whole command can be simplified to:
+              #   command: ["/sbin/tini", "--", "/opt/act/run.sh"]
+              if grep -q 'docker://' /data/.runner 2>/dev/null; then
+                echo "migrating runner registration to host executor"
+                rm -f /data/.runner
+              fi
               exec /sbin/tini -- /opt/act/run.sh
           env:
             # Cluster-internal — avoids the public tunnel for registration and
@@ -75,39 +62,24 @@ spec:
               value: k3s-worker1
             - name: CONFIG_FILE
               value: /config/config.yaml
-            - name: DOCKER_HOST
-              value: tcp://localhost:2376
-            - name: DOCKER_CERT_PATH
-              value: /certs/client
-            - name: DOCKER_TLS_VERIFY
-              value: "1"
-            # act_runner is a Go binary; without a soft limit Go's GC grows
-            # the heap toward the cgroup cap and gets OOMKilled mid-job (seen
-            # at both 192Mi and 384Mi). GOMEMLIMIT makes the runtime GC before
-            # the hard limit. Idle RSS is ~10Mi; the headroom is for job runs.
+            # act_runner is a Go binary; without a soft limit Go's GC grows the
+            # heap toward the cgroup cap and gets OOMKilled mid-job. GOMEMLIMIT
+            # makes the runtime GC before the hard limit. The job now runs in
+            # this container's cgroup too, but manifest linting is light.
             - name: GOMEMLIMIT
               value: "700MiB"
           resources:
             requests: { memory: "128Mi", cpu: "50m" }
             limits: { memory: "768Mi" }
           volumeMounts:
-            - name: certs
-              mountPath: /certs
             - name: runner-data
               mountPath: /data
             - name: config
               mountPath: /config
       volumes:
-        # Shared TLS material: dind writes server+client certs here, the
-        # runner reads /certs/client to talk to the daemon.
-        - name: certs
-          emptyDir: {}
         - name: config
           configMap:
             name: act-runner-config
-        - name: dind-storage
-          persistentVolumeClaim:
-            claimName: act-runner-dind
         - name: runner-data
           persistentVolumeClaim:
             claimName: act-runner-data
