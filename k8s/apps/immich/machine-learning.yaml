@@ -37,17 +37,9 @@ spec:
       enableServiceLinks: false
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       containers:
         - name: immich-ml
           image: ghcr.io/immich-app/immich-machine-learning:v2.7.5
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
           ports:
             - containerPort: 3003
           volumeMounts:
