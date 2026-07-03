@@ -1,0 +1,20 @@
+# Default-deny ingress + minimum allowlist. Kiwix only ever serves read-only
+# ZIM content on :8080; allow that from in-cluster (Traefik + probes) and
+# nothing else inbound. Egress stays open (unused in practice).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-ingress
+  namespace: kiwix
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 8080 }

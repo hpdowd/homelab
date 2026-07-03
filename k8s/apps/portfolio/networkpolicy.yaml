@@ -1,0 +1,20 @@
+# Default-deny ingress + minimum allowlist. The public site (:8080) and the
+# private metrics port (:9090, scraped by VictoriaMetrics + kubelet probe) are
+# reachable from in-cluster; nothing else inbound. Egress stays open — the pod
+# reads VictoriaMetrics and Gitea over the cluster network to build the page.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-ingress
+  namespace: portfolio
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 9090 }

@@ -11,6 +11,12 @@ spec:
     metadata:
       labels: { app: kiwix }
     spec:
+      # Pod-level seccomp covers both the busybox init (chmod) and kiwix-serve.
+      # No pod-level runAsNonRoot — the init container needs root to chmod the
+      # freshly-provisioned volume.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         # Fresh Longhorn volumes come up root-owned; kiwix-serve runs as a
         # non-root user and needs to read the ZIMs. Blunt but fine — the
@@ -24,6 +30,12 @@ spec:
       containers:
         - name: kiwix
           image: ghcr.io/kiwix/kiwix-serve:3.7.0
+          # kiwix-serve already runs as a non-root user in the image and only
+          # reads ZIMs + binds a high port, so it needs no capabilities.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           # Via sh -c so the *.zim glob expands at startup — ZIM dumps are
           # copied onto the PVC by hand (kubectl cp), and this picks up
           # whatever is there without listing filenames in the manifest.
