@@ -1,0 +1,25 @@
+# Default-deny ingress + minimum allowlist. Same-namespace traffic (act-runner
+# -> gitea:3000) is allowed; the HTTP (3000) and SSH (2222) ports are reachable
+# from in-cluster (Traefik + probes). Egress stays open — the runner pulls
+# action tarballs from github.com and images from registries.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-ingress
+  namespace: gitea
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    # 1. Same namespace: act-runner <-> gitea, backup CronJob, etc.
+    - from:
+        - podSelector: {}
+    # 2. HTTP + SSH from in-cluster (Traefik, kubelet probe on /api/healthz:3000).
+    #    Node IPs included for probe safety.
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 2222 }
