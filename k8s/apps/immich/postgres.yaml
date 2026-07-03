@@ -30,6 +30,13 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
+      # Postgres starts as root, chowns PGDATA, then drops to the postgres user
+      # via gosu — so it keeps exactly the caps that flow needs and nothing
+      # else. Running it fully non-root would mean relabelling the existing
+      # data dir; not worth the risk on a live DB.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           # Immich's own postgres build — PG14 + the VectorChord extension it
@@ -37,6 +44,11 @@ spec:
           # ships in the v2.7.5 docker-compose, don't bump it independently
           # of the server image. Digest-pinned because compose pins it too.
           image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
           ports:
             - containerPort: 5432
           env:

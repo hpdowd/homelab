@@ -29,11 +29,21 @@ spec:
       labels:
         app: postgres
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           # Must be >= the source AIO's Postgres major (18.4). Downgrading
           # a Postgres data dir is not a thing — it just won't start.
           image: postgres:18
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              # Root entrypoint chowns PGDATA then drops to the postgres user
+              # via gosu — keep just those caps, drop the rest.
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
           ports:
             - containerPort: 5432
           env:
