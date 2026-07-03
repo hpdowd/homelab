@@ -30,12 +30,31 @@ spec:
       labels:
         app: nextcloud
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: nextcloud
           # 33-apache tag tracks the latest 33.x patch. Source AIO was on 33.0.5.1,
           # so any 33.x is import-compatible. Do NOT jump to 34 here — Nextcloud
           # only supports one-major-at-a-time upgrades, and you'd skip the migration.
           image: nextcloud:33-apache
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              # apache binds :80 (NET_BIND_SERVICE) and drops its workers to
+              # www-data (SETUID/SETGID); the entrypoint chowns the data dir
+              # (CHOWN/DAC_OVERRIDE/FOWNER). Everything else is dropped.
+              drop: ["ALL"]
+              add:
+                [
+                  "CHOWN",
+                  "DAC_OVERRIDE",
+                  "FOWNER",
+                  "SETGID",
+                  "SETUID",
+                  "NET_BIND_SERVICE",
+                ]
           ports:
             - containerPort: 80
           env:

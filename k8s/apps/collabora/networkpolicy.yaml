@@ -1,0 +1,26 @@
+# Default-deny ingress + minimum allowlist. Collabora's :9980 is reached by the
+# browser via Traefik AND by Nextcloud's server-side WOPI discovery
+# (nextcloud ns -> collabora:9980), both of which originate in-cluster, so the
+# pod-CIDR allow on 9980 covers them. Egress stays open — Collabora calls back
+# to Nextcloud's WOPI endpoint to fetch documents.
+#
+# NB: this only isolates the network. The pod's securityContext is intentionally
+# left as-is (it needs SYS_ADMIN + AppArmor Unconfined for its document jails —
+# see deployment.yaml and docs/lessons/k8s/collabora-slow-load-wordbook.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-ingress
+  namespace: collabora
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 9980 }

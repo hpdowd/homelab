@@ -13,9 +13,22 @@ spec:
       labels:
         app: redis
     spec:
+      # Cache/lock state only (no PVC) — run it fully locked down.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
           image: redis:7-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 6379
           # Nextcloud uses redis for memcache + file locking. Both are throw-away
@@ -25,6 +38,13 @@ spec:
           resources:
             requests: { memory: "64Mi", cpu: "50m" }
             limits: { memory: "256Mi" }
+          volumeMounts:
+            # redis workdir is /data; needed writable under a read-only root fs
+            # even though persistence is disabled.
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,31 @@
+# Default-deny ingress for the namespace + the minimum allowlist. The point is
+# east-west isolation: a compromise in another namespace can't reach the
+# Nextcloud Postgres/Redis directly — only Nextcloud's own pods and the cluster
+# ingress path can. Egress stays open (Nextcloud reaches out for app updates,
+# federation, previews, etc.).
+#
+# Selecting the pods with an Ingress policyType is what makes everything not
+# listed below denied — no separate deny object needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-ingress
+  namespace: nextcloud
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    # 1. Anything in the same namespace: nextcloud <-> postgres <-> redis, and
+    #    the backup CronJob's pg_dump. The namespace is the trust boundary.
+    - from:
+        - podSelector: {}
+    # 2. The HTTP port from anywhere in-cluster — Traefik, kubelet probes, and
+    #    Collabora's WOPI callback (collabora ns -> nextcloud:80). Node IPs are
+    #    included for probe safety. Postgres/Redis are NOT reachable this way
+    #    (their ports aren't listed), only via rule 1.
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 80 }
