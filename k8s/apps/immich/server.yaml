@@ -36,12 +36,26 @@ spec:
       enableServiceLinks: false
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
+      # Runtime-default seccomp for the whole pod. The container below stays
+      # root (the upload library PVC is root-owned) but is stripped of every
+      # capability it doesn't use — a capless root is a far weaker escape base.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: immich-server
           # Keep in lockstep with the machine-learning image AND the postgres
           # image pairing (see postgres.yaml). Bump all together, checking the
           # release's docker-compose first.
           image: ghcr.io/immich-app/immich-server:v2.7.5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              # Drop everything, add back only the file-ownership + drop-priv
+              # caps a root entrypoint may touch. Immich binds a high port
+              # (2283) so it needs no NET_BIND_SERVICE.
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
           ports:
             - containerPort: 2283
           env:
