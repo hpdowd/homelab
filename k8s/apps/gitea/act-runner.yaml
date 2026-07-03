@@ -21,6 +21,10 @@ spec:
       # (192.168.1.10, 4GiB) runs no app workloads.
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
+      # Host-mode job steps run IN the runner container, and act_runner only
+      # ever talks to Gitea (never the Kubernetes API) — so keep the namespace
+      # default ServiceAccount token out of a container that runs CI shell.
+      automountServiceAccountToken: false
       containers:
         # act_runner in HOST executor mode: registers with Gitea, polls for
         # jobs, and runs each job's steps directly in THIS container. There is
