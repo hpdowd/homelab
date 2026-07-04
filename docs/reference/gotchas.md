@@ -112,6 +112,25 @@ your Service crash-loops on boot, Immich's `REDIS_PORT` met the `redis`
 Service this way. `enableServiceLinks: false` on the pod spec turns the
 whole legacy mechanism off.
 
+## NetworkPolicy (k3s / kube-router)
+
+**Default-deny-ingress netpols race kube-router on fresh pods.** k3s
+enforces NetworkPolicy with kube-router, which adds a new pod's IP to its
+namespace source-set a few *seconds* after the pod starts. A short-lived
+pod that connects to a same-namespace service inside that window isn't yet
+matched by a `from: podSelector: {}` same-ns rule and gets **REJECTed**
+("connection refused", not a hang). Bit `nextcloud-cron` (opens its
+postgres connection at t≈0) during the ADR 011 hardening pass — measured
+blocked at t=0, allowed at t=14s for the *same* pod. The `immich` /
+`nextcloud` DB-isolation netpols were reverted for it while the
+`securityContext` hardening stayed; the five netpols with no such
+short-lived pod (`portfolio`, `kiwix`, `collabora`, `file-parser`,
+`gitea`) are fine. Rules: only default-deny a namespace with no short-lived
+same-ns pod hitting a protected port on startup; re-add these two only with
+a `pg_isready` wait-guard on the cron/backup. And a *fast* "connection
+refused" to a service you know is up is a netpol REJECT signature, not a
+dead backend. See `docs/lessons/k8s/netpol-fresh-pod-race.md`.
+
 ## Gitea Actions / DinD
 
 > **As of ADR 010 the runner uses the host executor — there is no DinD

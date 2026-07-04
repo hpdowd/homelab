@@ -13,6 +13,7 @@ Each ADR has a **Status** (Accepted / Superseded) and a **Superseded By** line s
 | 008-gitea-actions.md | Gitea Actions: in-cluster act_runner (DinD) for manifest CI; heavy builds (Android) offloaded to GitHub-hosted runners — worker RAM can't host them (runner model superseded by 010) |
 | 009-portfolio.md | Portfolio site: one static Go binary, GHCR image built by GitHub Actions, self-monitored on the apex; no secret on the public-facing pod |
 | 010-act-runner-host-executor.md | act_runner moved to the host executor — drops the privileged DinD sidecar; jobs run daemonless in the runner pod (supersedes 008's runner model) |
+| 011-workload-securitycontext-networkpolicy.md | Per-image securityContext baseline (drop all caps, add back only what each entrypoint needs — not blanket `runAsNonRoot`) on 9 workloads + default-deny-ingress NetworkPolicies on 5 namespaces. Two carve-outs: immich-ml hangs under the profile, and the immich/nextcloud netpols race kube-router's fresh-pod registration |
 
 Numbering starts at 004: decisions 001–003 (k3s itself, GitOps via
 ArgoCD, Longhorn PVC over hostPath for the Nextcloud migration) predate

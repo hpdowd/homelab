@@ -40,6 +40,13 @@ spec:
       containers:
         - name: immich-ml
           image: ghcr.io/immich-app/immich-machine-learning:v2.7.5
+          # No securityContext by design. The ADR 011 pass hardened every other
+          # workload (drop-all-caps + RuntimeDefault seccomp), but this ONNX/
+          # uvicorn worker hangs under it — ~0 CPU, /ping never answers even from
+          # inside the pod, "application startup complete" never logs. immich-server
+          # took the identical profile fine, so it's specific to the ML worker.
+          # Left at default like Collabora; see ADR 011 carve-out 1. Internal-only
+          # (faces immich-server, not the edge), so the exemption is low-risk.
           ports:
             - containerPort: 3003
           volumeMounts:

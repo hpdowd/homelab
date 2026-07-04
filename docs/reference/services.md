@@ -107,6 +107,12 @@ root). See ADR 009.
 - Everything pinned to the worker; the ML container has the biggest
   memory limit in the cluster (3Gi); it's the thing to watch during a
   big import.
+- **`immich-ml` runs unhardened** (default securityContext) — its
+  ONNX/uvicorn worker hangs under the ADR 011 drop-caps + seccomp
+  profile the rest of the cluster took. Documented exception like
+  Collabora (ADR 011 carve-out 1); `immich-server` *is* hardened. No
+  NetworkPolicy either — the immich one was reverted (fresh-pod race,
+  see the netpol lesson).
 - **Uploads >100MB fail through the Cloudflare tunnel** (per-request
   cap). At home this never applies, split-horizon sends
   `immich.henrydowd.dev` straight to Traefik. Remote large videos: use

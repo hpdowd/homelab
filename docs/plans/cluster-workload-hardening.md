@@ -1,9 +1,14 @@
 # Cluster workload hardening: per-image securityContext + namespace NetworkPolicy isolation
 
-*Drafted 2026-07-03. Rollout staged — 17 manifests written and validated (YAML +
-`kubectl --dry-run=server`), uncommitted. This is the design + rollout order; on
-completion it produces an ADR and the k3s specifics below graduate to
-`reference/gotchas.md` if any bit during rollout.*
+*Drafted 2026-07-03. **Executed 2026-07-03** — shipped as
+`docs/adr/011-workload-securitycontext-networkpolicy.md`. Outcome vs. this plan:
+the securityContext baseline landed on 9 workloads; NetworkPolicies landed on 5
+namespaces (portfolio, kiwix, collabora, file-parser, gitea). Two carve-outs the
+plan didn't foresee — `immich-ml` stays at default (its ONNX worker hangs under
+the restricted profile) and the `immich`/`nextcloud` netpols were reverted (a
+kube-router fresh-pod race broke nextcloud-cron; post-mortem in
+`docs/lessons/k8s/netpol-fresh-pod-race.md`). The design and rollout order below
+are kept as the record.*
 
 Companion to ADR 010 (which removed the privileged act-runner). Two independent
 mechanisms, rolled out together as one pass: a securityContext baseline on every
