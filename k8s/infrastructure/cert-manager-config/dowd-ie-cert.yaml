@@ -1,16 +1,21 @@
 # Second wildcard, separate zone from henrydowd-dev-cert.yaml — dowd.ie can't
 # share that Certificate (one cert = one Traefik TLSStore defaultCertificate,
-# and only one TLSStore named "default" may exist cluster-wide). Lives in the
-# traefik namespace for the same cross-namespace-secret reason as the other one.
+# and only one TLSStore named "default" may exist cluster-wide).
 #
 # Not wired into the TLSStore: it's presented via a per-Ingress `tls:` block
-# (secure.dowd.ie in k8s/apps/file-parser/ingress.yaml) instead, so the
-# henrydowd.dev default cert is untouched for every other host.
+# (secure.dowd.ie in k8s/apps/file-parser/ingress.yaml) instead. Unlike the
+# TLSStore's defaultCertificate (a Traefik CRD field, which needed the secret
+# in the traefik namespace), a core Ingress's `tls.secretName` only resolves
+# against secrets in the Ingress's OWN namespace — so this must live in
+# file-parser, not traefik. (Previously lived in traefik: cert-manager issued
+# it fine there, but Traefik logged "secret file-parser/dowd-ie-tls does not
+# exist" on every resync and silently fell back to the henrydowd.dev default
+# cert for secure.dowd.ie.)
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: dowd-ie
-  namespace: traefik
+  namespace: file-parser
 spec:
   secretName: dowd-ie-tls
   issuerRef:
