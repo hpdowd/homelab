@@ -14,6 +14,7 @@ Each ADR has a **Status** (Accepted / Superseded) and a **Superseded By** line s
 | 009-portfolio.md | Portfolio site: one static Go binary, GHCR image built by GitHub Actions, self-monitored on the apex; no secret on the public-facing pod |
 | 010-act-runner-host-executor.md | act_runner moved to the host executor — drops the privileged DinD sidecar; jobs run daemonless in the runner pod (supersedes 008's runner model) |
 | 011-workload-securitycontext-networkpolicy.md | Per-image securityContext baseline (drop all caps, add back only what each entrypoint needs — not blanket `runAsNonRoot`) on 9 workloads + default-deny-ingress NetworkPolicies on 5 namespaces. Two carve-outs: immich-ml hangs under the profile, and the immich/nextcloud netpols race kube-router's fresh-pod registration |
+| 012-keep-zfs-mirror-over-longhorn-redundancy.md | Keep the 2×2TB ZFS mirror; reject breaking it into single-disk pools + Longhorn `replica=2`. The mirror uniformly protects off-cluster DNS/VPN that Longhorn can't replicate; `replica=2` spends the binding RAM constraint, doubles HDD/iSCSI writes, loses ZFS self-heal, and the capacity gain is illusory (replica=2 still costs 2×). Add a 3rd drive for bulk instead |
 
 Numbering starts at 004: decisions 001–003 (k3s itself, GitOps via
 ArgoCD, Longhorn PVC over hostPath for the Nextcloud migration) predate
