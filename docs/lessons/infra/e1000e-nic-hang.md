@@ -8,9 +8,8 @@
 misread recurrence (see Investigation)
 
 ## Status
-All three layers confirmed active post 18:00 reboot on 2026-06-06. Watch period
-in progress, if clean for one week the fix holds. If the hang recurs with all
-layers active, proceed directly to the hardware fix (dedicated PCIe NIC).
+Resolved. Clean for a month as of 2026-07-06 with all three layers active.
+Root cause not isolated further, by decision, see Prevention.
 
 ## Context
 - **System / component:** Proxmox VE host (`pve`), Dell Optiplex i5-14500T.
@@ -153,6 +152,17 @@ Clean dmesg, no "Hardware Unit Hang" after the fix:
   A second low-power node for DNS/monitoring/remote access (or at minimum a
   host-level node-exporter scraped as an external target) would give earlier
   warning.
+- **Root cause not isolated further, by decision.** All three layers were
+  applied together, no single trigger among offload (TSO/GSO/GRO), EEE, and
+  ASPM was confirmed. Isolating which one is load-bearing would mean removing
+  them one at a time and soaking each for a week or more, on the only uplink
+  for the whole homelab, deliberately re-exposing a single point of failure to
+  a bug that needs physical presence to recover from. All three mitigations
+  are effectively free here (the link is nowhere near saturated, and EEE/ASPM
+  power savings don't matter on always-on server hardware), so there's no
+  upside to trimming the set. Accepted: leave all three in place indefinitely.
+  Revisit only if the hang recurs with all three confirmed active, at which
+  point skip straight to the hardware fix above, not a fourth software layer.
 
 ## Related
 - HOMELAB.md Hardware section, NIC row documents fix state
