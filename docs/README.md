@@ -42,5 +42,3 @@ thing it describes, constraints live closest to what they constrain (see the
   file for AI-assisted sessions, kept current, never committed. Nothing in
   the repo may depend on it; anything durable in it that humans need must
   also exist in `docs/`.
-- **Public sharing goes through `public-export-checklist.md`:** this is a
-  private operational repo; the checklist is the gate, not good intentions.

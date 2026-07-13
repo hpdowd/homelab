@@ -28,7 +28,7 @@ Write `docs/adr/008-authelia-sso.md` recording:
 | Sessions | in-memory | single replica; restart logs everyone out — fine |
 | Cookie domain | `henrydowd.dev` | one session across all subdomains |
 | Issuer / portal | `https://auth.henrydowd.dev` | same URL on LAN + tunnel (split-horizon); in-cluster reachback works since ADR 007 |
-| users.yml location | SealedSecret, NOT plain git | repo has a public-export checklist; argon2 hashes don't belong in it |
+| users.yml location | SealedSecret, NOT plain git | argon2 hashes don't belong in plain git |
 | 2FA | TOTP now, WebAuthn later | proxmox/amp public exposure warrants two_factor |
 
 Preflight:

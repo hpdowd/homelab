@@ -60,8 +60,7 @@ homelab/
 │   ├── lessons/        incident post-mortems by domain
 │   ├── runbooks/       repeatable procedures
 │   ├── reference/      cheat-sheets and architecture walkthrough
-│   ├── plans/          scoped walkthroughs for work not yet done
-│   └── public-export-checklist.md
+│   └── plans/          scoped walkthroughs for work not yet done
 └── k8s/
     ├── argocd/         root-app — the only thing ArgoCD needs to be pointed at
     ├── infrastructure/ MetalLB, Traefik, cloudflared, VictoriaMetrics
