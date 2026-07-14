@@ -22,6 +22,18 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/part-of: argocd
+    # Scope to ArgoCD's core components (application-controller, server,
+    # repo-server). The auxiliary metrics services (dex, notifications,
+    # applicationset) are optional and their /metrics don't always serve — one
+    # of them was down (28/29 targets), which flipped the whole ArgoCD node red.
+    # NotIn only drops these exact names; anything else still matches.
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - argocd-dex-server
+          - argocd-notifications-controller-metrics
+          - argocd-applicationset-controller
   endpoints:
     - port: metrics
       path: /metrics
