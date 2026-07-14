@@ -1,0 +1,27 @@
+# Scrape ArgoCD's component metrics services so the GitOps controller is a live
+# scrape target — lights the ArgoCD node on the portfolio diagram (henrydowd.dev).
+#
+# A standard ArgoCD install ships metrics services (argocd-metrics,
+# argocd-server-metrics, argocd-repo-server, argocd-applicationset-controller,
+# …), each exposing a port named "metrics". The label selector matches every
+# service carrying app.kubernetes.io/part-of: argocd; only those that actually
+# have a "metrics" port yield targets, the rest are skipped.
+#
+# VMServiceScrape (VictoriaMetrics operator), NOT ServiceMonitor.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: argocd
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: vm-k8s-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - argocd
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: argocd
+  endpoints:
+    - port: metrics
+      path: /metrics

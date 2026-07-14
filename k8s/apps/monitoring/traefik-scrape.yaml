@@ -1,0 +1,27 @@
+# Scrape Traefik's Prometheus metrics (metrics entrypoint :9100) so the ingress
+# is a live scrape target — this is what lights the Traefik node on the portfolio
+# diagram (henrydowd.dev), whose /api/status reports each monitored component.
+#
+# VMPodScrape, not VMServiceScrape: the metrics port is a container port and is
+# not published on Traefik's LoadBalancer service, so we target the pod directly.
+# Requires metrics.prometheus in the Traefik Helm values (see traefik.yaml).
+#
+# VMPodScrape (VictoriaMetrics operator), NOT PodMonitor — same reasoning as
+# VMRule vs PrometheusRule (see HOMELAB gotchas).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: traefik
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: vm-k8s-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - traefik
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

@@ -45,6 +45,18 @@ spec:
               respondingTimeouts:
                 readTimeout: 0
 
+        # Expose Prometheus metrics on the dedicated metrics entrypoint (:9100).
+        # Scraped by the VMPodScrape `traefik` (k8s/apps/monitoring) so the ingress
+        # becomes a live target and the portfolio diagram can light the Traefik node.
+        # Additive: if a key ever drifts, the Application goes ComparisonError and
+        # the running ingress keeps its old (working) spec — no routing impact.
+        metrics:
+          prometheus:
+            entryPoint: metrics
+            addEntryPointsLabels: true
+            addServicesLabels: true
+            addRoutersLabels: true
+
         logs:
           general:
             level: INFO
