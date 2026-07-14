@@ -36,9 +36,8 @@ Resolved
   `DictionaryNeo` = LibreOffice's **wordbook** (user dictionary) loader.
 
 ## Investigation
-Full evidence-tagged logs (FACT/INFERENCE/CORRECTION method): see
-[collabora-slow-load-investigation-v2.md](collabora-slow-load-investigation-v2.md)
-and [collabora-slow-load-investigation-v3.md](collabora-slow-load-investigation-v3.md).
+Full evidence-tagged log (FACT/INFERENCE/CORRECTION method): see
+[collabora-slow-load-investigation.md](collabora-slow-load-investigation.md).
 Condensed hypothesis trail, including the dead ends:
 
 - Readiness-probe flapping → ruled out: 0 restarts, stable curls.
@@ -115,8 +114,8 @@ AppArmor/capability settings commented so they don't look like cruft.
   `~/backup-English-British.dic.bak` + perf profile in the v3 log.
 
 ## Related
-- Raw investigation logs: [v2](collabora-slow-load-investigation-v2.md) ·
-  [v3](collabora-slow-load-investigation-v3.md) (includes corrections register)
+- Raw investigation log: [collabora-slow-load-investigation.md](collabora-slow-load-investigation.md)
+  (evidence-tagged, includes corrections register)
 - `k8s/apps/collabora/deployment.yaml`, commented security/config choices
 - `docs/reference/capacity-headroom.md`, Collabora sizing (unrelated to incident)
 - Upstream context: CollaboraOnline/online#14087 (different trigger, same

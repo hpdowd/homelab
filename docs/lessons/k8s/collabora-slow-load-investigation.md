@@ -1,8 +1,6 @@
-# Collabora CODE: slow cold document load (auditable investigation log, v3)
+# Collabora CODE: slow cold document load (auditable investigation log)
 
 *Homelab k3s cluster · namespace `collabora` · pod pinned to `k3s-worker1`*
-*Supersedes v2. v2's §6 unresolved items are both resolved below; v2's leading
-hypothesis (§7) and candidate fix (§8) are REFUTED and replaced.*
 
 > **RESOLVED 2026-06-11: H11 confirmed and fixed. See §11.** Root cause: a
 > 588 KB / 51,573-entry hunspell `en_GB.dic` had been uploaded as the personal
@@ -84,12 +82,35 @@ logging is itself a per-tile cost and contaminates timings.
 
 ---
 
-## 4. Evidence inherited from v2 that remains valid [FACT]
+## 4. Evidence from the pre-fix phase [FACT]
 
-- `serverloadtimings` (trace, pre-fix): checkFileInfo ~182 ms ·
-  jailSetup counter ~163 ms · wopiDownload ~207 ms · **presetsInstall ~3.42 s**
-  · loadDocument ~49 ms · **loadDocumentEnd → firstTileSent ~48.46 s** (the
-  dominant gap). NOTE: these counters are WSD-side dispatch times; see §7.
+- `serverloadtimings` (trace, pre-fix). Raw counters (microseconds),
+  chronological:
+  ```
+  wopiPostReceived    365343863400
+  checkFileInfoStart  365343863528
+  checkFileInfoEnd    365344045440
+  docBrokerCreated    365344045929
+  childRequested      365344084296
+  forkitSpawn         365344195684
+  jailSetupStart      365344195960
+  jailSetupEnd        365344359233
+  childAssigned       365344368154
+  presetsInstallStart 365344368897
+  wopiDownloadStart   365344368974
+  wopiDownloadEnd     365344575848
+  presetsInstallEnd   365347793643
+  loadDocumentStart   365347796044
+  loadDocumentEnd     365347845014
+  firstTileSent       365396309784
+  ```
+  Derived: checkFileInfo ~182 ms · jailSetup counter ~163 ms ·
+  wopiDownload ~207 ms · **presetsInstall ~3.42 s** · loadDocument ~49 ms ·
+  **loadDocumentEnd → firstTileSent ~48.46 s** (the dominant gap);
+  wopiPostReceived → firstTileSent ~52.45 s ≈ wall clock (+client ≈55 s).
+  NOTE: these counters are WSD-side dispatch times; see §7. The kit's document
+  URL in this same log block was the **public** name (hairpin path) and the
+  file fetch still completed in ~207 ms.
 - Network path: WOPI reachback ~100–207 ms; LAN discovery ~13 ms; all stable.
   H2 (network latency as dominant cost) remains REJECTED.
 - No restarts, no OOM, flat memory ~370–436 Mi, worker node not memory-pressed.
@@ -113,7 +134,8 @@ logging is itself a per-tile cost and contaminates timings.
   the capability is in the process's **bounding set** (supplied by the pod's
   capability list). pid 1's `CapEff = 0` is the *expected healthy state*,
   coolwsd runs as the unprivileged `cool` user.
-- This resolves v2 §6.2 entirely: the `coolmount: Operation not permitted`
+- This resolves the earlier `CapEff`/`coolmount` puzzle entirely: the
+  `coolmount: Operation not permitted`
   errors stopped when the bounding set gained the caps; the *mount self-test*
   still failed only because the **default `cri-containerd.apparmor.d` profile
   denies the `mount(2)` syscall regardless of capabilities**, and the
@@ -141,16 +163,16 @@ handshake reports `adms_bindmounted=ok … adms_info_setup_ms=6
 Note the jail mounts the LO tree at a *different internal path*:
 `/opt/collaboraoffice -> <jail>/lo/`.
 
-### 5.3 Symptom retest after mount fix [FACT] → v2 §7 REFUTED
+### 5.3 Symptom retest after mount fix [FACT] → copy-fallback theory REFUTED
 
 Cold open re-measured with bind-mounted jails: **still ~55 s, unchanged.**
 
-- **[REFUTED]** v2's leading hypothesis (copy fallback as cause of the
+- **[REFUTED]** The earlier leading hypothesis (copy fallback as cause of the
   55 s symptom). The copy was a real, coincident pathology.
-- **[REFUTED]** v2 §8 candidate fix (`privileged: true`), built on the
+- **[REFUTED]** The earlier candidate fix (`privileged: true`), built on the
   invalid `CapEff` reasoning (§5.1) and now moot.
-- v2 §6.1 (reconciling the 48 s gap with the copy) is thereby resolved by
-  experiment: they were **not** causally linked.
+- The earlier open question of reconciling the 48 s gap with the copy is
+  thereby resolved by experiment: they were **not** causally linked.
 
 ### 5.4 Process attribution, post-fix [FACT]
 
@@ -248,7 +270,7 @@ symbol pattern is internally coherent and highly specific, so the
    custom dictionaries, `.dic` files in the user profile, e.g. `standard.dic`,
    ignore-lists), distinct from hunspell language dictionaries (the
    `dictionaries=en_GB en_US` env var is hunspell and unrelated).
-3. [FACT, v2 §4.2] The original timings include a `presetsInstall` phase
+3. [FACT, §4] The original timings include a `presetsInstall` phase
    (~3.42 s), CODE 25.04's mechanism for downloading per-user/system presets
    **from the WOPI host (Nextcloud richdocuments)** into the kit's jail at
    document-load time. Presets include wordbooks. The `subforkit` machinery
@@ -362,19 +384,19 @@ percentages (not to the symbol identification itself).
 
 ## 10. Corrections register (do not re-trust)
 
-- **C1** (v2): `--o:mount_namespaces=false` blamed for the copy, wrong; flag
-  was absent while copying occurred.
-- **C2** (v2): "AppArmor rejected as sole cause", the rejection test
+- **C1** (earlier): `--o:mount_namespaces=false` blamed for the copy, wrong;
+  flag was absent while copying occurred.
+- **C2** (earlier): "AppArmor rejected as sole cause", the rejection test
   (`CapEff` after annotation change) was invalid twice over: the annotation
   never applied, and `CapEff=0` at pid 1 is the healthy state under the
   file-capabilities model. AppArmor *was* the cause of the copy fallback.
-- **C3** (v2 §7/§8): copy-as-root-cause and `privileged: true` as fix, both
+- **C3** (earlier): copy-as-root-cause and `privileged: true` as fix, both
   refuted; the copy was coincident, and `privileged` would have "worked" only
   by disabling AppArmor as a side effect while teaching the wrong lesson.
 - **C4** (this session): "`read_bytes: 0` formally excludes fonts",
   overclaimed; mmap'd I/O is invisible to those counters. Fonts were properly
   excluded only by the symbol profile.
-- **C5** (v2 §4.3): "`coolforkit-caps` is the top consumer, therefore not
+- **C5** (earlier): "`coolforkit-caps` is the top consumer, therefore not
   fc-cache/soffice"; kit processes never exec a new binary (LO runs in-process
   under the forkit-derived name), so process-name attribution could not
   distinguish copying from any in-process LO work. The same blindness produced
