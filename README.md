@@ -30,6 +30,37 @@ Secrets are committed as **SealedSecrets**, encrypted against the
 in-cluster controller's public key. The controller's private key is the
 only trust root and is not in this repo.
 
+## The shape of it
+
+One box. Proxmox on the metal, the permanent services as LXCs, the k3s
+cluster as two VMs on top.
+
+```
+internet ──▶ Cloudflare Tunnel ─┐
+                                 ▼
+LAN ─▶ Technitium DNS ─▶ Traefik (192.168.1.200) ─▶ k3s services
+                                 ▲
+Proxmox host (Optiplex, ZFS mirror)
+├── LXC  Technitium   LAN DNS
+├── LXC  WireGuard    VPN + dynamic DNS
+├── LXC  AMP          game server         ┐ proxied through
+├── LXC  Proxmox UI                       ┘ the cluster's Traefik
+└── VMs  k3s-control + k3s-worker
+         ├── ArgoCD          reconciles this repo onto the cluster
+         ├── Traefik         ingress, routes by Host header
+         ├── cloudflared     public tunnel, no open ports
+         ├── Longhorn        block storage
+         ├── SealedSecrets   git-committable secrets
+         ├── cert-manager    Let's Encrypt wildcard
+         ├── VictoriaMetrics + Grafana + Alertmanager
+         └── apps            Nextcloud, Immich, Gitea, portfolio, …
+```
+
+For the full walkthrough — how a request actually flows, and why each
+piece is there — see [docs/reference/architecture.md](docs/reference/architecture.md).
+The [portfolio site](https://henrydowd.dev) has the same picture with
+live status pulled from the cluster.
+
 ## Where to look
 
 **Reference**
