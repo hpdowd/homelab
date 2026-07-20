@@ -39,7 +39,7 @@ spec:
             - configMapRef: { name: file-parser-config }
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
-            limits: { cpu: "1", memory: "1Gi" }   # LibreOffice is memory-hungry
+            limits: { cpu: "1", memory: "3Gi" }   # LibreOffice is memory-hungry
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -66,7 +66,7 @@ spec:
         - name: tmp
           emptyDir:
             medium: Memory
-            sizeLimit: 512Mi
+            sizeLimit: 2Gi
         - name: region-map
           secret:
             secretName: file-parser-region-map
