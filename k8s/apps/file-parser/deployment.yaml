@@ -32,7 +32,7 @@ spec:
           # GHCR, which the cluster pulls anonymously like portfolio. CI pins
           # this to the immutable :<sha>; :latest covers the first sync before CI
           # has run.
-          image: ghcr.io/hpdowd/file-parser:sha-36e448d
+          image: ghcr.io/hpdowd/file-parser:sha-7236520
           ports:
             - { name: http, containerPort: 8000 }
           envFrom:
