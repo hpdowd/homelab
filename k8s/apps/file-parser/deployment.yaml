@@ -32,14 +32,18 @@ spec:
           # GHCR, which the cluster pulls anonymously like portfolio. CI pins
           # this to the immutable :<sha>; :latest covers the first sync before CI
           # has run.
-          image: ghcr.io/hpdowd/file-parser:sha-902a054
+          image: ghcr.io/hpdowd/file-parser:sha-36e448d
           ports:
             - { name: http, containerPort: 8000 }
           envFrom:
             - configMapRef: { name: file-parser-config }
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
-            limits: { cpu: "1", memory: "3Gi" }   # LibreOffice is memory-hungry
+            # The parser streams the PDF page-by-page (sha-36e448d), so parse peaks
+            # ~112Mi even on 200+ page reports; LibreOffice render peaks ~175Mi. With
+            # MAX_CONCURRENCY=2 the worst case is ~350Mi + tmpfs, so 1Gi is ample
+            # (was 3Gi to survive the old whole-file-in-memory parse that OOM'd).
+            limits: { cpu: "1", memory: "1Gi" }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -66,7 +70,11 @@ spec:
         - name: tmp
           emptyDir:
             medium: Memory
-            sizeLimit: 2Gi
+            # Memory-backed, so this counts against limits.memory. Uploads are
+            # capped (MAX_UPLOAD_MB) and outputs are small (xlsx + rendered PDF +
+            # LibreOffice profile), so 512Mi is plenty and bounds tmpfs well under
+            # the 1Gi pod limit.
+            sizeLimit: 512Mi
         - name: region-map
           secret:
             secretName: file-parser-region-map
