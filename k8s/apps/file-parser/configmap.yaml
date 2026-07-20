@@ -4,11 +4,11 @@
 #                    If the printer uses a different resource path, discover it with
 #                    `ipptool -tv <printer-uri> get-printer-attributes.test`.
 #   MAX_UPLOAD_MB  - reject larger uploads (413).
-#   PARSER_ENGINE  - PDF text back-end: "pdfplumber" (pure-Python default) or
-#                    "pdfium" (pypdfium2, PDFium C lib — several times faster at
-#                    ~the same memory). Set to pdfium here to run/validate the
-#                    faster engine live; remove this key to fall back to the
-#                    pdfplumber default.
+#   PARSER_ENGINE  - PDF text back-end. The image now defaults to "pdfium"
+#                    (pypdfium2, PDFium C lib — several times faster at ~the same
+#                    memory), so no override is needed here. Set
+#                    PARSER_ENGINE: "pdfplumber" only to force the pure-Python
+#                    fallback.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -17,4 +17,3 @@ metadata:
 data:
   PRINTER_URI: "ipp://192.168.1.40/ipp/print"
   MAX_UPLOAD_MB: "25"
-  PARSER_ENGINE: "pdfium"
