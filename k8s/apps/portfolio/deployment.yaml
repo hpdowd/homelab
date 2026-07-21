@@ -35,7 +35,7 @@ spec:
           # the in-cluster runner has no Docker daemon) and published to GHCR,
           # which the cluster pulls anonymously like Immich. CI pins this to the
           # immutable :<sha>; :latest covers the first sync before CI has run.
-          image: ghcr.io/hpdowd/portfolio:fd1b14f9700d
+          image: ghcr.io/hpdowd/portfolio:a8772c66c346
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
