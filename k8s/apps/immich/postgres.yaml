@@ -3,6 +3,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: immich-db
   namespace: immich
+  # Prune=false — never let ArgoCD auto-delete this data volume (ADR 014).
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: longhorn
