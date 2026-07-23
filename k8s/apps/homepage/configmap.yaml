@@ -21,50 +21,76 @@ data:
   settings.yaml: |
     title: Dowd Homelab
     theme: dark
-    headerStyle: clean
-    # Groups map to the named groups in services.yaml below.
+    color: slate
+    headerStyle: boxedWidgets
+    target: _blank        # open service links in a new tab
+    hideVersion: true     # drop the homepage version from the footer
+    # Groups map to the named groups in services.yaml below. Group icons are
+    # Material Design Icons (mdi-*, browser-fetched); per-service brand icons
+    # are on the services themselves.
     layout:
-      Infrastructure: { style: row, columns: 4 }
-      Media: { style: row, columns: 3 }
-      Tools: { style: row, columns: 4 }
+      Infrastructure:
+        style: row
+        columns: 4
+        icon: mdi-server-network
+      Media:
+        style: row
+        columns: 3
+        icon: mdi-multimedia
+      Tools:
+        style: row
+        columns: 4
+        icon: mdi-tools
 
   services.yaml: |
     # Links-only first pass (phase 9 step 1): public + ungated, so NO widget:
     # blocks and no API keys — those arrive with Authelia gating (step 4).
     # A link is not a secret; it's a hostname DNS already publishes.
+    # Brand icons are dashboard-icons slugs (browser-fetched from the icon CDN);
+    # each slug was verified to resolve before being pinned here.
     - Infrastructure:
         - Proxmox:
             href: https://proxmox.henrydowd.dev
             description: Hypervisor
+            icon: proxmox.png
         - ArgoCD:
             href: http://argocd.lan
             description: GitOps (LAN-only)
+            icon: argo-cd.png
         - Grafana:
             href: https://grafana.henrydowd.dev
             description: Metrics
+            icon: grafana.png
         - Technitium:
             href: http://technitium.lan
             description: DNS (LAN-only)
+            icon: technitium.png
     - Media:
         - Immich:
             href: https://immich.henrydowd.dev
             description: Photos
+            icon: immich.png
         - Nextcloud:
             href: https://nextcloud.henrydowd.dev
             description: Files
+            icon: nextcloud.png
         - Collabora:
             href: https://collabora.henrydowd.dev
             description: Office
+            icon: collabora-online.png
     - Tools:
         - Gitea:
             href: https://git.henrydowd.dev
             description: Git
+            icon: gitea.png
         - Kiwix:
             href: https://wiki.henrydowd.dev
             description: Offline wiki
+            icon: kiwix.png
         - AMP:
             href: https://amp.henrydowd.dev
             description: Game server
+            icon: amp.png
         # Added as they go live:
         # - Paperless:   { href: https://paperless.henrydowd.dev, description: Documents }
         # - Vaultwarden: { href: https://vault.henrydowd.dev, description: Passwords }
