@@ -124,7 +124,8 @@ root). See ADR 009.
 
 ## Paperless
 
-- Image: `paperless-ngx:v3.0.0` (Tantivy search backend) — one image runs
+- Image: `paperless-ngx:3.0.0` (Tantivy search backend; image tags have no
+  `v` prefix) — one image runs
   gunicorn + Celery workers + the consumer under supervisord. Bump only
   after checking the release's docker-compose for the paired Postgres major
   (see ADR 015).
