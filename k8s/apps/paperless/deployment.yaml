@@ -96,16 +96,33 @@ spec:
             limits: { memory: "1536Mi" }
           # First boot runs DB migrations and a version bump re-runs them.
           # No unauthenticated health endpoint exists, so probe `/` (200/302).
+          # The Host header is LOAD-BEARING: kubelet probes by pod IP, and
+          # Django's ALLOWED_HOSTS check (PAPERLESS_ALLOWED_HOSTS) 400s any
+          # Host it doesn't recognise ("DisallowedHost") — including the pod
+          # IP — so the probe must present an allowed host or the pod never
+          # goes Ready. paperless.lan is in ALLOWED_HOSTS.
           # 5s * 60 = 5 min of grace before k8s gives up on a start.
           startupProbe:
-            httpGet: { path: /, port: 8000 }
+            httpGet:
+              path: /
+              port: 8000
+              httpHeaders:
+                - { name: Host, value: paperless.lan }
             periodSeconds: 5
             failureThreshold: 60
           livenessProbe:
-            httpGet: { path: /, port: 8000 }
+            httpGet:
+              path: /
+              port: 8000
+              httpHeaders:
+                - { name: Host, value: paperless.lan }
             periodSeconds: 30
           readinessProbe:
-            httpGet: { path: /, port: 8000 }
+            httpGet:
+              path: /
+              port: 8000
+              httpHeaders:
+                - { name: Host, value: paperless.lan }
             periodSeconds: 10
       volumes:
         - name: data
