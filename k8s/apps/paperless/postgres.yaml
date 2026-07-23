@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-db
+  namespace: paperless
+  # Prune=false — never let ArgoCD auto-delete this data volume (ADR 014).
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: paperless
+spec:
+  replicas: 1
+  # RWO PVC — Recreate, same as every other DB here.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: paperless-postgres
+  template:
+    metadata:
+      labels:
+        app: paperless-postgres
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      # Postgres starts as root, chowns PGDATA, then drops to the postgres
+      # user — so it keeps exactly the caps that flow needs and nothing else.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          # Stock Postgres — PG18 is what the paperless-ngx v3.0.0 compose
+          # pairs (v2.x paired PG17). Not Immich's VectorChord build; paperless
+          # needs no vector extension. Bump in lockstep with a paperless major.
+          image: postgres:18-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: paperless
+            - name: POSTGRES_USER
+              value: paperless
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: paperless-secrets, key: PAPERLESS_DBPASS }
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+            # Same lost+found dodge as the Immich/Nextcloud postgres — initdb
+            # into a subdirectory so a fresh volume's lost+found doesn't make
+            # PGDATA look non-empty.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: db
+              mountPath: /var/lib/postgresql/data
+            - name: shm
+              mountPath: /dev/shm
+          resources:
+            requests: { memory: "192Mi", cpu: "100m" }
+            limits: { memory: "512Mi" }
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: paperless-db
+        # postgres parallel workers need more than the 64MB k8s default /dev/shm.
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: paperless
+spec:
+  selector:
+    app: paperless-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

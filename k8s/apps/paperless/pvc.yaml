@@ -1,0 +1,49 @@
+# Three app PVCs (the DB PVC lives in postgres.yaml). All Prune=false — the
+# media volume holds the irreplaceable originals + OCR'd archive, and data
+# holds the search index + config; never let ArgoCD auto-delete them (ADR 014).
+# Longhorn can grow these online later but cannot shrink.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-data
+  namespace: paperless
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-media
+  namespace: paperless
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      # The irreplaceable set: originals + OCR'd archive. Grows with the
+      # archive; start at 20Gi.
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-consume
+  namespace: paperless
+  # Prune=false too — a document may be sitting in the watch folder unconsumed
+  # when a sync happens; don't risk pruning it mid-ingest.
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi

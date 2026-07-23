@@ -17,8 +17,8 @@ CronJobs.
   (snippet below).
 
 A note on which repo path to use: the restic repo URL ends in
-`/nextcloud`, `/gitea`, or `/immich`. Swap the suffix depending on what
-you're restoring.
+`/nextcloud`, `/gitea`, `/immich`, or `/paperless`. Swap the suffix
+depending on what you're restoring.
 And the URL has to start with `s3:https://`, without the `s3:` prefix,
 restic treats it as a local-disk path, "succeeds" writing to the pod's
 ephemeral storage, and you get nothing. I learned this the painful way.
@@ -240,6 +240,88 @@ Log in, confirm the timeline shows assets. Thumbnails will be missing,
 queue the regeneration jobs in the admin UI (Administration → Jobs →
 "Generate Thumbnails", and "Transcode Videos" if needed). The library is
 usable while they grind through.
+
+---
+
+## Restoring Paperless
+
+Two snapshots per night, same shape as Immich:
+
+- `paperless-media`, the `media` PVC — the irreplaceable originals plus the
+  OCR'd archive. This is what actually matters.
+- `paperless-db`, `pg_dump` of the `paperless` database in custom format
+  (holds tags, correspondents, document metadata, the user table).
+
+The search index lives on the `data` PVC and is NOT backed up — it's
+regenerable from the documents (`document_index reindex`), see step 4.
+
+### 1. Bring it up empty, scale the app to 0
+
+Let ArgoCD create the namespace, PVCs, Postgres and Valkey, then:
+
+```bash
+kubectl scale deployment paperless -n paperless --replicas=0
+```
+
+Leave Postgres running for step 3.
+
+### 2. Restore the media into the PVC
+
+Pod that mounts `paperless-media`, then:
+
+```bash
+restic snapshots --tag paperless-media
+restic restore latest --tag paperless-media --target /restore-target
+# The snapshot's /media maps to the PVC root.
+```
+
+### 3. Restore the database
+
+```bash
+restic restore latest --tag paperless-db --target /tmp/db-restore
+# yields /tmp/db-restore/dump/paperless_db.dump
+
+PGPASSWORD=<db_pass> psql -h postgres.paperless -U paperless -d postgres \
+  -c "DROP DATABASE paperless;" \
+  -c "CREATE DATABASE paperless OWNER paperless;"
+
+PGPASSWORD=<db_pass> pg_restore -h postgres.paperless -U paperless \
+  -d paperless /tmp/db-restore/dump/paperless_db.dump
+```
+
+The DB password (`PAPERLESS_DBPASS`) is in the `paperless-secrets`
+SealedSecret and the password manager. Stock `postgres:18-alpine` is fine —
+no extension to reload (unlike Immich's VectorChord).
+
+### 4. Start the app, rebuild the search index
+
+```bash
+kubectl scale deployment paperless -n paperless --replicas=1
+# once it's up, rebuild the Tantivy index from the restored documents:
+POD=$(kubectl get pod -n paperless -l app=paperless -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n paperless "$POD" -- document_index reindex
+```
+
+Log in, confirm documents list and that full-text search returns hits (the
+index rebuild is what makes search work again — the documents restore
+without it, but you can't search until reindex completes).
+
+### The version-portable export (the better insurance)
+
+The pg_dump + media restore above ties you to the same Paperless schema.
+For a restore that survives a major-version jump, Paperless' own
+`document_exporter` writes a portable `manifest.json` + originals that
+`document_importer` reads back. It's NOT in the nightly cron (the `media`
+PVC is RWO, so a second writer can't mount it live). Run it periodically by
+hand into the media PVC and let the nightly restic sweep it up:
+
+```bash
+POD=$(kubectl get pod -n paperless -l app=paperless -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n paperless "$POD" -- document_exporter ../media/export
+```
+
+To restore from it instead of the pg_dump: `document_importer ../media/export`
+into a freshly bootstrapped instance.
 
 ---
 

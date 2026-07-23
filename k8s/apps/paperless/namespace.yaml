@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paperless
+  # Prune=false — Layer-1 data-loss guard (ADR 014). This namespace holds the
+  # irreplaceable document archive on Longhorn PVCs (reclaimPolicy Delete); a
+  # vanished or mis-pathed manifest must never cascade-prune
+  # namespace -> PVC -> volume. ArgoCD leaves it; delete by hand.
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false

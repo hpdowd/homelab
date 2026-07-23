@@ -1,0 +1,31 @@
+# Public + LAN, like Immich/Nextcloud. Split-horizon does the heavy lifting:
+# at home paperless.henrydowd.dev resolves straight to Traefik; away, it rides
+# the Cloudflare tunnel. No entrypoints annotation, no tls block — Traefik's
+# default wildcard cert (ADR 007) covers *.henrydowd.dev, and the tunnel is
+# plain HTTP to Traefik.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: paperless
+  namespace: paperless
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: paperless.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: paperless
+                port: { number: 8000 }
+    - host: paperless.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: paperless
+                port: { number: 8000 }

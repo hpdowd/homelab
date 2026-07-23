@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paperless
+  namespace: paperless
+spec:
+  replicas: 1
+  # RWO media/data/consume PVCs — Recreate, same as every other stateful pod.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: paperless
+  template:
+    metadata:
+      labels:
+        app: paperless
+    spec:
+      # Kill the legacy docker-link env injection: the `redis` Service would
+      # otherwise make kubelet set REDIS_PORT="tcp://ip:6379" in this pod,
+      # which collides with the app's own Redis config. Same hygiene fix as
+      # Immich.
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      # Runtime-default seccomp for the pod. The paperless image starts as
+      # root (s6 supervises gunicorn + Celery + the consumer, then maps to
+      # uid 1000), so it stays root but is stripped of every capability it
+      # doesn't use — a capless root is a far weaker escape base.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: paperless
+          # Paperless-ngx v3.0.0 (Tantivy search backend). Pinned; bump only
+          # after checking the release's docker-compose for the paired PG major
+          # (see postgres.yaml) and any new PAPERLESS_* keys.
+          image: ghcr.io/paperless-ngx/paperless-ngx:v3.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              # Drop everything, add back only the file-ownership + drop-priv
+              # caps the s6 root entrypoint touches before mapping to uid 1000.
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+          ports:
+            - containerPort: 8000
+          env:
+            - { name: PAPERLESS_REDIS, value: "redis://redis:6379" }
+            - { name: PAPERLESS_DBHOST, value: "postgres" }
+            - { name: PAPERLESS_DBNAME, value: "paperless" }
+            - { name: PAPERLESS_DBUSER, value: "paperless" }
+            - name: PAPERLESS_DBPASS
+              valueFrom:
+                secretKeyRef: { name: paperless-secrets, key: PAPERLESS_DBPASS }
+            - name: PAPERLESS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: paperless-secrets, key: PAPERLESS_SECRET_KEY }
+            # Bootstrap the superuser on FIRST run only (ignored once the user
+            # table exists).
+            - name: PAPERLESS_ADMIN_USER
+              valueFrom:
+                secretKeyRef: { name: paperless-secrets, key: PAPERLESS_ADMIN_USER }
+            - name: PAPERLESS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: paperless-secrets, key: PAPERLESS_ADMIN_PASSWORD }
+            - { name: PAPERLESS_URL, value: "https://paperless.henrydowd.dev" }
+            - { name: PAPERLESS_ALLOWED_HOSTS, value: "paperless.henrydowd.dev,paperless.lan" }
+            - { name: PAPERLESS_CSRF_TRUSTED_ORIGINS, value: "https://paperless.henrydowd.dev" }
+            - { name: PAPERLESS_CORS_ALLOWED_HOSTS, value: "https://paperless.henrydowd.dev" }
+            # LOAD-BEARING: Cloudflare terminates TLS, cloudflared->Traefik is
+            # plain HTTP, so Django sees http and will refuse secure cookies /
+            # build http:// callbacks / redirect-loop the login. This tells it
+            # to trust X-Forwarded-Proto. Same class as the Proxmox
+            # secure-cookie and Immich trusted-proxy gotchas.
+            - { name: PAPERLESS_PROXY_SSL_HEADER, value: '["HTTP_X_FORWARDED_PROTO","https"]' }
+            - { name: PAPERLESS_TRUSTED_PROXIES, value: "10.42.0.0/16" }
+            - { name: PAPERLESS_OCR_LANGUAGE, value: "eng" }
+            - { name: PAPERLESS_TIME_ZONE, value: "Europe/Dublin" }
+            # OCR is RAM-bursty; cap concurrency to fit the tight worker and
+            # accept slower bulk ingest (ADR 015).
+            - { name: PAPERLESS_WEBSERVER_WORKERS, value: "2" }
+            - { name: PAPERLESS_TASK_WORKERS, value: "1" }
+            - { name: PAPERLESS_THREADS_PER_WORKER, value: "1" }
+          volumeMounts:
+            - { name: data, mountPath: /usr/src/paperless/data }
+            - { name: media, mountPath: /usr/src/paperless/media }
+            - { name: consume, mountPath: /usr/src/paperless/consume }
+          resources:
+            requests: { memory: "512Mi", cpu: "250m" }
+            # OCR peak scales with the document being processed, not steady
+            # state (the file-parser large-PDF lesson). Watch and raise if a
+            # big scan OOMs; lower TASK_WORKERS/THREADS_PER_WORKER first.
+            limits: { memory: "1536Mi" }
+          # First boot runs DB migrations and a version bump re-runs them.
+          # No unauthenticated health endpoint exists, so probe `/` (200/302).
+          # 5s * 60 = 5 min of grace before k8s gives up on a start.
+          startupProbe:
+            httpGet: { path: /, port: 8000 }
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /, port: 8000 }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /, port: 8000 }
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: paperless-data
+        - name: media
+          persistentVolumeClaim:
+            claimName: paperless-media
+        - name: consume
+          persistentVolumeClaim:
+            claimName: paperless-consume
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paperless
+  namespace: paperless
+spec:
+  selector:
+    app: paperless
+  ports:
+    - port: 8000
+      targetPort: 8000

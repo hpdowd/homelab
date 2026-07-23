@@ -14,6 +14,7 @@ for how a request actually flows see architecture.md.
 | Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) |
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) |
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
+| Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) |
 | Grafana | grafana.lan | — | k3s pod (`monitoring` ns) — deliberately LAN-only |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) |
 | Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) — public + ungated, links only |
@@ -120,6 +121,33 @@ root). See ADR 009.
   the WireGuard VPN, or let the app retry when the phone gets home.
 - Backup: 04:00 nightly to `hpd.homelab/immich`, `thumbs/` and
   `encoded-video/` excluded as regenerable.
+
+## Paperless
+
+- Image: `paperless-ngx:v3.0.0` (Tantivy search backend) — one image runs
+  gunicorn + Celery workers + the consumer under supervisord. Bump only
+  after checking the release's docker-compose for the paired Postgres major
+  (see ADR 015).
+- DB: stock `postgres:18-alpine`, Service `postgres`, db/user `paperless`
+  (not Immich's VectorChord build). Broker: Valkey, no persistence.
+- Storage: Longhorn PVCs `paperless-media` 20Gi (irreplaceable originals +
+  OCR archive) · `paperless-data` 5Gi (search index/config) ·
+  `paperless-consume` 1Gi (watch folder) · `paperless-db` 10Gi.
+- SealedSecrets: `paperless-secrets` (SECRET_KEY, DBPASS, bootstrap admin) ·
+  `backup-credentials` (B2 + restic, repo `.../paperless`).
+- **Reverse-proxy env is load-bearing**: `PAPERLESS_PROXY_SSL_HEADER` +
+  `PAPERLESS_TRUSTED_PROXIES=10.42.0.0/16` — without them Django sees plain
+  HTTP over the tunnel and redirect-loops / CSRF-403s the login.
+- OCR is capped (`TASK_WORKERS=1`, `THREADS_PER_WORKER=1`, limit 1.5Gi) to
+  fit the tight worker; peak scales with the document, so a big scan can
+  spike — stagger bulk ingest away from Immich imports.
+- Auth: native login now; Authelia **OIDC** planned after phase 8 (Paperless
+  Mobile hits `/api` directly, so OIDC not ForwardAuth).
+- Ingest: drop files into the `consume` PVC (watch folder); they're OCR'd,
+  tagged, and indexed automatically.
+- Backup: 04:30 nightly to `hpd.homelab/paperless` (`pg_dump` + media RO
+  mount, no scale-to-0). Plus a periodic manual `document_exporter` for
+  version-portable insurance — see the runbook.
 
 ## Gitea
 

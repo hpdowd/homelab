@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: paperless
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paperless-redis
+  template:
+    metadata:
+      labels:
+        app: paperless-redis
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      # Valkey holds only throw-away broker/result state (no PVC), so it runs
+      # fully locked down: non-root, all caps dropped, read-only root fs.
+      # Same shape as the Immich/Nextcloud redis.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          # Valkey 9 — what the paperless-ngx v3.0.0 compose pairs. Queue/cache
+          # only, no persistence: a restart just re-runs an in-flight consume.
+          image: valkey/valkey:9-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["valkey-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests: { memory: "64Mi", cpu: "50m" }
+            limits: { memory: "256Mi" }
+          volumeMounts:
+            # valkey's workdir is /data; with a read-only root fs it still
+            # needs one writable path even though persistence is off.
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: paperless
+spec:
+  selector:
+    app: paperless-redis
+  ports:
+    - port: 6379
+      targetPort: 6379

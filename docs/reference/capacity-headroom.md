@@ -5,6 +5,19 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-07-23 (paperless):** phase 10 (paperless-ngx v3.0.0,
+> ADR 015) authored for the worker — three pods (app + Postgres 18 + Valkey).
+> Live worker figures at authoring time (superseding the pre-shrink snapshot
+> table below): MemAvailable **3.87GiB idle**, **7d min 2.66GiB**, 7d max
+> genuine used **8.96GiB** — i.e. the worker already touched ~0.66GiB above
+> the 2GiB `NodeMemoryLowWorker` floor, almost certainly an Immich ML import
+> burst. Paperless adds ~0.8–1.1GiB steady, ~1.5–1.8GiB during an OCR burst
+> (limit capped 1.5Gi, `TASK_WORKERS=1`). Steady state fits (~2.8GiB free
+> after); the one risk is a big-scan OCR burst **concurrent with** an Immich
+> ML import breaching the 2GiB floor. Both bursts are user-triggered — stagger
+> the initial bulk ingest, and record resident RAM idle-vs-mid-ingest here
+> once measured.
+>
 > **Status update 2026-07-23:** homepage (phase 9, the household dashboard)
 > deployed to the worker. Negligible against the budget — one stateless
 > Next.js container, `requests 64Mi`, `limits 256Mi`, ~40–80Mi resident, no
