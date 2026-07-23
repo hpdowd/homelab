@@ -16,6 +16,7 @@ for how a request actually flows see architecture.md.
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
 | Grafana | grafana.lan | grafana.henrydowd.dev | k3s pod (`monitoring` ns) |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) |
+| Homepage (dashboard) | dash.lan | dash.henrydowd.dev | k3s pod (`homepage` ns) — public + ungated, links only |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 |
 | Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) |
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 |
@@ -161,6 +162,31 @@ root). See ADR 009.
   target; its Grafana dashboard + `homelab.portfolio` upstream alerts
   live in `k8s/apps/monitoring/`.
 - Stateless, no PVC, `strategy: RollingUpdate`, nothing to back up.
+
+## Homepage (dashboard)
+
+- `gethomepage/homepage`, pinned `v1.13.2`, namespace `homepage`, pinned to
+  the worker. One stateless container, no DB, no PVC — all config is the
+  `homepage` ConfigMap in git, so a pod loss just re-renders the page.
+- **Auth state: public + ungated, links only.** The first pass ships a link
+  grid + bookmarks with **no** `widget:` blocks and no API keys — a link is a
+  hostname DNS already publishes. Live-data widgets (Grafana/Immich/Proxmox
+  polling their APIs with stored keys) are deferred to phase 8, once
+  `dash.henrydowd.dev` sits behind Authelia `one_factor`; adding keyed widgets
+  before that would paint infra telemetry onto a world-readable page. See
+  `docs/plans/phase-9-homepage.md` step 4.
+- **`HOMEPAGE_ALLOWED_HOSTS` is load-bearing** (`$(MY_POD_IP):3000,dash.lan,dash.henrydowd.dev`).
+  The pod-IP entry is required or the kubelet probe — which hits the pod IP,
+  not a hostname — 400s on host validation and the pod never goes Ready. The
+  health endpoint is `/api/healthcheck` (v1.x; not `GET /`).
+- **Read-only root filesystem:** two `emptyDir` scratch mounts, `/app/.next/cache`
+  (Next.js render cache) and `/app/config/logs`. The ConfigMap ships all files
+  homepage looks for (incl. empty `docker.yaml`/`kubernetes.yaml`/`custom.*`)
+  because it can't create missing defaults on a read-only mount.
+- **A ConfigMap edit does NOT hot-reload** — after editing config,
+  `kubectl -n homepage rollout restart deploy/homepage`.
+- Nothing to back up (stateless; config in git). Ingress carries no `tls:`
+  block (ADR 007) and rides the `*.henrydowd.dev` wildcard for cert/DNS/tunnel.
 
 ## Backups (summary)
 

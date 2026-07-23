@@ -1,0 +1,30 @@
+# No entrypoints annotation and no tls: block (ADR 007) — the wildcard
+# LE TLSStore terminates dash.henrydowd.dev on websecure, and the cloudflared
+# + Technitium *.henrydowd.dev wildcards already route dash.* with zero extra
+# DNS/cert/tunnel work.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homepage
+  namespace: homepage
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: dash.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port: { number: 3000 }
+    - host: dash.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port: { number: 3000 }

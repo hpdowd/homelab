@@ -5,6 +5,11 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-07-23:** homepage (phase 9, the household dashboard)
+> deployed to the worker. Negligible against the budget — one stateless
+> Next.js container, `requests 64Mi`, `limits 256Mi`, ~40–80Mi resident, no
+> PVC. Doesn't move any of the figures below; noted for completeness.
+
 > **Status update 2026-06-28:** control VM raised **4→5GiB** (now 4.74GiB
 > usable; `MemAvailable` recovered ~0.7→~2.9GiB). This was *not* fallout
 > from the worker shrink: the 2026-06-27 worker reboot's Longhorn

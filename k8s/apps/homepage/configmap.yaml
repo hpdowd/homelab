@@ -1,0 +1,100 @@
+# All config lives here in git — homepage has no database and no PVC. A pod
+# loss re-renders the page from this ConfigMap.
+#
+# Read-only-root gotcha (v1.x): homepage tries to CREATE any config file it
+# expects but doesn't find. With /app/config mounted read-only from this
+# ConfigMap that write fails and the pod crashloops, so every file homepage
+# looks for must exist here — hence the empty docker.yaml / kubernetes.yaml /
+# custom.js / custom.css alongside the real config.
+#
+# A ConfigMap edit does NOT hot-reload (the k8s remount lags homepage's file
+# watcher): after editing, `kubectl -n homepage rollout restart deploy/homepage`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage
+  namespace: homepage
+data:
+  settings.yaml: |
+    title: Dowd Homelab
+    theme: dark
+    headerStyle: clean
+    # Groups map to the named groups in services.yaml below.
+    layout:
+      Infrastructure: { style: row, columns: 4 }
+      Media: { style: row, columns: 3 }
+      Tools: { style: row, columns: 4 }
+
+  services.yaml: |
+    # Links-only first pass (phase 9 step 1): public + ungated, so NO widget:
+    # blocks and no API keys — those arrive with Authelia gating (step 4).
+    # A link is not a secret; it's a hostname DNS already publishes.
+    - Infrastructure:
+        - Proxmox:
+            href: https://proxmox.henrydowd.dev
+            description: Hypervisor
+        - ArgoCD:
+            href: http://argocd.lan
+            description: GitOps (LAN-only)
+        - Grafana:
+            href: https://grafana.henrydowd.dev
+            description: Metrics
+        - Technitium:
+            href: http://technitium.lan
+            description: DNS (LAN-only)
+    - Media:
+        - Immich:
+            href: https://immich.henrydowd.dev
+            description: Photos
+        - Nextcloud:
+            href: https://nextcloud.henrydowd.dev
+            description: Files
+        - Collabora:
+            href: https://collabora.henrydowd.dev
+            description: Office
+    - Tools:
+        - Gitea:
+            href: https://git.henrydowd.dev
+            description: Git
+        - Kiwix:
+            href: https://wiki.henrydowd.dev
+            description: Offline wiki
+        - AMP:
+            href: https://amp.henrydowd.dev
+            description: Game server
+        # Added as they go live:
+        # - Paperless:   { href: https://paperless.henrydowd.dev, description: Documents }
+        # - Vaultwarden: { href: https://vault.henrydowd.dev, description: Passwords }
+
+  bookmarks.yaml: |
+    - Reference:
+        - Kubernetes docs:
+            - abbr: K8s
+              href: https://kubernetes.io/docs/
+        - ArgoCD docs:
+            - abbr: CD
+              href: https://argo-cd.readthedocs.io/
+        - Homepage docs:
+            - abbr: HP
+              href: https://gethomepage.dev/
+
+  widgets.yaml: |
+    # Header information widgets only — all non-sensitive. The `resources`
+    # widget (CPU/mem/disk) stays out until the page is gated (step 4); no need
+    # to paint infra telemetry onto a world-readable page.
+    - greeting:
+        text_size: xl
+        text: Dowd Homelab
+    - datetime:
+        format:
+          timeStyle: short
+          dateStyle: long
+    - search:
+        provider: duckduckgo
+        target: _blank
+
+  # Present so homepage's read-only-root default-file creation never fires.
+  docker.yaml: ""
+  kubernetes.yaml: ""
+  custom.css: ""
+  custom.js: ""

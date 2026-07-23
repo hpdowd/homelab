@@ -1,0 +1,88 @@
+# gethomepage/homepage — one stateless container that renders a link grid from
+# the `homepage` ConfigMap. No secrets in this first pass (links only; widgets
+# and their API keys come after Authelia gating). No PVC, so RollingUpdate is
+# correct. Pinned to the worker like everything else — the control node is
+# scheduling-disabled.
+#
+# Pinned to v1.13.2: the config schema and HOMEPAGE_ALLOWED_HOSTS behaviour
+# drift between releases, so the version is explicit and the keys below were
+# verified against this tag's docs. Notably (vs the older 0.9.x notes):
+#   - the health endpoint is /api/healthcheck (not GET /)
+#   - HOMEPAGE_ALLOWED_HOSTS MUST include the pod IP or the kubelet probe —
+#     which hits the pod IP, not a hostname — 400s on host validation and the
+#     pod never goes Ready. Hence MY_POD_IP + "$(MY_POD_IP):3000" below.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homepage
+  namespace: homepage
+spec:
+  replicas: 1
+  strategy: { type: RollingUpdate }
+  selector:
+    matchLabels: { app: homepage }
+  template:
+    metadata:
+      labels: { app: homepage }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      # Locked-down tier (ADR 011): homepage needs no root, it just serves HTTP
+      # on a high port.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: homepage
+          image: ghcr.io/gethomepage/homepage:v1.13.2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            # Ordered first: HOMEPAGE_ALLOWED_HOSTS interpolates $(MY_POD_IP),
+            # and k8s only expands vars defined earlier in the list.
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Load-bearing. The value before the first comma (the pod IP) is
+            # what the kubelet probe presents as Host; the rest are the public
+            # hostnames. Miss any of these and that request 400s.
+            - name: HOMEPAGE_ALLOWED_HOSTS
+              value: "$(MY_POD_IP):3000,dash.lan,dash.henrydowd.dev"
+            - { name: TZ, value: "Europe/Dublin" }
+            - { name: PORT, value: "3000" }
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /api/healthcheck, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/healthcheck, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            # readOnlyRootFilesystem needs writable scratch: Next.js render
+            # cache and homepage's own log dir (which lives under /app/config,
+            # itself a read-only ConfigMap mount).
+            - name: cache
+              mountPath: /app/.next/cache
+            - name: logs
+              mountPath: /app/config/logs
+      volumes:
+        - name: config
+          configMap:
+            name: homepage
+        - name: cache
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
