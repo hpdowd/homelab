@@ -228,14 +228,17 @@ spec:
             # nextcloud/ingress.yaml for the full story. tl;dr: cloudflared
             # speaks plain HTTP, websecure-only routers 404.
             annotations: {}
+            # LAN-only (like argocd.lan / technitium.lan): no henrydowd.dev host,
+            # so the public *.henrydowd.dev tunnel has no Traefik route for
+            # grafana and 404s it. root_url below must match, or LAN logins /
+            # share links redirect to the now-unrouted WAN host.
             hosts:
-              - grafana.henrydowd.dev
               - grafana.lan
             path: /
             pathType: Prefix
           grafana.ini:
             server:
-              root_url: "https://grafana.henrydowd.dev"
+              root_url: "http://grafana.lan"
             security:
               disable_initial_admin_creation: false
           plugins: []

@@ -58,8 +58,8 @@ data:
             description: GitOps (LAN-only)
             icon: argo-cd.png
         - Grafana:
-            href: https://grafana.henrydowd.dev
-            description: Metrics
+            href: http://grafana.lan
+            description: Metrics (LAN-only)
             icon: grafana.png
         - Technitium:
             href: http://technitium.lan

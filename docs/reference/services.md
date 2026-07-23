@@ -14,7 +14,7 @@ for how a request actually flows see architecture.md.
 | Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) |
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) |
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
-| Grafana | grafana.lan | grafana.henrydowd.dev | k3s pod (`monitoring` ns) |
+| Grafana | grafana.lan | — | k3s pod (`monitoring` ns) — deliberately LAN-only |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) |
 | Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) — public + ungated, links only |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 |
