@@ -16,7 +16,7 @@ for how a request actually flows see architecture.md.
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
 | Grafana | grafana.lan | grafana.henrydowd.dev | k3s pod (`monitoring` ns) |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) |
-| Homepage (dashboard) | dash.lan | dash.henrydowd.dev | k3s pod (`homepage` ns) — public + ungated, links only |
+| Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) — public + ungated, links only |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 |
 | Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) |
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 |
@@ -185,8 +185,18 @@ root). See ADR 009.
   because it can't create missing defaults on a read-only mount.
 - **A ConfigMap edit does NOT hot-reload** — after editing config,
   `kubectl -n homepage rollout restart deploy/homepage`.
-- Nothing to back up (stateless; config in git). Ingress carries no `tls:`
-  block (ADR 007) and rides the `*.henrydowd.dev` wildcard for cert/DNS/tunnel.
+- Nothing to back up (stateless; config in git). The `dash.*` hosts carry no
+  `tls:` block (ADR 007) and ride the `*.henrydowd.dev` wildcard for
+  cert/DNS/tunnel.
+- **`home.dowd.ie`** is a third hostname on a separate Cloudflare zone, so it's
+  the ADR-007 exception (like file-parser's `secure.dowd.ie`): a per-Ingress
+  `tls:` block loads `dowd-ie-tls`, issued into the `homepage` ns by its own
+  `*.dowd.ie` Certificate (`k8s/apps/homepage/certificate.yaml` — the shared
+  file-parser cert can't cross namespaces, the dowd-ie-cert-wrong-namespace
+  lesson). Its cloudflared public-hostname route (token-mode tunnel =
+  dashboard-managed) and Technitium `home.dowd.ie → 192.168.1.200` record are
+  **not in this repo**; `home.dowd.ie` is also in `HOMEPAGE_ALLOWED_HOSTS` or it
+  would 400. Kept out of any Cloudflare Access app so it stays public.
 
 ## Backups (summary)
 

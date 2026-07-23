@@ -1,0 +1,23 @@
+# A SECOND *.dowd.ie wildcard, separate from the file-parser one
+# (k8s/infrastructure/cert-manager-config/dowd-ie-cert.yaml). It can't be shared:
+# homepage's Ingress presents home.dowd.ie via a per-Ingress `tls:` block, and a
+# core Ingress's `tls.secretName` only resolves a secret in its OWN namespace —
+# the dowd-ie-cert-wrong-namespace lesson. So the cert has to be issued into the
+# homepage namespace, not borrowed from file-parser.
+#
+# Issues via the same DNS-01 ClusterIssuer as everything else; the Cloudflare
+# token (cert-manager ns) is already scoped to the dowd.ie zone, so no new
+# secret. Duplicating a wildcard is well within Let's Encrypt's limits.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dowd-ie
+  namespace: homepage
+spec:
+  secretName: dowd-ie-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - dowd.ie
+    - "*.dowd.ie"

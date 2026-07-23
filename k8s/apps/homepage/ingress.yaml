@@ -1,7 +1,14 @@
-# No entrypoints annotation and no tls: block (ADR 007) — the wildcard
-# LE TLSStore terminates dash.henrydowd.dev on websecure, and the cloudflared
-# + Technitium *.henrydowd.dev wildcards already route dash.* with zero extra
-# DNS/cert/tunnel work.
+# dash.* rides the *.henrydowd.dev wildcard (TLSStore default cert + cloudflared
+# route + Technitium split-horizon) with zero extra DNS/cert/tunnel work, so
+# those hosts carry no tls: block (ADR 007).
+#
+# home.dowd.ie is the exception (like file-parser's secure.dowd.ie): dowd.ie is
+# a separate Cloudflare zone outside the shared TLSStore wildcard, so it needs
+# its own SNI cert via the `tls:` block below (dowd-ie-tls, issued into this ns
+# by certificate.yaml). It ALSO needs two things NOT in this repo — a cloudflared
+# public-hostname route (token-mode tunnel = dashboard-managed) and a Technitium
+# home.dowd.ie -> 192.168.1.200 record for LAN. Keep it out of any Cloudflare
+# Access application so it stays public like the dash.* hosts.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -9,6 +16,10 @@ metadata:
   namespace: homepage
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - home.dowd.ie
+      secretName: dowd-ie-tls
   rules:
     - host: dash.lan
       http:
@@ -20,6 +31,15 @@ spec:
                 name: homepage
                 port: { number: 3000 }
     - host: dash.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port: { number: 3000 }
+    - host: home.dowd.ie
       http:
         paths:
           - path: /
