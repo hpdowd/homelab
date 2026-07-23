@@ -1,14 +1,17 @@
-# All config lives here in git — homepage has no database and no PVC. A pod
-# loss re-renders the page from this ConfigMap.
+# The config we author lives here in git — homepage has no database and no PVC.
+# A pod loss re-renders the page from this ConfigMap.
 #
-# Read-only-root gotcha (v1.x): homepage tries to CREATE any config file it
-# expects but doesn't find. With /app/config mounted read-only from this
-# ConfigMap that write fails and the pod crashloops, so every file homepage
-# looks for must exist here — hence the empty docker.yaml / kubernetes.yaml /
-# custom.js / custom.css alongside the real config.
+# This holds ONLY the files we control (settings/services/bookmarks/widgets).
+# Homepage v1.x seeds the rest of its skeleton set (docker.yaml, kubernetes.yaml,
+# proxmox.yaml, custom.css, custom.js) into /app/config at startup by COPYING
+# from /app/src/skeleton — a write. So /app/config must be writable: the
+# deployment mounts an emptyDir there and an initContainer copies these files in
+# (see deployment.yaml). Mounting this ConfigMap read-only over /app/config
+# directly makes that seed copy fail EROFS and crashloops the pod — that was the
+# 2026-07-23 incident (missing proxmox.yaml).
 #
-# A ConfigMap edit does NOT hot-reload (the k8s remount lags homepage's file
-# watcher): after editing, `kubectl -n homepage rollout restart deploy/homepage`.
+# Because config is copied in at init (not live-mounted), a ConfigMap edit needs
+# a `kubectl -n homepage rollout restart deploy/homepage` to take effect.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -93,8 +96,3 @@ data:
         provider: duckduckgo
         target: _blank
 
-  # Present so homepage's read-only-root default-file creation never fires.
-  docker.yaml: ""
-  kubernetes.yaml: ""
-  custom.css: ""
-  custom.js: ""

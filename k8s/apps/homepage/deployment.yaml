@@ -34,6 +34,26 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
+      # Seed the writable /app/config emptyDir with the files we author. Homepage
+      # itself then fills in the rest of its skeleton set (proxmox/docker/
+      # kubernetes.yaml, custom.*) on startup — it COPIES them into /app/config,
+      # which is why that dir can't be a read-only ConfigMap mount (EROFS crash,
+      # the 2026-07-23 incident).
+      initContainers:
+        - name: seed-config
+          image: busybox:1.37
+          command: ["sh", "-c", "cp -L /defaults/*.yaml /app/config/"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config-src
+              mountPath: /defaults
+              readOnly: true
+            - name: config
+              mountPath: /app/config
       containers:
         - name: homepage
           image: ghcr.io/gethomepage/homepage:v1.13.2
@@ -69,20 +89,21 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 15
           volumeMounts:
+            # Writable (emptyDir, seeded by the initContainer) so homepage can
+            # copy its skeleton/provider files in at startup.
             - name: config
               mountPath: /app/config
-            # readOnlyRootFilesystem needs writable scratch: Next.js render
-            # cache and homepage's own log dir (which lives under /app/config,
-            # itself a read-only ConfigMap mount).
+            # readOnlyRootFilesystem needs writable scratch for the Next.js
+            # render cache too (outside /app/config).
             - name: cache
               mountPath: /app/.next/cache
-            - name: logs
-              mountPath: /app/config/logs
       volumes:
-        - name: config
+        # ConfigMap is the SOURCE the initContainer copies from — never mounted
+        # onto /app/config directly (read-only mount => EROFS on homepage's seed).
+        - name: config-src
           configMap:
             name: homepage
-        - name: cache
+        - name: config
           emptyDir: {}
-        - name: logs
+        - name: cache
           emptyDir: {}
