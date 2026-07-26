@@ -8,6 +8,37 @@ Ordered by expected damage, not by how likely they are.
 
 ---
 
+## Open actions
+
+Carried out of the 2026-07-25 incident review. The cluster is healthy; none of these are
+emergencies, but the first one is the difference between the next reboot self-healing and
+repeating a 16-hour outage.
+
+| # | Action | Effort | Blocks | Risk |
+|---|---|---|---|---|
+| 1 | Drop `storageReserved` on `/mnt/longhorn` to 10%, restoring auto-salvage | one command | — | Scheduling calculation only; nothing detaches |
+| 2 | `pip install ansible`, then `site.yml --check --diff` and apply | ~30 min | — | Playbook has never been executed |
+| 3 | Route `severity: critical` to a channel that interrupts | ~1h | Needs you to pick ntfy/Gotify/Pushover | Low |
+| 4 | Remove the hand-added `[Journal]` block from the worker's `journald.conf` | 2 min | Do after #2 | None |
+| 5 | Repoint local-path onto `vdb` | window | Needs #2 (sets the k3s flag) + k3s restart | Moderate — k3s restart |
+| 6 | Adopt `k8s/infrastructure/longhorn.yaml` | window | Volumes must be healthy | **Highest here.** Never mid-incident |
+| 7 | Decide on worker memory limits at 191% of allocatable | judgement | — | Alert is currently ambient noise |
+| 8 | Add a Longhorn `trim` recurring job | ~15 min | — | Low |
+
+Item 1 is the only one where delay carries ongoing exposure. Items 5 and 6 want the same
+maintenance window. Item 6 is the one to be slowest about: it is the highest-value
+structural fix and the easiest to do damage with.
+
+### Already done (2026-07-25 / 26)
+
+All 11 volumes salvaged and verified (clean mounts, no journal replay, clean postgres WAL
+redo, backups re-run successfully). `LonghornDiskUnschedulable` and
+`LonghornProvisioningHeadroomLow` alerts committed and live. Worker OS disk 84% → 82%,
+journald capped. `ansible/` created. Incident written up in
+`docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`.
+
+---
+
 ## 1. Longhorn auto-salvage is disabled by disk over-provisioning
 
 **Severity: high. Recurs on the next reboot.**
