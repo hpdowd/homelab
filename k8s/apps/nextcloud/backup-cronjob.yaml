@@ -138,10 +138,16 @@ spec:
                   # Retention: 7 daily, 4 weekly, 3 monthly. --prune actually
                   # removes the unreferenced pack files from B2 (otherwise
                   # forget only updates the snapshot index, storage keeps growing).
+                  # --group-by tags is load-bearing — restic's default of
+                  # host,paths groups by the pod name, which is unique per run,
+                  # so retention silently kept every snapshot forever. See the
+                  # gitea cronjob for the full write-up.
                   echo "[backup] Pruning old snapshots..."
-                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                  restic forget --group-by tags \
+                    --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
                     --prune --tag nextcloud-data || true
-                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                  restic forget --group-by tags \
+                    --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
                     --prune --tag nextcloud-db || true
 
                   echo "[backup] Done. Current snapshots:"

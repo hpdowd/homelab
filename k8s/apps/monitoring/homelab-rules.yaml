@@ -192,9 +192,21 @@ spec:
       rules:
         # A silently-broken backup is the worst failure mode here — you only
         # find out when you need it. Fire on the first failed run.
+        #
+        # The `unless` is what lets it resolve. kube_job_status_failed counts
+        # failed *pod attempts* and never decrements, so with backoffLimit 1 a
+        # run that failed once and succeeded on the retry kept this firing until
+        # the Job object aged out of successfulJobsHistoryLimit — three days of
+        # a critical alert for a backup that is sitting in B2. Suppressing on
+        # succeeded keeps the early warning (it still fires the moment an
+        # attempt dies) but clears it once the retry lands. If both attempts
+        # fail the Job never succeeds and the alert stays up, which is the case
+        # that matters.
         - alert: BackupJobFailed
           expr: |
             kube_job_status_failed{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"} > 0
+              unless on (namespace, job_name)
+            kube_job_status_succeeded{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"} > 0
           for: 1m
           labels:
             severity: critical

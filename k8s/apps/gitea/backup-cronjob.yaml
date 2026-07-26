@@ -104,7 +104,15 @@ spec:
                     --exclude="/data/gitea/log"
 
                   echo "[backup] Pruning old snapshots..."
+                  # --group-by tags is load-bearing. restic defaults to
+                  # host,paths, and the hostname here is the pod name, which is
+                  # unique per run — so every snapshot landed in its own
+                  # retention group, each group kept its single member, and
+                  # nothing was ever deleted. Grouping by tag instead puts the
+                  # whole series in one group so keep-daily/weekly/monthly mean
+                  # what they say.
                   restic forget \
+                    --group-by tags \
                     --keep-daily 7 \
                     --keep-weekly 4 \
                     --keep-monthly 3 \
