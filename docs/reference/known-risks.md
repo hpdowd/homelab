@@ -24,10 +24,12 @@ repeating a 16-hour outage.
 | 6 | Adopt `k8s/infrastructure/longhorn.yaml` | window | Volumes must be healthy | **Highest here.** Never mid-incident |
 | 7 | Decide on worker memory limits at 191% of allocatable | judgement | — | Alert is currently ambient noise |
 | 8 | Add a Longhorn `trim` recurring job | ~15 min | — | Low |
+| 9 | Confirm the first restic prune actually ran (2026-07-27), then set the B2 bucket to keep last-version-only | ~10 min + a console change | Prune must run once first | Low; deletes only snapshots the 7d/4w/3m policy already excludes |
 
 Item 1 is the only one where delay carries ongoing exposure. Items 5 and 6 want the same
 maintenance window. Item 6 is the one to be slowest about: it is the highest-value
-structural fix and the easiest to do damage with.
+structural fix and the easiest to do damage with. Item 9 is a verification, not a change,
+and it is the only one with a date attached.
 
 ### Already done (2026-07-25 / 26)
 
@@ -278,15 +280,22 @@ This does not affect scheduling, which uses provisioned size, and `/mnt/longhorn
 **Severity: low probability, total consequence.**
 
 Backups are in good shape. restic to Backblaze B2, daily, `nextcloud` / `gitea` / `immich` /
-`paperless`, all reporting success, 102 snapshots in the nextcloud repo, and verified
-working against the salvaged volumes on 2026-07-26. Longhorn's own backup target is
-separately unconfigured (`backuptargets/default` empty, `available: false`), which is fine
-given restic covers the data.
+`paperless`, all reporting success, and verified working against the salvaged volumes on
+2026-07-26. Longhorn's own backup target is separately unconfigured (`backuptargets/default`
+empty, `available: false`), which is fine given restic covers the data.
+
+**Correction (2026-07-26).** The "102 snapshots in the nextcloud repo" cited here as evidence
+of health was the opposite: retention had never pruned anything, because `restic forget`
+groups by `host,paths` by default and the hostname is the per-run pod name. Fixed in
+`c1b81b3`; see `docs/lessons/backup/restic-retention-never-pruned.md`. The reading error is
+worth keeping visible, a large snapshot count says a repo is growing, not that it is well
+kept, and this review took it for the latter.
 
 The gap is exercise, not coverage. The last recorded test-restore was 2026-06-12.
 
 **Prevention:** keep the quarterly test-restore cadence. A backup verified only by its own
-exit code is a backup with one untested dependency.
+exit code is a backup with one untested dependency, and the retention bug above is exactly
+that failure mode, a job that succeeded nightly at doing nothing.
 
 ---
 
