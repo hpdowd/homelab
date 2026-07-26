@@ -1,0 +1,9 @@
+---
+# Safe to bounce at any time: journald restarts in place and nothing depends
+# on it staying up. This is the only handler in the playbook that fires
+# automatically.
+- name: Restart systemd-journald
+  ansible.builtin.systemd:
+    name: systemd-journald
+    state: restarted
+    daemon_reload: false

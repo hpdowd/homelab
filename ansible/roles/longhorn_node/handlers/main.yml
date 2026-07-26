@@ -1,0 +1,11 @@
+---
+# daemon-reload only. Deliberately NOT a k3s-agent restart.
+#
+# Unit ordering is resolved when systemd builds the shutdown transaction,
+# not when the unit starts, so a reload is enough for the new ordering to
+# apply on the next shutdown. Restarting k3s-agent would detach every
+# Longhorn volume on the node to fix a problem that only manifests at
+# shutdown, which is a bad trade.
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true

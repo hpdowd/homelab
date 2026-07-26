@@ -1,0 +1,67 @@
+---
+# k3s flags currently exist only in the systemd unit that the original
+# `curl | sh` generated. Reinstall k3s with a different command line and
+# they are silently gone — there is no record of them anywhere in the repo.
+#
+# k3s reads /etc/rancher/k3s/config.yaml on every start and the installer
+# does not overwrite it, so moving flags here makes them survive a
+# reinstall. Writing the file changes nothing until k3s restarts, which is
+# why no handler restarts it: that is a deliberate maintenance-window
+# action, not a side effect of an Ansible run.
+
+- name: Ensure /etc/rancher/k3s exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write k3s server config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      # Managed by Ansible (roles/k3s_node). Do not edit by hand.
+      # Takes effect on the next k3s restart — see the role for why nothing
+      # here restarts it for you.
+      node-ip: {{ ansible_host }}
+      disable:
+        - traefik
+        - servicelb
+      write-kubeconfig-mode: "0644"
+      # local-path writes here. Left at the k3s default for now; pointing it
+      # at vdb is known-risks #3 and needs the directory to exist on the
+      # target node first.
+      default-local-storage-path: {{ k3s_local_storage_path }}
+  when: inventory_hostname in groups['k3s_servers']
+
+- name: Write k3s agent config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      # Managed by Ansible (roles/k3s_node). Do not edit by hand.
+      node-ip: {{ ansible_host }}
+  when: inventory_hostname in groups['k3s_agents']
+
+# Cheap guard against the class of drift that started all this: a setting
+# that is right in the repo and wrong on the box, with nothing comparing
+# them. Reports only, never changes anything.
+- name: Read effective journald cap
+  ansible.builtin.command: systemd-analyze cat-config systemd/journald.conf
+  register: journald_effective
+  changed_when: false
+  check_mode: false
+
+- name: Assert journald cap is actually in effect
+  ansible.builtin.assert:
+    that: "'SystemMaxUse=' + journald_max_use in journald_effective.stdout"
+    fail_msg: >-
+      journald cap not in effect ({{ journald_max_use }} expected). A
+      hand-edit in journald.conf may be overriding the drop-in.
+    success_msg: "journald capped at {{ journald_max_use }}"

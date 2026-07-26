@@ -1,0 +1,27 @@
+---
+# journald defaults to 10% of the filesystem. On the worker that is ~4GiB of
+# a 41GiB OS disk already carrying 24GiB of container images, and it had
+# grown to 531MiB unnoticed before the 2026-07-26 review.
+#
+# A drop-in rather than an edit to journald.conf: idempotent, greppable, and
+# it wins over the main file if a hand-edit is still lying around.
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cap journald disk usage
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/10-size-cap.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/common). Do not edit by hand.
+      [Journal]
+      SystemMaxUse={{ journald_max_use }}
+  notify: Restart systemd-journald

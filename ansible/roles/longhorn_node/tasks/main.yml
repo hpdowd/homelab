@@ -1,0 +1,55 @@
+---
+# The 2026-07-25 outage, in one file.
+#
+# A hypervisor-initiated shutdown stopped open-iscsi while containerd was
+# still working through its stop timeout. Twelve iSCSI sessions dropped
+# under mounted, actively-written Longhorn volumes; the kernel logged
+# "potential data loss!" on every device and all 11 replicas failed in the
+# same second.
+#
+# Stock k3s has no ordering here at all — `systemctl show k3s-agent -p After`
+# lists only systemd-journald.socket — so the two units shut down in
+# whatever order systemd picks.
+#
+# DIRECTION MATTERS AND IS EASY TO INVERT. `After=` means "start after", and
+# systemd reverses ordering on shutdown: a unit that starts after B is
+# stopped before B. So `After=open-iscsi` on k3s-agent is what makes
+# k3s-agent stop FIRST, releasing the volumes while their transport is still
+# up. The same line on open-iscsi would do the exact opposite.
+
+- name: Ensure k3s-agent drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s-agent.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Order k3s-agent after iSCSI so volumes unmount before the transport goes
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s-agent.service.d/10-iscsi-order.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/longhorn_node). Do not edit by hand.
+      # Start after iSCSI; stop before it. See the role for why the drop-in
+      # lives here and not on open-iscsi.
+      [Unit]
+      After=open-iscsi.service iscsid.service
+      Wants=open-iscsi.service iscsid.service
+  notify: Reload systemd
+
+# Containers that do not stop inside the grace period are what let the
+# shutdown reach open-iscsi with volumes still mounted. Give them longer.
+- name: Ensure k3s-agent shutdown grace period is generous
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s-agent.service.d/20-stop-timeout.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/longhorn_node). Do not edit by hand.
+      [Service]
+      TimeoutStopSec={{ k3s_agent_stop_timeout }}
+  notify: Reload systemd

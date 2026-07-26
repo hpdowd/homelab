@@ -1,0 +1,15 @@
+---
+# journald's default is 10% of the filesystem. 200M is generous for two
+# nodes that ship nothing off-box and keeps it off the worker's tight OS
+# disk. Raise it if you ever need more than a few days of history locally.
+journald_max_use: 200M
+
+# Containers hitting the stop timeout is what let the 2026-07-25 shutdown
+# reach open-iscsi with volumes still mounted. systemd's default is 90s and
+# containerd's shutdown was still incomplete at that point.
+k3s_agent_stop_timeout: 300
+
+# k3s default. Moving this to vdb is known-risks #3 — it needs the target
+# directory to exist on the node and a k3s restart, so it is a deliberate
+# change rather than a variable flip.
+k3s_local_storage_path: /var/lib/rancher/k3s/storage

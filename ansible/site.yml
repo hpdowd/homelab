@@ -1,0 +1,24 @@
+---
+# The node layer beneath ArgoCD. See README.md for scope and non-goals.
+#
+#   ansible-playbook -i inventory.ini site.yml --check --diff
+#
+# Nothing here restarts k3s or detaches a volume. The only automatic
+# restart is systemd-journald.
+
+- name: Node configuration
+  hosts: k3s_nodes
+  gather_facts: true
+  # One node at a time. Both nodes are singletons — the control plane and
+  # the only storage node — so there is no scenario where touching them
+  # together is worth the round trip saved.
+  serial: 1
+  roles:
+    - common
+    - k3s_node
+
+- name: Longhorn storage nodes
+  hosts: longhorn_nodes
+  gather_facts: false
+  roles:
+    - longhorn_node
