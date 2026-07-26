@@ -1,0 +1,110 @@
+# Longhorn as a declarative Application, replacing the hand-install.
+#
+# ─── READ BEFORE SYNCING ──────────────────────────────────────────────────
+# This Application is deliberately WITHOUT `syncPolicy.automated`. Every
+# other app in k8s/infrastructure/ self-heals; this one must not, because
+# Longhorn is currently installed by hand and holds 11 live volumes. The
+# parent `infrastructure` app will create this Application object as soon as
+# it is committed, but nothing reaches the cluster until someone syncs it.
+#
+# Do NOT "Sync All" in the ArgoCD UI while this is unsynced.
+#
+# Adoption is a maintenance-window job, not a click:
+#   1. Confirm every volume is `attached`/`healthy` first. Never adopt during
+#      an incident.
+#   2. Diff before applying — ArgoCD renders the chart and server-side
+#      applies it, so it will show exactly what differs from the hand-install.
+#      Expect drift in fields the runbook patched by hand.
+#   3. Sync, then immediately re-check volumes and the disk Schedulable
+#      condition (see below).
+#   4. Once green, delete the imperative patches from
+#      docs/runbooks/cluster-rebuild.md §3 — they become the wrong source of
+#      truth the moment this is live.
+#
+# Why bother: `numberOfReplicas` silently sat at 3 for months because a
+# runbook step was missed, leaving every volume degraded with replicas on the
+# control node's OS disk. Documentation is not self-healing. Longhorn is the
+# largest hand-installed piece of the stack and the one whose misconfiguration
+# has cost the most.
+# ──────────────────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  # No resources-finalizer, matching every other app here: deleting the
+  # Application must never cascade-delete live storage. This matters more for
+  # Longhorn than for anything else in the repo.
+spec:
+  project: default
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    # Pinned to the version currently running (image tags read v1.11.2).
+    # Verify before first sync — a chart version mismatch against the live
+    # install is the most likely cause of a disruptive diff. Bump
+    # deliberately, and check the upgrade notes; Longhorn has renamed
+    # defaultSettings keys across minor releases.
+    targetRevision: 1.11.2
+    helm:
+      values: |
+        defaultSettings:
+          # ── Replica count. Two knobs, both have to agree. ──
+          # This one covers volumes whose StorageClass doesn't override it.
+          # The StorageClass knob is `persistence.defaultClassReplicaCount`
+          # below, and it wins for dynamically provisioned PVCs. Missing the
+          # second one is the exact bug that left every volume degraded for
+          # months. Single usable storage node; redundancy is at the ZFS
+          # layer instead (ADR 012).
+          defaultReplicaCount: 1
+
+          # ── Disk reservation. The 2026-07-25 outage. ──
+          # Longhorn's 30% default assumes a shared OS disk. vdb is dedicated
+          # to Longhorn and needs nothing like it: at 30 it reserved ~147GiB
+          # of 491GiB, which pushed ScheduledTotal past ProvisionedLimit and
+          # flipped the disk to Schedulable=False. An unschedulable disk
+          # silently disables auto-salvage, so a routine reboot became a
+          # 16-hour manual recovery.
+          #
+          # This setting only applies when the default disk is CREATED. It
+          # does not retroactively fix an existing disk — that needs the node
+          # object patched too. See the runbook.
+          storageReservedPercentageForDefaultDisk: 10
+
+          # Longhorn schedules on PROVISIONED size, not actual usage:
+          # immich-library counts its full 200Gi while holding ~44GiB. 100
+          # means no over-commit, which is the honest setting when a single
+          # disk backs everything.
+          storageOverProvisioningPercentage: 100
+
+          # Keep replicas off the control node — it only has a 29GiB OS disk
+          # and runs the k3s control plane.
+          systemManagedComponentsNodeSelector: "kubernetes.io/hostname:k3s-worker1"
+
+        persistence:
+          # THE knob that drifted. The stock chart ships numberOfReplicas: 3
+          # baked into the StorageClass, which overrides defaultReplicaCount
+          # for every dynamically provisioned PVC.
+          defaultClassReplicaCount: 1
+          defaultClass: true
+
+        # The UI is reachable in-cluster; no ingress here. Exposing it is a
+        # separate decision with its own auth story.
+        ingress:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  # syncPolicy intentionally omitted — manual sync only. See header.
+  # Once adopted and stable, consider adding:
+  #   syncPolicy:
+  #     automated: { prune: false, selfHeal: true }
+  # Leave prune false. Pruning a Longhorn resource is not a recoverable
+  # mistake.
+  ignoreDifferences:
+    # Longhorn rewrites these at runtime; without this the app would sit
+    # permanently OutOfSync and mask real drift.
+    - group: longhorn.io
+      kind: Setting
+      jsonPointers:
+        - /value
