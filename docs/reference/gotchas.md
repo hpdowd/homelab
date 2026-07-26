@@ -194,6 +194,21 @@ dead backend. See `docs/lessons/k8s/netpol-fresh-pod-race.md`.
   app=longhorn-manager --field-selector spec.nodeName=k3s-control`), or
   give control 5GiB. See
   `docs/lessons/k8s/worker-reboot-alert-storm.md`.
+- **`auto-salvage=true` does not mean auto-salvage works.** It skips any
+  replica whose disk is `Schedulable: False`, so an over-provisioned disk
+  turns a self-healing reboot into a 16-hour manual recovery. On
+  2026-07-25 the manager logged `Bringing up 0 replicas for auto-salvage`
+  4,367 times overnight and never recovered a single volume. Longhorn
+  schedules on **provisioned** size, not actual usage, so the 200Gi
+  `immich-library` counts in full at 44GiB used, and
+  `storage-reserved-percentage-for-default-disk=30` had reserved 147GiB
+  of a dedicated data disk that needs none. Check the condition, not the
+  setting:
+  `kubectl -n longhorn-system get nodes.longhorn.io k3s-worker1 -o jsonpath='{range .status.diskStatus.*}{.conditions[?(@.type=="Schedulable")].status}{" "}{.conditions[?(@.type=="Schedulable")].reason}{"\n"}{end}'`
+  Manual salvage is clearing `failedAt` on the replica (what the UI
+  button does):
+  `kubectl -n longhorn-system patch replicas.longhorn.io <r> --type=merge -p '{"spec":{"failedAt":""}}'`.
+  See `docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`.
 
 ## restic / backups
 
@@ -267,6 +282,22 @@ state, don't "fix" it. See
   (memory) and `LonghornVolumeDegraded` persisting (storage): only
   `PodCrashLooping` clustered after a reboot = benign, self-resolves. See
   `docs/lessons/k8s/worker-reboot-alert-storm.md`.
+- **Alerts fire into email, and email does not wake anyone.** On
+  2026-07-25 `LonghornVolumeDegraded` (critical) fired correctly at
+  19:34 on a Saturday and eleven faulted volumes sat unattended for 16h.
+  Detection was never the problem, which is the tempting wrong
+  conclusion to draw. Confirm what actually happened before touching a
+  rule, using the stored `ALERTS` series rather than Alertmanager's
+  short-lived state:
+  `max_over_time(ALERTS{alertname="LonghornVolumeDegraded"}[17h] @ <ts>)`.
+  The fix is routing `severity: critical` to a channel that interrupts,
+  not another rule. See `docs/reference/known-risks.md` #2.
+- ArgoCD 3.x marks an app `Degraded` from CronJob health, comparing the
+  CronJob's own `lastSuccessfulTime` against `lastScheduleTime`. Deleting
+  the failed Job records does **not** clear it and neither does a hard
+  refresh; it clears on the next successful run. Force one with
+  `kubectl -n <ns> create job <name> --from=cronjob/<cronjob>`, which
+  doubles as a backup verification.
 - **`PortfolioMetricsAbsent` re-fires after every portfolio restart.**
   `portfolio_upstream_up` is populated lazily ("on last use"), so until
   the app actually fetches an upstream (a real `/api/*` hit, not a

@@ -53,6 +53,42 @@ curl -sfL https://get.k3s.io | sh -s - server \
   --node-ip 192.168.1.10
 ```
 
+### Worker OS-level config (do this before workloads land)
+
+Two settings on the worker that nothing else will reapply for you. Both
+were learned the hard way; see
+`docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`.
+
+**Cap the journal.** journald defaults to 10% of the filesystem, which is
+~4GiB of the worker's 41GiB OS disk, on a disk that is already tight
+against its container images:
+
+```bash
+printf '\n[Journal]\nSystemMaxUse=200M\n' >> /etc/systemd/journald.conf
+systemctl restart systemd-journald
+```
+
+**Stop open-iscsi before it outlives the volumes.** On a shutdown,
+systemd will happily tear down `open-iscsi` while containerd is still
+working through its stop timeout, which drops every iSCSI session under
+mounted, actively-written Longhorn volumes. That is what faulted all 11
+volumes on 2026-07-25. Order it after the container runtime:
+
+```bash
+mkdir -p /etc/systemd/system/open-iscsi.service.d
+cat > /etc/systemd/system/open-iscsi.service.d/10-shutdown-order.conf <<'EOF'
+[Unit]
+# Stop AFTER k3s/containerd so live volumes are unmounted first.
+After=k3s-agent.service
+EOF
+systemctl daemon-reload
+```
+
+(`After=` also governs shutdown order, inverted: a unit listed `After`
+another is stopped *before* it. So `open-iscsi After=k3s-agent` means
+k3s-agent stops first, then open-iscsi.) Raise the container stop grace
+period too if shutdowns keep hitting the timeout.
+
 Grab the join token from `/var/lib/rancher/k3s/server/node-token`, then
 on the worker:
 
@@ -100,6 +136,46 @@ kubectl -n longhorn-system patch nodes.longhorn.io k3s-control \
 (The node object only exists once Longhorn has started on it, if the
 patch 404s, wait and retry. Confirm with
 `kubectl get sc longhorn -o jsonpath='{.parameters.numberOfReplicas}'`.)
+
+### Disk reservation, set this before the disk is created
+
+Longhorn reserves 30% of a disk by default. That default is written for
+a *shared* OS disk; `vdb` is dedicated to Longhorn and needs nothing like
+it. Left at 30 it reserves ~147GiB of the 491GiB disk, and because
+Longhorn schedules on **provisioned** size rather than actual usage, the
+disk crosses into `Schedulable: False` / `DiskPressure` long before it is
+anywhere near full. An unschedulable disk silently disables auto-salvage,
+which is how a routine reboot became a 16-hour outage on 2026-07-25.
+
+Set the *setting* first, so the default disk is created correctly and a
+rebuild never inherits the problem:
+
+```bash
+kubectl -n longhorn-system patch settings.longhorn.io \
+  storage-reserved-percentage-for-default-disk \
+  --type=merge -p '{"value":"10"}'
+```
+
+If the disk already exists, the setting does not retroactively change it,
+so fix the node object too (10% of 527295578112):
+
+```bash
+kubectl -n longhorn-system patch nodes.longhorn.io k3s-worker1 --type=merge \
+  -p '{"spec":{"disks":{"default-disk-<id>":{"storageReserved":52729557811}}}}'
+```
+
+Verify the condition, not the setting; the setting can be right while the
+disk is still wrong:
+
+```bash
+kubectl -n longhorn-system get nodes.longhorn.io k3s-worker1 \
+  -o jsonpath='{range .status.diskStatus.*}{.conditions[?(@.type=="Schedulable")].status}{" "}{.conditions[?(@.type=="Schedulable")].reason}{"\n"}{end}'
+# want: True    (False + DiskPressure means auto-salvage is dead)
+```
+
+Re-check this after adding any service with a large PVC. `immich-library`
+alone provisions 200Gi while using ~44GiB, and it is provisioned size
+that counts against the limit.
 
 **Verify it actually took, after the first PVCs exist:**
 
