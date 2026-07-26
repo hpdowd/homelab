@@ -123,8 +123,8 @@ how well they are protected:
 |---|---|---|
 | App manifests, alert rules, StorageClasses for apps | ArgoCD, self-healing | everything |
 | Longhorn settings, replica count, disk reservation | imperative patches in `cluster-rebuild.md` §3 | a documented rebuild, if someone follows it |
-| k3s server flags | baked into the systemd unit by the install command | nothing — a k3s reinstall with a different curl line loses them |
-| Worker OS config (journald cap, open-iscsi ordering) | `cluster-rebuild.md` §2 | a documented rebuild, if someone follows it |
+| k3s server flags | `ansible/roles/k3s_node` → `/etc/rancher/k3s/config.yaml` | a k3s reinstall (the installer does not overwrite it) |
+| Worker OS config (journald cap, iSCSI ordering) | `ansible/roles/{common,longhorn_node}` | an Ansible run — but nothing runs it on a schedule |
 
 The Longhorn row has already failed once in a way that matters. `numberOfReplicas` silently
 stayed at 3 for months because the StorageClass knob was missed, and every volume sat
@@ -155,9 +155,17 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
 2. **Move k3s server flags into `/etc/rancher/k3s/config.yaml`.** k3s reads it on every
    start and the installer does not overwrite it, so flags survive a reinstall. Today they
    exist only in the systemd unit that the original curl command generated.
-3. Worker OS config has no automation available short of introducing Ansible or a cloud-init
-   template. The runbook is the honest answer for a two-VM homelab, but it is the weakest
-   link here and should be read as such.
+3. **Worker OS config now has an owner: `ansible/`.** Three narrow roles cover the journald
+   cap, `/etc/rancher/k3s/config.yaml`, and the `k3s-agent`↔iSCSI shutdown ordering. Run
+   `ansible-playbook -i inventory.ini site.yml --check --diff` before applying.
+
+   Two caveats worth keeping in view. The playbook is committed but **has not been executed
+   yet** — Ansible is not installed on the workstation, so it is validated YAML with
+   verified host assumptions, not an exercised run. And it is pull-on-demand: nothing runs
+   it on a schedule, so drift between runs is invisible. That is acceptable at two nodes;
+   it stops being acceptable if a third appears.
+
+   Proxmox VM definitions remain out of scope, with the reasoning in `ansible/README.md`.
 
 ## 4. Worker memory limits are 191% of allocatable
 
