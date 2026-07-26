@@ -146,6 +146,48 @@ spec:
             summary: "Longhorn metrics missing from VictoriaMetrics"
             description: "longhorn_volume_robustness has no series — the Longhorn scrape is broken, so LonghornVolumeDegraded is blind. Check the VMServiceScrape and vmagent targets."
 
+        # The condition that silently disabled auto-salvage for 16h on
+        # 2026-07-25. Longhorn skips any replica whose disk is unschedulable
+        # when it tries to salvage, so `auto-salvage=true` was true and
+        # useless — the manager logged "Bringing up 0 replicas" 4,367 times
+        # overnight and recovered nothing.
+        #
+        # Nothing else surfaces this. An unschedulable disk causes no symptom
+        # at all while volumes stay attached; it only bites at the exact
+        # moment you need recovery. Verified against live series: the worker's
+        # disk reads 0 today, control's reads 1.
+        - alert: LonghornDiskUnschedulable
+          expr: |
+            longhorn_disk_status{condition="schedulable"} == 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Longhorn disk {{ $labels.disk }} on {{ $labels.node }} is unschedulable"
+            description: "Auto-salvage cannot select replicas on this disk, so a faulted volume will NOT self-heal. Usually over-provisioning: Longhorn counts provisioned PVC size, not actual usage. See docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md"
+
+        # The warning that would have caught the above before it mattered.
+        # Fires while there is still headroom, rather than after the disk has
+        # already crossed into DiskPressure.
+        #
+        # Expressed as a ratio, not absolute bytes, deliberately. An absolute
+        # "< 20GiB headroom" threshold sits 0.13GiB away from firing on the
+        # control node, which permanently reads -20.3GiB (29GiB OS disk, 30%
+        # reserved, zero replicas scheduled because control has
+        # allowScheduling=false). The ratio reads 0 there and can't
+        # false-positive. Verified live: control 0, worker 1.021.
+        - alert: LonghornProvisioningHeadroomLow
+          expr: |
+            longhorn_node_storage_scheduled_bytes
+              / (longhorn_node_storage_capacity_bytes - longhorn_node_storage_reservation_bytes)
+              > 0.9
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn provisioning headroom < 20GiB on {{ $labels.node }}"
+            description: "Scheduled (provisioned, not used) size is approaching capacity minus reservation. Crossing it flips the disk unschedulable and disables auto-salvage. Reduce storageReserved or right-size the largest PVC before adding services."
+
     - name: homelab.backups
       rules:
         # A silently-broken backup is the worst failure mode here — you only
