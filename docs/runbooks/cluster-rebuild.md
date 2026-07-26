@@ -68,26 +68,37 @@ printf '\n[Journal]\nSystemMaxUse=200M\n' >> /etc/systemd/journald.conf
 systemctl restart systemd-journald
 ```
 
-**Stop open-iscsi before it outlives the volumes.** On a shutdown,
-systemd will happily tear down `open-iscsi` while containerd is still
-working through its stop timeout, which drops every iSCSI session under
-mounted, actively-written Longhorn volumes. That is what faulted all 11
-volumes on 2026-07-25. Order it after the container runtime:
+**Keep iSCSI alive until k3s has let go of the volumes.** On a shutdown,
+systemd tears down `open-iscsi` while containerd is still working through
+its stop timeout, dropping every iSCSI session under mounted,
+actively-written Longhorn volumes. That is what faulted all 11 volumes on
+2026-07-25. Out of the box `k3s-agent` has no ordering against iSCSI at
+all (`systemctl show k3s-agent -p After` lists only
+`systemd-journald.socket`), so the two shut down in arbitrary order.
+
+The drop-in goes on **`k3s-agent`**, not on `open-iscsi`:
 
 ```bash
-mkdir -p /etc/systemd/system/open-iscsi.service.d
-cat > /etc/systemd/system/open-iscsi.service.d/10-shutdown-order.conf <<'EOF'
+mkdir -p /etc/systemd/system/k3s-agent.service.d
+cat > /etc/systemd/system/k3s-agent.service.d/10-iscsi-order.conf <<'EOF'
 [Unit]
-# Stop AFTER k3s/containerd so live volumes are unmounted first.
-After=k3s-agent.service
+# Start after iSCSI is up, and — because systemd reverses ordering on
+# shutdown — stop BEFORE it goes down, so volumes unmount while their
+# transport still exists.
+After=open-iscsi.service iscsid.service
+Wants=open-iscsi.service iscsid.service
 EOF
 systemctl daemon-reload
 ```
 
-(`After=` also governs shutdown order, inverted: a unit listed `After`
-another is stopped *before* it. So `open-iscsi After=k3s-agent` means
-k3s-agent stops first, then open-iscsi.) Raise the container stop grace
-period too if shutdowns keep hitting the timeout.
+Get the direction right, it is easy to invert. `After=` means "start
+after", and shutdown order is the reverse: a unit that starts *after* B
+is stopped *before* B. So putting `After=open-iscsi` on `k3s-agent` is
+what makes k3s-agent stop first. Putting `After=k3s-agent` on
+`open-iscsi` does the exact opposite and makes the bug worse.
+
+Raise the container stop grace period too if shutdowns keep hitting the
+timeout.
 
 Grab the join token from `/var/lib/rancher/k3s/server/node-token`, then
 on the worker:
