@@ -67,6 +67,7 @@ live status pulled from the cluster.
 - **[docs/reference/architecture.md](docs/reference/architecture.md):** how the pieces fit together. Start here.
 - **[docs/reference/services.md](docs/reference/services.md):** what runs where, and the config facts each service depends on.
 - **[docs/reference/gotchas.md](docs/reference/gotchas.md):** the sharp edges, one paragraph each, linked to the full lessons.
+- **[docs/reference/known-risks.md](docs/reference/known-risks.md):** what hasn't broken yet but is on a path to breaking, plus the open-actions checklist. Read this before starting work — it says what state the cluster is actually in.
 - **[docs/reference/operations.md](docs/reference/operations.md):** commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.
 - **[docs/reference/resources.md](docs/reference/resources.md):** where each component's charts, images, docs and release notes live.
 
@@ -92,8 +93,10 @@ homelab/
 │   ├── runbooks/       repeatable procedures
 │   ├── reference/      cheat-sheets and architecture walkthrough
 │   └── plans/          scoped walkthroughs for work not yet done
-└── k8s/
-    ├── argocd/         root-app — the only thing ArgoCD needs to be pointed at
-    ├── infrastructure/ MetalLB, Traefik, cloudflared, VictoriaMetrics
-    └── apps/           one directory per service
+├── k8s/
+│   ├── argocd/         root-app — the only thing ArgoCD needs to be pointed at
+│   ├── infrastructure/ MetalLB, Traefik, cloudflared, VictoriaMetrics, Longhorn
+│   └── apps/           one directory per service
+└── ansible/            the node layer under ArgoCD — journald, k3s config.yaml,
+                        systemd shutdown ordering. Things no cluster tool can reach.
 ```

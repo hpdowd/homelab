@@ -168,11 +168,24 @@ kubectl -n longhorn-system patch settings.longhorn.io \
 ```
 
 If the disk already exists, the setting does not retroactively change it,
-so fix the node object too (10% of 527295578112):
+so fix the node object too. The disk key is generated at creation, so look
+it up rather than guessing (it was `default-disk-25a91b93472172c4` on the
+current worker, but that does not survive a rebuild):
+
+```bash
+# go-template, not jsonpath — kubectl's jsonpath can't iterate a map with
+# its keys, and `{range $k, $v := ...}` fails with "unrecognized character".
+kubectl -n longhorn-system get nodes.longhorn.io k3s-worker1 \
+  -o go-template='{{range $k,$v := .spec.disks}}{{$k}}  {{$v.path}}  reserved={{$v.storageReserved}}{{"\n"}}{{end}}'
+# default-disk-25a91b93472172c4  /mnt/longhorn  reserved=158188673433
+```
+
+Then patch it (52729557811 = 10% of the 527295578112 StorageMaximum;
+recompute if the disk is a different size):
 
 ```bash
 kubectl -n longhorn-system patch nodes.longhorn.io k3s-worker1 --type=merge \
-  -p '{"spec":{"disks":{"default-disk-<id>":{"storageReserved":52729557811}}}}'
+  -p '{"spec":{"disks":{"<disk-key>":{"storageReserved":52729557811}}}}'
 ```
 
 Verify the condition, not the setting; the setting can be right while the
