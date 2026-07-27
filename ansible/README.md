@@ -37,23 +37,40 @@ touches a running volume; the one handler that could disrupt things
 `roles/k3s_node/tasks/main.yml`. Changes to k3s flags need a deliberate
 restart during a window.
 
-## First run against the existing nodes
+## The first run, 2026-07-27
 
-The worker already has a journald cap appended directly to
-`/etc/systemd/journald.conf` (applied by hand on 2026-07-26). This playbook
-uses a drop-in at `/etc/systemd/journald.conf.d/` instead, which wins over
-the main file, so the two do not conflict. Remove the hand-added block when
-convenient to avoid two sources of truth:
+Applied to both nodes. Re-running now reports `changed=0` on each, so this is
+exercised and idempotent, not just validated YAML.
 
-```bash
-# on k3s-worker1, delete the trailing [Journal]/SystemMaxUse=200M block
-$EDITOR /etc/systemd/journald.conf
-```
+It found one thing that mattered a great deal. **The worker had never received
+the iSCSI shutdown ordering** — the fix this repo was created to carry.
+`systemctl show k3s-agent -p After` still listed only the stock units and the
+stop timeout was still systemd's 90s default, two days after the outage that
+the role exists to prevent. The role was right; nothing had ever run it. See
+`docs/reference/known-risks.md` §6.
 
-`--check --diff` on a first run will show `config.yaml` being created on
-both nodes. That file does not exist today; k3s flags currently live only
-in the systemd unit that the original `curl | sh` generated, which is the
-whole problem. Creating it changes nothing until k3s restarts.
+Three smaller defects, all fixed:
+
+- `ansible.cfg` set `stdout_callback = yaml`, which ansible-core has since
+  removed (it lives in `community.general`). Every run died before reaching a
+  task. Dropped rather than adding a collection dependency for output
+  formatting — `--diff` is what actually matters here.
+- The journald drift assert in `roles/k3s_node` ran under `--check` against
+  state the same run was about to write, so a first dry-run always failed. With
+  `serial: 1` that aborted the play on the control node before the worker was
+  ever reached. Now skipped when `ansible_check_mode`.
+- The worker carried the journald cap twice: the drop-in *and* the hand-added
+  block appended to `journald.conf` on 2026-07-26. Both said 200M, so nothing
+  was broken, but the next person to raise the cap would have edited one and
+  not the other. `roles/common` now removes the legacy block, idempotently.
+
+`config.yaml` was created on both nodes and changes nothing until k3s restarts.
+It reproduces the flags the original `curl | sh` baked into the systemd unit
+(`--disable traefik`, `--disable servicelb`, `--write-kubeconfig-mode 644` on
+the server) and adds an explicit `node-ip` pinning what k3s currently
+auto-detects. The worker's join URL and token stay in
+`/etc/systemd/system/k3s-agent.service.env`, which is correct — they are
+bootstrap credentials, not configuration.
 
 ## Non-goals, for now
 

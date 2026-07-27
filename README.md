@@ -97,6 +97,16 @@ homelab/
 │   ├── argocd/         root-app — the only thing ArgoCD needs to be pointed at
 │   ├── infrastructure/ MetalLB, Traefik, cloudflared, VictoriaMetrics, Longhorn
 │   └── apps/           one directory per service
+├── bootstrap/          getting ArgoCD running and pointed at this repo. Runs
+│                       once per rebuild, then never again.
 └── ansible/            the node layer under ArgoCD — journald, k3s config.yaml,
                         systemd shutdown ordering. Things no cluster tool can reach.
+```
+
+Three layers, and only one of them self-heals:
+
+```
+ansible/    the two VMs          pull-on-demand, nothing runs it on a schedule
+bootstrap/  ArgoCD itself        once per rebuild
+k8s/        everything in-cluster  ArgoCD, continuous, self-healing
 ```

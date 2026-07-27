@@ -2,7 +2,7 @@
 
 Standing list of things that have not broken yet but are on a path to breaking, with the
 evidence for each and what would stop it. Reviewed 2026-07-26 after the Longhorn
-auto-salvage incident; §1 updated 2026-07-27 when the live fix went in.
+auto-salvage incident; §1 and §6 updated 2026-07-27 when the live fixes went in.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -17,20 +17,30 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | # | Action | Effort | Blocks | Risk |
 |---|---|---|---|---|
 | ~~1~~ | ~~Drop `storageReserved` on `/mnt/longhorn` to 10%~~ — **done 2026-07-27**, see §1 | — | — | — |
-| 2 | `pip install ansible`, then `site.yml --check --diff` and apply | ~30 min | — | Playbook has never been executed |
+| ~~2~~ | ~~`site.yml --check --diff` and apply~~ — **done 2026-07-27**, see §6 | — | — | — |
 | 3 | Route `severity: critical` to a channel that interrupts | ~1h | Needs you to pick ntfy/Gotify/Pushover | Low |
-| 4 | Remove the hand-added `[Journal]` block from the worker's `journald.conf` | 2 min | Do after #2 | None |
+| ~~4~~ | ~~Remove the hand-added `[Journal]` block from the worker's `journald.conf`~~ — **done 2026-07-27**, now a role task | — | — | — |
 | 5 | Repoint local-path onto `vdb` | window | Needs #2 (sets the k3s flag) + k3s restart | Moderate — k3s restart |
 | 6 | Adopt `k8s/infrastructure/longhorn.yaml` | window | Volumes must be healthy | **Highest here.** Never mid-incident |
 | 7 | Decide on worker memory limits at 191% of allocatable | judgement | — | Alert is currently ambient noise |
 | 8 | Add a Longhorn `trim` recurring job | ~15 min | — | Low |
 | 9 | Confirm the first restic prune actually ran (2026-07-27), then set the B2 bucket to keep last-version-only | ~10 min + a console change | Prune must run once first | Low; deletes only snapshots the 7d/4w/3m policy already excludes |
+| 10 | Adopt `k8s/infrastructure/sealed-secrets.yaml` | window | Verify `kubeseal --fetch-cert` against the backup first | Moderate — the controller's key is the trust root for every secret in the repo |
+| 11 | Exercise `bootstrap/bootstrap.sh` end-to-end against a scratch cluster | half a day | Needs a throwaway VM | None to prod; it is the only way to test the rebuild path |
 
-With item 1 closed, nothing left here carries ongoing exposure — but item 6 now inherits
-part of it, because it is what makes the item 1 fix survive a rebuild (§1 below). Items 5
-and 6 want the same maintenance window. Item 6 is the one to be slowest about: it is the
-highest-value structural fix and the easiest to do damage with. Item 9 is a verification,
+With items 1, 2 and 4 closed, nothing left here carries ongoing exposure — but item 6 now
+inherits part of it, because it is what makes the item 1 fix survive a rebuild (§1 below).
+Items 5 and 6 want the same maintenance window. Item 6 is the one to be slowest about: it is
+the highest-value structural fix and the easiest to do damage with. Item 9 is a verification,
 not a change, and it is the only one with a date attached.
+
+Item 2 turned out to matter more than its "~30 min" suggested: running the playbook revealed
+that the iSCSI shutdown ordering had never reached the worker at all. See §6.
+
+Items 10 and 11 are new on 2026-07-27, both from codifying the bootstrap path (§3b). Neither
+is urgent — 10 is adopting a controller that already works, 11 is testing a rebuild path that
+is already better than it was. They are here because both are the kind of work that only ever
+gets done deliberately.
 
 ### Already done (2026-07-25 / 26 / 27)
 
@@ -187,9 +197,10 @@ how well they are protected:
 | Layer | Current mechanism | Survives |
 |---|---|---|
 | App manifests, alert rules, StorageClasses for apps | ArgoCD, self-healing | everything |
+| ArgoCD itself, Sealed Secrets controller, repo creds, `argocd-cm` | `bootstrap/bootstrap.sh`, pinned | a scripted rebuild — but the script has never been run end-to-end |
 | Longhorn settings, replica count, disk reservation | imperative patches in `cluster-rebuild.md` §3 | a documented rebuild, if someone follows it |
 | k3s server flags | `ansible/roles/k3s_node` → `/etc/rancher/k3s/config.yaml` | a k3s reinstall (the installer does not overwrite it) |
-| Worker OS config (journald cap, iSCSI ordering) | `ansible/roles/{common,longhorn_node}` | an Ansible run — but nothing runs it on a schedule |
+| Worker OS config (journald cap, iSCSI ordering) | `ansible/roles/{common,longhorn_node}` | an Ansible run — applied 2026-07-27, but nothing runs it on a schedule |
 
 The Longhorn row has already failed once in a way that matters. `numberOfReplicas` silently
 stayed at 3 for months because the StorageClass knob was missed, and every volume sat
@@ -225,13 +236,55 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
    cap, `/etc/rancher/k3s/config.yaml`, and the `k3s-agent`↔iSCSI shutdown ordering. Run
    `ansible-playbook -i inventory.ini site.yml --check --diff` before applying.
 
-   Two caveats worth keeping in view. The playbook is committed but **has not been executed
-   yet** — Ansible is not installed on the workstation, so it is validated YAML with
-   verified host assumptions, not an exercised run. And it is pull-on-demand: nothing runs
-   it on a schedule, so drift between runs is invisible. That is acceptable at two nodes;
-   it stops being acceptable if a third appears.
+   **Applied to both nodes 2026-07-27**, and re-running it now reports `changed=0` on each,
+   so the three roles are exercised and idempotent rather than merely validated YAML. The
+   first run surfaced three defects that only an execution could have found: the
+   `stdout_callback = yaml` in `ansible.cfg` had been removed from ansible-core and failed
+   every run before a task ran; the journald drift assert fired under `--check` against
+   state the same run was about to write, and with `serial: 1` that aborted the play before
+   the worker was ever reached; and the worker was carrying the journald cap twice. All
+   three are fixed.
+
+   One caveat remains: it is pull-on-demand, so nothing runs it on a schedule and drift
+   between runs is invisible. That is acceptable at two nodes; it stops being acceptable if
+   a third appears. §6 is the argument for closing it sooner.
 
    Proxmox VM definitions remain out of scope, with the reasoning in `ansible/README.md`.
+4. **The bootstrap layer now has an owner: `bootstrap/`.** Sealed Secrets, ArgoCD, the
+   `argocd-cm` exclusions patch, the repo credentials and `root-app` were a sequence of
+   commands to copy out of `cluster-rebuild.md` §4–6. They are now
+   `bootstrap/bootstrap.sh`, with versions pinned in `versions.env` and the ConfigMap patch
+   as a reviewable file rather than an `\n`-escaped string inside a `kubectl patch`.
+
+   Writing it found that **the runbook did not describe this cluster**. Three mismatches,
+   all caught by diffing against live state rather than by reading:
+
+   | Documented | Actual | Consequence of following the runbook |
+   |---|---|---|
+   | Sealed Secrets via upstream raw manifest | Helm release, chart 2.18.6 | a differently-shaped install than the one being replaced |
+   | MetalLB via `metallb-native.yaml` from `main` | Helm chart via ArgoCD, pinned 0.14.9 | two MetalLBs in one namespace for ArgoCD to fight with |
+   | `argocd-cm` patch with 5 exclusion entries | ArgoCD 3.x stock list has 7 | silently reverts the Cilium and Kyverno exclusions |
+
+   None had caused an outage, because none had been exercised. The MetalLB step is now
+   deleted outright — ArgoCD owns it end to end — and the patch is copied verbatim from the
+   running cluster.
+
+   **The script has not been run end-to-end.** It is syntax-checked, and its two riskiest
+   `kubectl` invocations were dry-run against the live cluster (the `argocd-cm` patch is a
+   no-op there, which is the correct result). But the only honest test is a real rebuild
+   against a bare cluster — open action 11. Treat it as better-documented, not proven.
+5. **Sealed Secrets had no declarative source at all**, discovered 2026-07-27 while writing
+   the above. It was not in `k8s/`, not in `ansible/`, and the runbook described installing
+   it a different way than it exists. It was simply a Helm release somebody ran once in May.
+   Every SealedSecret in this repo depends on that controller, which made it the least
+   documented and most load-bearing thing in the cluster.
+
+   `k8s/infrastructure/sealed-secrets.yaml` now declares it, pinned to the running chart
+   version and following the `longhorn.yaml` pattern: **no `syncPolicy.automated`**, so
+   committing it creates the Application object and nothing more. Adoption is open action
+   10. The hazard there is specific — the controller's private key is the trust root for
+   every secret in the repo — so `prune` must never be enabled on it, and
+   `kubeseal --fetch-cert` should be diffed against the backup before syncing.
 
 ## 4. Worker memory limits are 191% of allocatable
 
@@ -274,15 +327,50 @@ single-node event happens.
 
 ## 6. Shutdown ordering tears iSCSI out from under live volumes
 
-**Severity: medium. This is the event class §1's auto-salvage exists to absorb.**
+**Resolved on the live cluster 2026-07-27.** Severity was medium; this is the event class
+§1's auto-salvage exists to absorb.
 
 A hypervisor-initiated shutdown stopped `open-iscsi` while containerd was still working
 through its stop timeout, dropping 12 iSCSI sessions under mounted, actively-written
 volumes. The kernel logged `potential data loss!` on every device. The replicas survived
 intact this time. That was luck, not design.
 
-**Prevention:** order `open-iscsi` to stop after kubelet and containerd, raise the container
-stop grace period, and drain the node before `qm shutdown` rather than issuing it cold.
+**The fix existed in the repo for two days without existing on the node.** `ansible/` was
+written on 2026-07-25 with `roles/longhorn_node` carrying exactly the right drop-in, the
+runbook documented the commands, and this file listed the ordering under "worker OS config"
+as though `ansible/` owning it meant the worker had it. It did not. Running the playbook for
+the first time on 2026-07-27 found the worker still in stock configuration:
+
+```text
+After=systemd-journald.socket basic.target sysinit.target network-online.target system.slice
+TimeoutStopUSec=1min 30s
+```
+
+No `open-iscsi` ordering at all, and the systemd default stop timeout — the precise state
+that faulted all 11 volumes on 2026-07-25. Any reboot in those two days would have
+reproduced the outage, with §1's auto-salvage the only thing standing behind it.
+
+After the run:
+
+```text
+Wants=network-online.target open-iscsi.service iscsid.service
+After=sysinit.target network-online.target open-iscsi.service basic.target system.slice iscsid.service
+TimeoutStopUSec=5min
+```
+
+`daemon-reload` only; `k3s-agent` was not restarted and no volume detached. All 11 volumes
+stayed `attached` / `healthy` throughout.
+
+**The lesson is about the gap, not the setting.** A written role, a documented runbook step
+and a risk register that mentions all three are not evidence that anything reached the
+machine — and the register in this case actively implied that it had. Nothing in the repo
+compares declared node state against live node state, so the only thing that closes that gap
+today is somebody choosing to run the playbook. That is the case for the scheduled
+`--check` run in §3b, and it is stronger than "drift between runs is invisible" made it
+sound: the drift here was total, and it sat behind confident documentation.
+
+**Still outstanding:** drain the node before `qm shutdown` rather than issuing it cold. That
+is an operator habit, not a config, and nothing enforces it.
 
 ---
 

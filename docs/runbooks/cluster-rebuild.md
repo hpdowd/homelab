@@ -55,50 +55,49 @@ curl -sfL https://get.k3s.io | sh -s - server \
 
 ### Worker OS-level config (do this before workloads land)
 
-Two settings on the worker that nothing else will reapply for you. Both
-were learned the hard way; see
-`docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`.
-
-**Cap the journal.** journald defaults to 10% of the filesystem, which is
-~4GiB of the worker's 41GiB OS disk, on a disk that is already tight
-against its container images:
+**Run the Ansible playbook. Do not do this by hand.**
 
 ```bash
-printf '\n[Journal]\nSystemMaxUse=200M\n' >> /etc/systemd/journald.conf
-systemctl restart systemd-journald
+cd ansible
+ansible-playbook -i inventory.ini site.yml --check --diff   # read the diff
+ansible-playbook -i inventory.ini site.yml
 ```
 
-**Keep iSCSI alive until k3s has let go of the volumes.** On a shutdown,
-systemd tears down `open-iscsi` while containerd is still working through
-its stop timeout, dropping every iSCSI session under mounted,
-actively-written Longhorn volumes. That is what faulted all 11 volumes on
-2026-07-25. Out of the box `k3s-agent` has no ordering against iSCSI at
-all (`systemctl show k3s-agent -p After` lists only
-`systemd-journald.socket`), so the two shut down in arbitrary order.
+That applies the journald cap, `/etc/rancher/k3s/config.yaml`, and the
+`k3s-agent` ↔ iSCSI shutdown ordering. It is idempotent, it restarts
+nothing but journald, and it is the only mechanism that reapplies any of
+this. These steps used to live here as commands to copy; on 2026-07-27 the
+iSCSI ordering was found missing from the live worker two days after the
+outage it prevents, because a runbook step is only as good as the person
+remembering to run it. See `known-risks.md` §6 and `ansible/README.md`.
 
-The drop-in goes on **`k3s-agent`**, not on `open-iscsi`:
+Verify rather than assume — this is the check that would have caught it:
 
 ```bash
-mkdir -p /etc/systemd/system/k3s-agent.service.d
-cat > /etc/systemd/system/k3s-agent.service.d/10-iscsi-order.conf <<'EOF'
-[Unit]
-# Start after iSCSI is up, and — because systemd reverses ordering on
-# shutdown — stop BEFORE it goes down, so volumes unmount while their
-# transport still exists.
-After=open-iscsi.service iscsid.service
-Wants=open-iscsi.service iscsid.service
-EOF
-systemctl daemon-reload
+ssh k3s-worker1 systemctl show k3s-agent -p After -p TimeoutStopUSec
+# After= must list open-iscsi.service and iscsid.service
+# TimeoutStopUSec=5min
 ```
 
-Get the direction right, it is easy to invert. `After=` means "start
-after", and shutdown order is the reverse: a unit that starts *after* B
-is stopped *before* B. So putting `After=open-iscsi` on `k3s-agent` is
-what makes k3s-agent stop first. Putting `After=k3s-agent` on
-`open-iscsi` does the exact opposite and makes the bug worse.
+Why these two settings exist, both learned the hard way (see
+`docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`):
 
-Raise the container stop grace period too if shutdowns keep hitting the
-timeout.
+**The journal cap.** journald defaults to 10% of the filesystem, ~4GiB of
+the worker's 41GiB OS disk, on a disk already tight against its container
+images.
+
+**The iSCSI ordering.** On shutdown, systemd tears down `open-iscsi` while
+containerd is still working through its stop timeout, dropping every iSCSI
+session under mounted, actively-written Longhorn volumes. That is what
+faulted all 11 volumes on 2026-07-25. Stock `k3s-agent` has no ordering
+against iSCSI at all.
+
+The drop-in goes on **`k3s-agent`**, not on `open-iscsi`, and the direction
+is easy to invert. `After=` means "start after", and shutdown order is the
+reverse: a unit that starts *after* B is stopped *before* B. So
+`After=open-iscsi` on `k3s-agent` is what makes k3s-agent stop first.
+`After=k3s-agent` on `open-iscsi` does the exact opposite and makes the bug
+worse.
 
 Grab the join token from `/var/lib/rancher/k3s/server/node-token`, then
 on the worker:
@@ -215,117 +214,70 @@ degraded volume on this cluster is *always* wrong; see gotchas.md.
 
 Turn on the daily snapshot schedule in the Longhorn UI (retain 7).
 
-## 4. Sealed Secrets
+## 4. Bootstrap ArgoCD
 
-Install the controller:
-
-```bash
-kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
-```
-
-**Critical step:** restore the master key from backup before anything
-in this repo gets synced. Without it, the controller generates a fresh
-key, and every `SealedSecret` in git is encrypted against the *old*
-key, which no longer exists in the cluster. Result: every secret fails
-to decrypt and every dependent app refuses to start.
+Sealed Secrets, ArgoCD, the repo credentials and `root-app`, in the order
+that matters. **This is a script now — do not do it by hand.**
 
 ```bash
-kubectl apply -f <path-to>/sealed-secrets-master-key.yaml
-kubectl rollout restart deployment sealed-secrets-controller -n kube-system
+export MASTER_KEY=~/secure/sealed-secrets-master-key.yaml
+export REPO_TOKEN='<gitea token, repo read scope>'
+
+cd bootstrap
+./bootstrap.sh --check    # preflight only, changes nothing
+./bootstrap.sh
 ```
 
-Verify with `kubeseal --fetch-cert`, the returned cert should match
-your backed-up one.
+It is idempotent, so a run that dies halfway can be re-run rather than
+unpicked. `bootstrap/README.md` has the full walkthrough; the parts worth
+knowing before you run it:
 
-## 5. MetalLB
+- **It refuses to start without the master key**, rather than warning. A
+  controller installed without it generates a *fresh* keypair, and every
+  `SealedSecret` in this repo is then encrypted against a key that no longer
+  exists anywhere. That is unrecoverable short of re-sealing every secret
+  from the password manager, and it stays silent until apps start failing to
+  mount. Stopping at preflight is much cheaper.
+- **Versions are pinned** in `bootstrap/versions.env`, read off the running
+  cluster. This section used to install from `releases/latest`, `stable` and
+  `main` — three moving pointers, so two rebuilds a month apart produced two
+  different clusters.
+- **MetalLB is no longer a step.** It used to be installed here from the
+  upstream native manifest, but the live install is the Helm chart via
+  `k8s/infrastructure/metallb.yaml`. Doing both puts two differently-shaped
+  MetalLBs in one namespace for ArgoCD to fight with. ArgoCD brings it up on
+  its own, and nothing here needs a LoadBalancer IP — ArgoCD is reached by
+  port-forward until Traefik is up.
+
+Verify the controller is serving the key you expect before trusting any
+sync:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
+kubeseal --fetch-cert | diff - <your-backed-up-cert>
 ```
 
-The IPAddressPool and L2Advertisement come from this repo (via ArgoCD
-once it's up). For now, that's it.
-
-## 6. ArgoCD
-
-Install:
-
-```bash
-kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-```
-
-**The bootstrap patch** (this *must* be applied before ArgoCD starts
-syncing things, the external-LXC services depend on it):
-
-```bash
-kubectl patch configmap argocd-cm -n argocd --type merge -p '{
-  "data": {
-    "resource.exclusions": "- apiGroups:\n  - \"\"\n  kinds:\n  - Endpoints\n- apiGroups:\n  - coordination.k8s.io\n  kinds:\n  - Lease\n- apiGroups:\n  - authentication.k8s.io\n  - authorization.k8s.io\n  kinds:\n  - SelfSubjectReview\n  - TokenReview\n  - LocalSubjectAccessReview\n  - SelfSubjectAccessReview\n  - SelfSubjectRulesReview\n  - SubjectAccessReview\n- apiGroups:\n  - certificates.k8s.io\n  kinds:\n  - CertificateSigningRequest\n- apiGroups:\n  - cert-manager.io\n  kinds:\n  - CertificateRequest\n"
-  }
-}'
-kubectl rollout restart deployment argocd-server -n argocd
-```
-
-This removes `EndpointSlice` from ArgoCD's default exclusion list. Skip
-it and the EndpointSlices that point Traefik at AMP and Proxmox will
-silently not get synced, Traefik will return "no available server"
-and the cause will not be obvious.
-
-**Register the repo credentials:** the repo is private and the
-credential Secret is a bootstrap object that lives only in the cluster,
-not in git. Without it root-app can fetch nothing. Token is in the
-password manager (Gitea → repo read scope).
-`--insecure-skip-server-verification` matters: with Technitium as the
-LAN's DNS, the cluster reaches `git.henrydowd.dev` through Traefik,
-and at this point in the bootstrap cert-manager doesn't exist yet, so
-Traefik is still on its self-signed default cert. (Once the wildcard
-cert syncs the flag is harmless legacy, see gotchas.md.)
-
-```bash
-argocd repo add https://git.henrydowd.dev/henry/homelab.git \
-  --username henry --password <token from password manager> \
-  --insecure-skip-server-verification
-```
-
-Now point ArgoCD at this repo:
-
-```bash
-kubectl apply -f k8s/argocd/root-app.yaml
-```
-
-`root-app` discovers everything else, including the `argocd-ingress`
-app, which syncs `argocd-cmd-params-cm` (`server.insecure: "true"`) and
-the `argocd.lan` Ingress. **But a ConfigMap change does not auto-restart
-`argocd-server`**, so even after root-app reports synced, the server is
-still running in its default (TLS) mode and the `argocd.lan` ingress
-won't work. Restart it once more after the sync settles:
-
-```bash
-kubectl rollout restart deployment argocd-server -n argocd
-```
-
-Only after this restart does the server come up in insecure HTTP mode
-and serve cleanly behind Traefik at `argocd.lan`.
-
-Watch the sync progress in the ArgoCD UI. During a fresh bootstrap the
-`argocd.lan` ingress doesn't exist yet (it's one of the things being
-synced), so use the port-forward here; this is correct for bootstrap,
-not drift:
+Then watch the sync settle. During a fresh bootstrap the `argocd.lan`
+ingress doesn't exist yet (it's one of the things being synced), so the
+port-forward is correct here, not drift:
 
 ```bash
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 # https://localhost:8080  user: admin, password: kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d
 ```
 
-Once everything is green and you've done the restart above, `argocd.lan`
-is the normal way in (see `docs/reference/operations.md`).
+`longhorn` and `sealed-secrets` will both show `OutOfSync`. That is correct:
+both are manual-sync by design. **Do not "Sync All."** Read the headers in
+`k8s/infrastructure/{longhorn,sealed-secrets}.yaml` first.
 
-## 7. Wait for everything to be green
+Once everything is green, `argocd.lan` is the normal way in (see
+`docs/reference/operations.md`).
+
+## 5. Wait for everything to be green
 
 In order of "should come up first":
 
-1. MetalLB config (IPAddressPool, L2Advertisement)
+1. MetalLB (the chart itself, then the IPAddressPool and L2Advertisement —
+   all three now come from ArgoCD, nothing is installed by hand)
 2. Traefik (will get 192.168.1.200 from MetalLB)
 3. cloudflared (the SealedSecret with the tunnel token has to decrypt
    cleanly, which means step 4 above worked)
@@ -343,7 +295,7 @@ isn't the right one (apps can't read their creds); the ArgoCD patch
 wasn't applied (external services have no endpoints); MetalLB hasn't
 finished and Traefik's Service is `<pending>`.
 
-## 8. Restore the data
+## 6. Restore the data
 
 By this point the apps are running but empty (Nextcloud will be a
 fresh install, Gitea will be an empty Gitea, etc.). To get the actual
@@ -354,7 +306,7 @@ data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 - For Nextcloud, also restore the DB dump and run `occ files:scan --all`
 - For Gitea, run `gitea admin regenerate hooks` after scaling back up
 
-## 9. Check the boring stuff still works
+## 7. Check the boring stuff still works
 
 - Public hostnames resolve and load. Test from outside the LAN
   (mobile data, not WiFi) to confirm cloudflared is doing its job.
