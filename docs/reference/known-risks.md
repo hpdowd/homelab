@@ -2,7 +2,7 @@
 
 Standing list of things that have not broken yet but are on a path to breaking, with the
 evidence for each and what would stop it. Reviewed 2026-07-26 after the Longhorn
-auto-salvage incident.
+auto-salvage incident; §1 updated 2026-07-27 when the live fix went in.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -10,13 +10,13 @@ Ordered by expected damage, not by how likely they are.
 
 ## Open actions
 
-Carried out of the 2026-07-25 incident review. The cluster is healthy; none of these are
-emergencies, but the first one is the difference between the next reboot self-healing and
-repeating a 16-hour outage.
+Carried out of the 2026-07-25 incident review. The cluster is healthy, and item 1 — the one
+that stood between the next reboot and a repeat of the 16-hour outage — was applied and
+verified on 2026-07-27. Nothing remaining is an emergency.
 
 | # | Action | Effort | Blocks | Risk |
 |---|---|---|---|---|
-| 1 | Drop `storageReserved` on `/mnt/longhorn` to 10%, restoring auto-salvage | one command | — | Scheduling calculation only; nothing detaches |
+| ~~1~~ | ~~Drop `storageReserved` on `/mnt/longhorn` to 10%~~ — **done 2026-07-27**, see §1 | — | — | — |
 | 2 | `pip install ansible`, then `site.yml --check --diff` and apply | ~30 min | — | Playbook has never been executed |
 | 3 | Route `severity: critical` to a channel that interrupts | ~1h | Needs you to pick ntfy/Gotify/Pushover | Low |
 | 4 | Remove the hand-added `[Journal]` block from the worker's `journald.conf` | 2 min | Do after #2 | None |
@@ -26,12 +26,17 @@ repeating a 16-hour outage.
 | 8 | Add a Longhorn `trim` recurring job | ~15 min | — | Low |
 | 9 | Confirm the first restic prune actually ran (2026-07-27), then set the B2 bucket to keep last-version-only | ~10 min + a console change | Prune must run once first | Low; deletes only snapshots the 7d/4w/3m policy already excludes |
 
-Item 1 is the only one where delay carries ongoing exposure. Items 5 and 6 want the same
-maintenance window. Item 6 is the one to be slowest about: it is the highest-value
-structural fix and the easiest to do damage with. Item 9 is a verification, not a change,
-and it is the only one with a date attached.
+With item 1 closed, nothing left here carries ongoing exposure — but item 6 now inherits
+part of it, because it is what makes the item 1 fix survive a rebuild (§1 below). Items 5
+and 6 want the same maintenance window. Item 6 is the one to be slowest about: it is the
+highest-value structural fix and the easiest to do damage with. Item 9 is a verification,
+not a change, and it is the only one with a date attached.
 
-### Already done (2026-07-25 / 26)
+### Already done (2026-07-25 / 26 / 27)
+
+Disk reservation on `/mnt/longhorn` dropped 30% → 10% and the existing disk's
+`storageReserved` patched to match, returning the disk to `Schedulable: True` and
+re-enabling auto-salvage. Verified 2026-07-27; detail in §1.
 
 All 11 volumes salvaged and verified (clean mounts, no journal replay, clean postgres WAL
 redo, backups re-run successfully). `LonghornDiskUnschedulable` and
@@ -41,39 +46,66 @@ journald capped. `ansible/` created. Incident written up in
 
 ---
 
-## 1. Longhorn auto-salvage is disabled by disk over-provisioning
+## 1. Longhorn auto-salvage was disabled by disk over-provisioning
 
-**Severity: high. Recurs on the next reboot.**
+**Resolved on the live cluster 2026-07-27. Not yet durable across a rebuild — read the
+last section before treating a green alert as safety.**
 
-The worker's data disk sits at `Schedulable: False` / `DiskPressure`, and Longhorn's
-auto-salvage skips replicas on an unschedulable disk. Any event that faults the volumes
-now needs manual recovery instead of self-healing.
+The worker's data disk sat at `Schedulable: False` / `DiskPressure`, and Longhorn's
+auto-salvage skips replicas on an unschedulable disk, so any event that faulted the volumes
+needed manual recovery instead of self-healing. That is what turned a routine reboot into a
+16-hour outage on 2026-07-25.
+
+Two compounding causes: `storage-reserved-percentage-for-default-disk=30` applied 147 GiB of
+reservation to a *dedicated* data disk that needs none, and Longhorn schedules on
+provisioned size, so `immich-library` counted 200 GiB while holding 44 GiB. That put
+351.0 GiB of scheduled replicas against a 343.8 GiB limit — over by ~7.2 GiB.
+
+**What was done (2026-07-27).** The setting was patched to `10`, and because the setting
+does not retroactively touch a disk that already exists, `storageReserved` on
+`default-disk-25a91b93472172c4` was patched from 158188673433 to 52729557811. Both commands
+are in `docs/runbooks/cluster-rebuild.md` §3.
+
+Verified after the change:
 
 ```text
-ScheduledTotal   351.0 GiB   (sum of volume spec sizes)
-ProvisionedLimit 343.8 GiB   (100% of 491.1 GiB max − 147.3 GiB reserved)
+setting storage-reserved-percentage-for-default-disk   10
+/mnt/longhorn  storageReserved   49.1 GiB   (was 147.3 GiB)
+Schedulable    True                         (was False / DiskPressure)
+ScheduledTotal    351.0 GiB
+ProvisionedLimit  442.0 GiB   (100% of 491.1 GiB max − 49.1 GiB reserved)
 ```
 
-Over by ~7.2 GiB. Two compounding causes: `storage-reserved-percentage-for-default-disk=30`
-applied 147 GiB of reservation to a *dedicated* data disk that needs none, and Longhorn
-schedules on provisioned size, so `immich-library` counts 200 GiB while holding 44 GiB.
+91 GiB of headroom, 79% of the limit consumed. All 11 volumes `attached` / `healthy`.
+`longhorn_disk_status{condition="schedulable"}` is 1 on both nodes, and neither
+`LonghornDiskUnschedulable` nor `LonghornProvisioningHeadroomLow` is firing.
 
-**Prevention:**
+**Detection is in place** (`k8s/apps/monitoring/homelab-rules.yaml`, auto-synced):
+`LonghornDiskUnschedulable` fires critical on
+`longhorn_disk_status{condition="schedulable"} == 0`, and `LonghornProvisioningHeadroomLow`
+warns at 90% of the provisioning limit so a recurrence is caught *before* it disables
+salvage. Both verified against live series. Expressed as a ratio rather than absolute bytes,
+because an absolute threshold false-positives on the control node. Re-check headroom after
+adding any large PVC — it is provisioned size that counts, and right-sizing
+`immich-library` is still the other half of the margin.
 
-- **Detection is now in place** (`k8s/apps/monitoring/homelab-rules.yaml`, auto-synced):
-  `LonghornDiskUnschedulable` fires critical on
-  `longhorn_disk_status{condition="schedulable"} == 0`, and
-  `LonghornProvisioningHeadroomLow` warns at 90% of the provisioning limit so the next
-  occurrence is caught *before* it disables salvage. Both verified against live series.
-  Expressed as a ratio rather than absolute bytes, because an absolute threshold
-  false-positives on the control node.
-- **The live fix is still outstanding and imperative.** Drop `storageReserved` on
-  `/mnt/longhorn` to ~10%, giving a 474 GiB limit against 351 GiB scheduled. Commands and
-  the setting-vs-node-object distinction are in `docs/runbooks/cluster-rebuild.md` §3.
-  Right-sizing `immich-library` addresses the other half.
-- **Durably fixed for a rebuild** via `k8s/infrastructure/longhorn.yaml`
-  (`storageReservedPercentageForDefaultDisk: 10`), once that Application is adopted. See
-  item 3b.
+**The distinction that matters: a green alert describes the running cluster, not the repo.**
+There are three separate layers here, and fixing one does not fix the next:
+
+| Layer | State | Fixed by |
+|---|---|---|
+| Longhorn *setting* (governs disks created from now on) | 10 ✅ | imperative patch, live only |
+| The *existing* disk's `storageReserved` | 49.1 GiB ✅ | separate imperative patch — the setting does not backfill it |
+| The declared value a rebuild would inherit | still unadopted ❌ | open action 6 |
+
+`k8s/infrastructure/longhorn.yaml` declares `storageReservedPercentageForDefaultDisk: 10`,
+but that Application is deliberately not auto-synced and has never been synced — ArgoCD
+still reports it `OutOfSync`. Until it is adopted, both patches above live only in the
+running cluster's etcd. A rebuild that skips the runbook comes back at 30%, auto-salvage is
+dead from first boot, and `LonghornDiskUnschedulable` stays green through the whole rebuild
+until enough PVCs exist to cross the limit — which is exactly when it is least useful. The
+alert is a smoke detector for drift, not evidence that the configuration is captured
+anywhere. See §3b.
 
 Full detail: `docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`
 
@@ -170,7 +202,8 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
    `victoria-metrics.yaml` pattern. It declares everything currently patched by hand:
    `defaultReplicaCount`, `storageReservedPercentageForDefaultDisk`,
    `storageOverProvisioningPercentage`, and `persistence.defaultClassReplicaCount` (the
-   StorageClass knob that drifted).
+   StorageClass knob that drifted). As of 2026-07-27 it also holds the only declared copy of
+   the §1 fix, so until it is synced that fix exists solely as live etcd state.
 
    **It carries no `syncPolicy.automated`, on purpose.** Every other app in
    `k8s/infrastructure/` self-heals; this one must not, because the parent `infrastructure`
@@ -241,7 +274,7 @@ single-node event happens.
 
 ## 6. Shutdown ordering tears iSCSI out from under live volumes
 
-**Severity: medium. Triggers item 1.**
+**Severity: medium. This is the event class §1's auto-salvage exists to absorb.**
 
 A hypervisor-initiated shutdown stopped `open-iscsi` while containerd was still working
 through its stop timeout, dropping 12 iSCSI sessions under mounted, actively-written
