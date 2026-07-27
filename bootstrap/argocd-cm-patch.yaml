@@ -1,0 +1,84 @@
+# Strategic-merge patch for argocd-cm, applied during bootstrap before
+# root-app syncs anything.
+#
+# This exists to keep EndpointSlice OUT of ArgoCD's resource exclusions.
+# ArgoCD's stock list excludes it; leave it excluded and the EndpointSlices
+# that point Traefik at the LXC-hosted services (AMP, Proxmox, Technitium)
+# are silently not synced. Traefik answers "no available server", and
+# nothing anywhere says why.
+#
+# `resource.exclusions` REPLACES the default list wholesale rather than
+# adding to it, so every other entry has to be restated. Deleting a line
+# from this file silently re-enables ArgoCD's management of that kind.
+#
+# The list below is copied verbatim from the running cluster (ArgoCD
+# v3.4.2), which is the stock 3.4.2 list with the EndpointSlice entry
+# removed. It is NOT the 5-entry list cluster-rebuild.md used to carry:
+# 3.x added the Cilium and Kyverno exclusions, and the old inline patch
+# would have quietly reverted them on a rebuild. Neither is installed here,
+# so nothing broke — but the bootstrap should reproduce the cluster, not an
+# older shape of it. Re-diff this against argocd-cm after any ArgoCD
+# upgrade.
+#
+# Kept as a file rather than the inline `kubectl patch` with an embedded
+# \n-escaped YAML string that used to live in the runbook: that form was
+# unreadable, unreviewable in a diff, and impossible to lint.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.exclusions: |
+    ### Network resources created by the Kubernetes control plane and excluded to reduce the number of watched events and UI clutter
+    - apiGroups:
+      - ""
+      kinds:
+      - Endpoints
+    ### Internal Kubernetes resources excluded reduce the number of watched events
+    - apiGroups:
+      - coordination.k8s.io
+      kinds:
+      - Lease
+    ### Internal Kubernetes Authz/Authn resources excluded reduce the number of watched events
+    - apiGroups:
+      - authentication.k8s.io
+      - authorization.k8s.io
+      kinds:
+      - SelfSubjectReview
+      - TokenReview
+      - LocalSubjectAccessReview
+      - SelfSubjectAccessReview
+      - SelfSubjectRulesReview
+      - SubjectAccessReview
+    ### Intermediate Certificate Request excluded reduce the number of watched events
+    - apiGroups:
+      - certificates.k8s.io
+      kinds:
+      - CertificateSigningRequest
+    - apiGroups:
+      - cert-manager.io
+      kinds:
+      - CertificateRequest
+    ### Cilium internal resources excluded reduce the number of watched events and UI Clutter
+    - apiGroups:
+      - cilium.io
+      kinds:
+      - CiliumIdentity
+      - CiliumEndpoint
+      - CiliumEndpointSlice
+    ### Kyverno intermediate and reporting resources excluded reduce the number of watched events and improve performance
+    - apiGroups:
+      - kyverno.io
+      - reports.kyverno.io
+      - wgpolicyk8s.io
+      kinds:
+      - PolicyReport
+      - ClusterPolicyReport
+      - EphemeralReport
+      - ClusterEphemeralReport
+      - AdmissionReport
+      - ClusterAdmissionReport
+      - BackgroundScanReport
+      - ClusterBackgroundScanReport
+      - UpdateRequest

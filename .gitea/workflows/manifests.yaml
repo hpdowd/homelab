@@ -9,10 +9,12 @@ on:
   push:
     paths:
       - "k8s/**"
+      - "bootstrap/**"
       - ".gitea/workflows/manifests.yaml"
   pull_request:
     paths:
       - "k8s/**"
+      - "bootstrap/**"
   workflow_dispatch: {}
 
 jobs:
@@ -48,6 +50,10 @@ jobs:
         # -ignore-missing-schemas skips CRDs we don't vendor schemas for
         # (ArgoCD Application, SealedSecret, VMRule, etc.) while still
         # catching real errors in core kinds (Deployment, Service, PVC...).
+        #
+        # bootstrap/ is included because argocd-cm-patch.yaml is an ordinary
+        # ConfigMap and gets real schema validation. It is applied by
+        # bootstrap.sh, outside ArgoCD, so nothing else would ever check it.
         run: |
           kubeconform \
             -summary \
@@ -55,4 +61,23 @@ jobs:
             -ignore-missing-schemas \
             -kubernetes-version 1.30.0 \
             -schema-location default \
-            $(find k8s -name '*.yaml' -o -name '*.yml')
+            $(find k8s bootstrap \( -name '*.yaml' -o -name '*.yml' \))
+
+      - name: Shell syntax
+        # bash is in the runner image, so this is free. Catches the class of
+        # typo that would otherwise only surface partway through a rebuild,
+        # which is the worst possible time to find it.
+        run: |
+          for f in $(find . -name '*.sh' -not -path './.git/*'); do
+            echo "checking $f"
+            bash -n "$f"
+          done
+
+      # NOT COVERED HERE: ansible/. The honest check is
+      # `ansible-playbook --syntax-check` (plus ansible-lint), and both need
+      # Python, which this host-mode runner image does not have. Installing a
+      # Python toolchain per run to lint three small roles is not worth it —
+      # and CI would not have caught either real Ansible defect found on
+      # 2026-07-27 (a removed callback plugin, and an assert that only fails
+      # under --check). Both needed an actual run. `--check --diff` before
+      # applying is the control that works; see ansible/README.md.
