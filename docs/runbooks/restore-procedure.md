@@ -353,7 +353,7 @@ table below. (If a row says "pending" and you're reading this, go do one.)
 | Nextcloud | 2026-06-12        | OK — `restic check` clean, 10% read-data clean (182 packs), DB dump restored + `pg_restore --list` valid (1642 TOC entries, PG 18.4), config + sample dirs restored from B2 sha256-identical to live. One dir "missing" turned out to be created an hour *after* the snapshot — expected. |
 | Gitea     | 2026-06-12        | OK — `restic check --read-data` clean (100% of packs), full restore, `PRAGMA integrity_check` = ok on the restored SQLite DB, all 12 repos present in `/data/git/henry/`. |
 | Immich    | 2026-07-27        | OK — `restic check` clean, dump restored into the paired VectorChord image, `pg_restore` exit 0 with zero errors/warnings (509 TOC entries, PG 14.19). 61 tables and extensions identical to live including `vchord 0.4.3`; asset 5036 / smart_search 4728 / person 64 / album 11 all match. `clip_index` survived the round-trip — ANN query returns 0.0 self-match. 26 files from a bounded `upload/<uid>/00` + `profile` + `library` restore sha256-identical to live, no drift either direction. |
-| Paperless | (pending)         | Deployed 2026-07-23, snapshots verified structurally but no test restore yet. |
+| Paperless | (not yet worth it) | Deployed 2026-07-23 but not in real use — one document, 1.6MiB of media. Snapshots verified structurally (`restic check` clean). No test restore because there's nothing in there to lose yet; do one once documents are actually going in. |
 
 Notes from the 2026-06-12 run: in-cluster throwaway pods with each
 namespace's `backup-credentials` (the pattern in operations.md) work fine

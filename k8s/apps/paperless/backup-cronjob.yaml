@@ -105,9 +105,15 @@ spec:
                   done
 
                   echo "[backup] Pruning old snapshots..."
-                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                  # --group-by tags is load-bearing — restic's default of
+                  # host,paths groups by the pod name, which is unique per run,
+                  # so retention silently kept every snapshot forever. See the
+                  # gitea cronjob for the full write-up.
+                  restic forget --group-by tags \
+                    --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
                     --prune --tag paperless-media || true
-                  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+                  restic forget --group-by tags \
+                    --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
                     --prune --tag paperless-db || true
 
                   echo "[backup] Done. Current snapshots:"
