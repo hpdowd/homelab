@@ -286,6 +286,26 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
    every secret in the repo — so `prune` must never be enabled on it, and
    `kubeseal --fetch-cert` should be diffed against the backup before syncing.
 
+   **Committing it immediately found something worse.** ArgoCD could not render the
+   Application: `https://bitnami-labs.github.io/sealed-secrets`, the chart repo the live
+   controller was installed from in May, now returns a bare 404. The project moved from the
+   `bitnami-labs` org to `bitnami` on 2026-06-15, and GitHub Pages does not redirect across
+   an org move the way git and browser links do. The correct URL is
+   `https://bitnami.github.io/sealed-secrets`, which still carries 2.18.6 / app 0.37.0 —
+   an exact match for what is running. Both `k8s/infrastructure/sealed-secrets.yaml` and
+   `bootstrap/versions.env` now point there.
+
+   The general lesson is the one to keep: **pinning a version does not protect you if the
+   host disappears.** Every chart in `k8s/infrastructure/` is pinned by version, which
+   guards against surprise upgrades but says nothing about whether the repo still exists.
+   A rebuild is exactly when that bites, because it is the only time all of them are
+   fetched at once, and it is the worst time to discover it. Nothing currently checks
+   reachability — the running cluster does not care, because the charts were fetched
+   months ago.
+
+   Worth a periodic `helm repo update` against every `repoURL` in `k8s/`, as a cheap smoke
+   test for the rebuild path. Not yet an open action; noting it here first.
+
 ## 4. Worker memory limits are 191% of allocatable
 
 **Severity: medium. Silent until several workloads peak together.**

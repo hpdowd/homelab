@@ -96,8 +96,15 @@ info "Sealed Secrets (chart $SEALED_SECRETS_CHART_VERSION)"
 if helm status sealed-secrets -n "$SEALED_SECRETS_NAMESPACE" >/dev/null 2>&1; then
   ok "release already exists, leaving it alone"
 else
-  helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets >/dev/null 2>&1 || true
+  helm repo add sealed-secrets "$SEALED_SECRETS_REPO" >/dev/null 2>&1 || true
   helm repo update sealed-secrets >/dev/null
+  # Fail loudly here rather than at `helm install`. A chart repo that has
+  # moved returns a 404 on index.yaml, and the install error underneath it
+  # is much less obvious than this one.
+  helm search repo sealed-secrets/sealed-secrets \
+    --version "$SEALED_SECRETS_CHART_VERSION" 2>/dev/null | grep -q sealed-secrets \
+    || die "chart sealed-secrets $SEALED_SECRETS_CHART_VERSION not found at $SEALED_SECRETS_REPO
+  The repo may have moved again. Check versions.env."
   # fullnameOverride matches the live install and every runbook reference;
   # without it the chart names the Deployment `sealed-secrets` and kubeseal's
   # defaults stop lining up.

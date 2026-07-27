@@ -96,6 +96,18 @@ found by diffing against the live cluster on 2026-07-27:
   so nothing was broken, but `argocd-cm-patch.yaml` is now copied verbatim
   from the running cluster. Re-diff it after any ArgoCD upgrade.
 
+Then committing the Sealed Secrets Application found a fourth, and the worst
+of them: **the chart repo the live controller was installed from no longer
+exists.** `https://bitnami-labs.github.io/sealed-secrets` returns a bare 404
+— the project moved org on 2026-06-15 and GitHub Pages does not redirect
+across org moves. The running controller neither knows nor cares, because it
+was installed in May. A rebuild would have hit it cold.
+
+That is the argument for this directory in one line. The URL had been dead
+for six weeks, and nothing in a healthy cluster could have told you. Pinning
+versions guards against surprise upgrades; it says nothing about whether the
+host is still there.
+
 None of these had caused an outage, because none had been exercised. That is
 the point: an untested rebuild path is a claim, not a capability. This
 script has been syntax- and dry-run-checked against the live cluster, but
