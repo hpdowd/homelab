@@ -25,3 +25,15 @@
       [Journal]
       SystemMaxUse={{ journald_max_use }}
   notify: Restart systemd-journald
+
+# The cap was first applied on 2026-07-26 by appending a [Journal] block to
+# journald.conf itself. The drop-in above supersedes it, so the setting was
+# correct either way — but two sources of truth for one value is precisely
+# the drift this layer exists to remove, and the next person to raise the
+# cap would edit one and not the other. No-op once the block is gone.
+- name: Remove the hand-added journald cap superseded by the drop-in
+  ansible.builtin.replace:
+    path: /etc/systemd/journald.conf
+    regexp: '\n+\[Journal\]\nSystemMaxUse={{ journald_max_use }}\s*\Z'
+    replace: "\n"
+  notify: Restart systemd-journald

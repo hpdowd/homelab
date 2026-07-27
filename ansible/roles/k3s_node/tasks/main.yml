@@ -59,6 +59,10 @@
   check_mode: false
 
 - name: Assert journald cap is actually in effect
+  # Skipped under --check: the drop-in above has not been written, so this
+  # would report drift that the same run is in the middle of fixing. It
+  # fails the play (serial: 1) before the second node is ever reached.
+  when: not ansible_check_mode
   ansible.builtin.assert:
     that: "'SystemMaxUse=' + journald_max_use in journald_effective.stdout"
     fail_msg: >-
