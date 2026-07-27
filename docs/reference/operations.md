@@ -202,6 +202,11 @@ kubectl run restic-check -n <ns> --rm -it --restart=Never --image=alpine:3.20 \
   --overrides='{"spec":{"containers":[{"name":"restic-check","image":"alpine:3.20","command":["/bin/sh","-c","apk add --no-cache restic && restic snapshots && restic check"],"envFrom":[{"secretRef":{"name":"backup-credentials"}}]}]}}'
 ```
 
+That `restic check` is only the cheap end of the ladder — it proves the
+repo is structurally sound, not that the data would load back into a
+running app. For the sampled-read and full test-restore procedures, see
+`docs/runbooks/backup-verification.md`.
+
 ## When something looks wrong
 
 A short diagnosis flow that catches most of what bites me:

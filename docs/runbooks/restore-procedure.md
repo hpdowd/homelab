@@ -1,8 +1,11 @@
 # Restoring from the B2 backups
 
 This is the runbook I'll be very glad exists if I ever need it. It covers
-Nextcloud and Gitea, both backed up to Backblaze B2 by the daily restic
-CronJobs.
+Nextcloud, Gitea, Immich and Paperless, all backed up to Backblaze B2 by
+the daily restic CronJobs.
+
+To check the backups are sound *without* a real restore, see
+`backup-verification.md` — that's the drill, this is the emergency.
 
 ## What you need before you start
 
@@ -343,17 +346,27 @@ fusermount -u /mnt/restic
 
 A backup that's never been restored is a hope, not a backup. I should run a
 full test restore into a scratch namespace once a quarter and update the
-table below. (If both rows say "pending" and you're reading this, go do
-one.)
+table below. (If a row says "pending" and you're reading this, go do one.)
 
 | Service   | Last test restore | Result |
 |-----------|-------------------|--------|
 | Nextcloud | 2026-06-12        | OK — `restic check` clean, 10% read-data clean (182 packs), DB dump restored + `pg_restore --list` valid (1642 TOC entries, PG 18.4), config + sample dirs restored from B2 sha256-identical to live. One dir "missing" turned out to be created an hour *after* the snapshot — expected. |
 | Gitea     | 2026-06-12        | OK — `restic check --read-data` clean (100% of packs), full restore, `PRAGMA integrity_check` = ok on the restored SQLite DB, all 12 repos present in `/data/git/henry/`. |
-| Immich    | (pending)         | Repo seeded + first snapshot verified on deploy day (2026-06-12), but no test restore yet — do one once the library has real photos in it. |
+| Immich    | 2026-07-27        | OK — `restic check` clean, dump restored into the paired VectorChord image, `pg_restore` exit 0 with zero errors/warnings (509 TOC entries, PG 14.19). 61 tables and extensions identical to live including `vchord 0.4.3`; asset 5036 / smart_search 4728 / person 64 / album 11 all match. `clip_index` survived the round-trip — ANN query returns 0.0 self-match. 26 files from a bounded `upload/<uid>/00` + `profile` + `library` restore sha256-identical to live, no drift either direction. |
+| Paperless | (pending)         | Deployed 2026-07-23, snapshots verified structurally but no test restore yet. |
 
 Notes from the 2026-06-12 run: in-cluster throwaway pods with each
 namespace's `backup-credentials` (the pattern in operations.md) work fine
 for this. Give the pod an `ephemeral-storage` limit, a full restore of
 the Nextcloud data set fills the worker's root disk and gets the pod
 evicted. Restore a bounded `--include` instead.
+
+Notes from the 2026-07-27 Immich run: worker1's root disk was down to
+7.5GiB free, so the bounded `--include` above isn't optional — a full
+22GiB library restore would have evicted the pod. Querying the restored
+`smart_search` table fails with `need 1 probes, but 0 probes provided`
+until you `SET vchordrq.probes = 1`; that's a VectorChord session GUC the
+Immich server sets for itself, not a sign of a bad restore. Verifying row
+counts against live only proves anything if nothing wrote between the
+snapshot and the check — worth confirming, as here, that the live-only
+diff is empty rather than assuming it.
