@@ -12,6 +12,14 @@ Only the third self-heals. This one runs once per rebuild and then never
 again, which is exactly why it needed to stop being a list of commands to
 copy out of a runbook.
 
+## Files
+
+| File | Purpose |
+|---|---|
+| bootstrap.sh | The sequence. Preflight, Sealed Secrets + master key, ArgoCD, the `argocd-cm` patch, repo credentials, `root-app`. Idempotent |
+| versions.env | Every pin, plus the chart repo URLs. The one file to edit when bumping |
+| argocd-cm-patch.yaml | The `resource.exclusions` ConfigMap patch that keeps `EndpointSlice` synced. Copied verbatim from the running cluster; re-diff after an ArgoCD upgrade |
+
 ## Usage
 
 ```bash

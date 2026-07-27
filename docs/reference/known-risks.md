@@ -254,7 +254,8 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
    `argocd-cm` exclusions patch, the repo credentials and `root-app` were a sequence of
    commands to copy out of `cluster-rebuild.md` §4–6. They are now
    `bootstrap/bootstrap.sh`, with versions pinned in `versions.env` and the ConfigMap patch
-   as a reviewable file rather than an `\n`-escaped string inside a `kubectl patch`.
+   as a reviewable file rather than an `\n`-escaped string inside a `kubectl patch`. The
+   decision, and the Ansible/Terraform alternatives rejected, are in ADR 017.
 
    Writing it found that **the runbook did not describe this cluster**. Three mismatches,
    all caught by diffing against live state rather than by reading:

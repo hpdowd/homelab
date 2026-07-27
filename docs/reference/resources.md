@@ -13,8 +13,8 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 | Component | Deployed from | Images | Docs | Releases / issues |
 |---|---|---|---|---|
 | k3s | `get.k3s.io` install script on the VMs | (bundled) | [docs.k3s.io](https://docs.k3s.io) | [k3s-io/k3s](https://github.com/k3s-io/k3s/releases) |
-| ArgoCD | raw `install.yaml` from the repo (see cluster-rebuild.md) | `quay.io/argoproj/argocd` | [argo-cd.readthedocs.io](https://argo-cd.readthedocs.io) | [argoproj/argo-cd](https://github.com/argoproj/argo-cd/releases) |
-| Sealed Secrets | `controller.yaml` from GitHub releases | `docker.io/bitnami/sealed-secrets-controller` | the [repo README + docs/](https://github.com/bitnami-labs/sealed-secrets) — there is no separate docs site | [bitnami-labs/sealed-secrets](https://github.com/bitnami-labs/sealed-secrets/releases) — `kubeseal` CLI comes from the same release; keep it ≥ controller version |
+| ArgoCD | raw `install.yaml` at a pinned tag, applied by `bootstrap/bootstrap.sh` | `quay.io/argoproj/argocd` | [argo-cd.readthedocs.io](https://argo-cd.readthedocs.io) | [argoproj/argo-cd](https://github.com/argoproj/argo-cd/releases) |
+| Sealed Secrets | chart: `bitnami.github.io/sealed-secrets` (**not** `bitnami-labs`, see below) — installed by `bootstrap/bootstrap.sh`, declared in `k8s/infrastructure/sealed-secrets.yaml` | `docker.io/bitnami/sealed-secrets-controller` | the [repo README + docs/](https://github.com/bitnami/sealed-secrets) — there is no separate docs site | [bitnami/sealed-secrets](https://github.com/bitnami/sealed-secrets/releases) — `kubeseal` CLI comes from the same release; keep it ≥ controller version |
 | Longhorn | chart: `charts.longhorn.io` | `docker.io/longhornio/*` | [longhorn.io/docs](https://longhorn.io/docs) — **versioned, switch the picker to the deployed minor** | [longhorn/longhorn](https://github.com/longhorn/longhorn/releases); issues there too — good search hit-rate for volume weirdness |
 | MetalLB | chart: `metallb.github.io/metallb` | `quay.io/metallb/*` + `quay.io/frrouting/frr` | [metallb.io](https://metallb.io) | [metallb/metallb](https://github.com/metallb/metallb/releases) |
 | Traefik | chart: `helm.traefik.io/traefik` | `docker.io/traefik` | [doc.traefik.io/traefik](https://doc.traefik.io/traefik/) — **versioned**; CRD reference under Routing → Providers → Kubernetes CRD | [traefik/traefik](https://github.com/traefik/traefik/releases) — v2→v3 default changes have bitten twice (readTimeout, entrypoints) |
@@ -54,6 +54,15 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 - **Charts**: [Artifact Hub](https://artifacthub.io) for discovery, but always
   pin from the project's own repo URL, and verify the version exists with
   `helm search repo` (gotcha: never trust a version from memory).
+- **A pinned version does not mean a reachable chart.** Repo URLs die
+  independently of the versions they serve, and a healthy cluster never
+  notices because its charts were fetched months ago. Sealed Secrets moved
+  from the `bitnami-labs` org to `bitnami` on 2026-06-15; GitHub Pages does
+  not redirect across an org move the way git and browser links do, so the
+  old URL had been returning a bare 404 for six weeks before anything asked
+  for it. A rebuild is the first thing that would have noticed, which is the
+  worst possible time. Re-running `helm repo add`/`update` against every
+  `repoURL` in `k8s/` is the cheap smoke test.
 - **Trust ladder for images**: project-owned registry (`ghcr.io/<project>`,
   `quay.io/<project>`, `registry.k8s.io`) → Docker official library image
   (`docker.io/<name>` with no namespace) → `linuxserver.io` repacks → random
@@ -67,7 +76,7 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 - **CRD schema lookups** (the wrong-kind/wrong-key gotchas):
   Traefik `Middleware`/`IngressRoute`/`ServersTransport` → doc.traefik.io;
   `VMRule`/`VMServiceScrape` → docs.victoriametrics.com operator section;
-  `SealedSecret` → bitnami-labs repo; `Certificate`/`ClusterIssuer` →
+  `SealedSecret` → the bitnami/sealed-secrets repo; `Certificate`/`ClusterIssuer` →
   cert-manager.io.
 
 ## Before an upgrade

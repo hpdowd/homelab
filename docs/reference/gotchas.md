@@ -225,7 +225,10 @@ dead backend. See `docs/lessons/k8s/netpol-fresh-pod-race.md`.
 The controller's master key must be restored **before** ArgoCD syncs
 anything, a fresh controller generates a new key and every SealedSecret
 in the repo fails to decrypt. `kubeseal --fetch-cert` should match the
-backed-up cert. See `docs/runbooks/cluster-rebuild.md` step 4.
+backed-up cert. `bootstrap/bootstrap.sh` refuses to start without the key
+rather than warning, because the failure is silent until apps fail to
+mount and unrecoverable short of re-sealing everything. See
+`docs/runbooks/cluster-rebuild.md` step 4.
 
 ## Nextcloud identity
 
@@ -330,3 +333,23 @@ kubectl get namespace monitoring -o json | \
 Verify versions with `helm search repo <chart>` before pinning, never
 trust a version from memory. All chart `targetRevision`s in this repo
 are pinned exactly; bumps are deliberate commits.
+
+A pin guarantees the version, not the host. Chart repo URLs die on their
+own schedule and a running cluster never notices, because it fetched the
+chart months ago. Sealed Secrets moved org (`bitnami-labs` → `bitnami`) on
+2026-06-15 and GitHub Pages does not redirect across org moves, so the URL
+in this repo had been a bare 404 for six weeks before ArgoCD was first
+asked to render it. Only a rebuild would have found it otherwise. See
+`docs/reference/resources.md`.
+
+## Declared is not applied
+
+ArgoCD self-heals `k8s/`, so for anything in there a committed file and a
+live cluster mean the same thing. **Below the cluster that equivalence is
+false.** `ansible/` only runs when someone runs it, and `bootstrap/` only
+on a rebuild. On 2026-07-27 the `k3s-agent`↔iSCSI shutdown ordering was
+found still missing from the worker two days after the outage it exists to
+prevent: the role was correct, the runbook documented it, and known-risks
+listed it as owned — but nothing had ever executed it. `--check --diff`
+compares declared against live and is the only thing that closes the gap.
+See known-risks §6.

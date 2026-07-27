@@ -103,10 +103,6 @@ homelab/
                         systemd shutdown ordering. Things no cluster tool can reach.
 ```
 
-Three layers, and only one of them self-heals:
-
-```
-ansible/    the two VMs          pull-on-demand, nothing runs it on a schedule
-bootstrap/  ArgoCD itself        once per rebuild
-k8s/        everything in-cluster  ArgoCD, continuous, self-healing
-```
+Three layers own this box, and only `k8s/` self-heals: ArgoCD reconciles it
+continuously, while `bootstrap/` runs once per rebuild and `ansible/` only
+when you run it. Drift below the cluster is invisible until someone looks.

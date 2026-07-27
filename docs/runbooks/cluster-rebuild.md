@@ -229,8 +229,9 @@ cd bootstrap
 ```
 
 It is idempotent, so a run that dies halfway can be re-run rather than
-unpicked. `bootstrap/README.md` has the full walkthrough; the parts worth
-knowing before you run it:
+unpicked. `bootstrap/README.md` has the full walkthrough and ADR 017 has why
+it is a script rather than more Ansible; the parts worth knowing before you
+run it:
 
 - **It refuses to start without the master key**, rather than warning. A
   controller installed without it generates a *fresh* keypair, and every
