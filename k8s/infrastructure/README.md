@@ -10,3 +10,5 @@ ArgoCD Applications for cluster-wide infrastructure — things every app depends
 | cert-manager-config.yaml + cert-manager-config/ | ClusterIssuer, wildcard Certificate for henrydowd.dev (wired to Traefik `default` TLSStore, ADR 007), plus a second wildcard Certificate for dowd.ie (loaded per-Ingress via `tls:` blocks, not the TLSStore) |
 | cloudflared.yaml + cloudflared/ | Cloudflare Tunnel — public ingress for `*.henrydowd.dev` |
 | victoria-metrics.yaml | Monitoring stack (vmsingle + Grafana + Alertmanager) |
+| longhorn.yaml | Block storage. **Manual sync only** — declared but not yet adopted over the hand-install; read the header before syncing (known-risks item 6) |
+| sealed-secrets.yaml | SealedSecret controller. **Manual sync only** — same pattern as longhorn.yaml; its private key is the trust root for every secret in this repo, so `prune` must never be enabled (known-risks item 10) |
