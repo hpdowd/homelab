@@ -12,14 +12,14 @@ Architecture: Authelia is the identity provider. Two integration modes:
   ForwardAuth would break: grafana, gitea (git over https), nextcloud (DAV),
   immich (mobile app), optionally argocd.
 
-WireGuard stays network-layer, untouched. Decisions to record in ADR 008
+WireGuard stays network-layer, untouched. Decisions to record in ADR 014
 before starting (step 0).
 
 ---
 
-## Step 0: ADR 008 + preflight
+## Step 0: ADR 014 + preflight
 
-Write `docs/adr/008-authelia-sso.md` recording:
+Write `docs/adr/014-authelia-sso.md` recording:
 
 | Decision | Choice | Why |
 |---|---|---|
@@ -223,6 +223,11 @@ ACL rules (added to configmap as each service is gated):
 rules:
   - domain: wiki.henrydowd.dev
     policy: one_factor
+  # dash.henrydowd.dev (homepage, phase 9): gate ONLY the henrydowd.dev host —
+  # leave dash.lan bare (cookie-domain redirect-loop). Gating here is the
+  # precondition for adding the keyed live-data widgets (phase-9 step 4).
+  - domain: dash.henrydowd.dev
+    policy: one_factor
   - domain: [proxmox.henrydowd.dev, amp.henrydowd.dev]
     policy: two_factor
   # optional LAN softening — LAN gets 1FA where internet needs 2FA:
@@ -290,7 +295,12 @@ identity_providers:
       - client_id: grafana
         client_secret: "$pbkdf2-sha512$..."
         authorization_policy: one_factor
-        redirect_uris: [https://grafana.henrydowd.dev/login/generic_oauth]
+        # Grafana is now LAN-only (grafana.lan, no henrydowd.dev host) — same
+        # bucket as ArgoCD below: this redirect URI is outside the cookie/cert
+        # domain, so either accept the cert-mismatch warning on grafana.lan or
+        # re-add a grafana.henrydowd.dev host just for the OIDC flow. root_url
+        # is http://grafana.lan, so match the scheme here.
+        redirect_uris: [http://grafana.lan/login/generic_oauth]
         scopes: [openid, profile, email, groups]
 ```
 
@@ -326,7 +336,7 @@ password login per app.
 - **Backup**: the SQLite DB holds TOTP/WebAuthn enrollments + OIDC consent.
   Either add it to a backup CronJob (gitea pattern: tiny, scale-to-0 not
   needed, sqlite `.backup` via `kubectl exec` is enough at this size) or
-  document as regenerable (re-enroll TOTP after restore). Decide in ADR 008.
+  document as regenerable (re-enroll TOTP after restore). Decide in ADR 014.
 - **Restore-order note** in `cluster-rebuild.md`: Sealed Secrets master key →
   Authelia synced+healthy → only then re-gate ingresses (else every gated
   service 502s while Authelia is down). ForwardAuth annotations are in git,
