@@ -36,13 +36,17 @@ spec:
           type: RuntimeDefault
       # Seed the writable /app/config emptyDir with the files we author. Homepage
       # itself then fills in the rest of its skeleton set (proxmox/docker/
-      # kubernetes.yaml, custom.*) on startup — it COPIES them into /app/config,
+      # kubernetes.yaml, custom.js) on startup — it COPIES them into /app/config,
       # which is why that dir can't be a read-only ConfigMap mount (EROFS crash,
       # the 2026-07-23 incident).
+      #
+      # The glob is `/defaults/*`, not `*.yaml`: the ConfigMap also carries
+      # custom.css. (The ConfigMap volume's own `..data`/`..2026_…` symlink dirs
+      # start with a dot, so the glob doesn't match them.)
       initContainers:
         - name: seed-config
           image: busybox:1.37
-          command: ["sh", "-c", "cp -L /defaults/*.yaml /app/config/"]
+          command: ["sh", "-c", "cp -L /defaults/* /app/config/"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -54,6 +58,30 @@ spec:
               readOnly: true
             - name: config
               mountPath: /app/config
+        # Second EROFS trap, different directory. Homepage is a Next.js app that
+        # SERVES A PRERENDERED PAGE built into the image (the "My First Service"
+        # demo) and regenerates it via /api/revalidate, writing
+        # /app/.next/server/pages/en.html. Under readOnlyRootFilesystem that
+        # write fails EROFS, the page never regenerates, and the dashboard is
+        # frozen on the demo content forever — no crash, just a wrong page.
+        # (Only the service/bookmark lists self-correct, because those are
+        # re-fetched client-side; title, header style and layout do not.)
+        # So /app/.next/server/pages is an emptyDir too, seeded from the image
+        # by this container — it has to be the homepage image, that's where the
+        # built pages live.
+        - name: seed-prerender
+          image: ghcr.io/gethomepage/homepage:v1.13.2
+          # `cp -r`, not `cp -a`: this runs as uid 1000 into a root-owned
+          # emptyDir, and -a's chown/utimes attempts just print noise.
+          command: ["sh", "-c", "cp -r /app/.next/server/pages/. /seed/"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: prerender
+              mountPath: /seed
       containers:
         - name: homepage
           image: ghcr.io/gethomepage/homepage:v1.13.2
@@ -81,6 +109,15 @@ spec:
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
             limits: { memory: "256Mi" }
+          # Burns the real config into the prerendered page BEFORE the pod goes
+          # Ready: k8s holds off readiness/liveness until the startup probe
+          # passes, and it stops probing after the first success. Without this
+          # the first visitor after every restart gets served the image's demo
+          # page until their browser triggers a revalidate.
+          startupProbe:
+            httpGet: { path: /api/revalidate, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet: { path: /api/healthcheck, port: http }
             periodSeconds: 10
@@ -97,6 +134,10 @@ spec:
             # render cache too (outside /app/config).
             - name: cache
               mountPath: /app/.next/cache
+            # …and for the prerendered page /api/revalidate rewrites. Seeded
+            # from the image by the seed-prerender initContainer above.
+            - name: prerender
+              mountPath: /app/.next/server/pages
       volumes:
         # ConfigMap is the SOURCE the initContainer copies from — never mounted
         # onto /app/config directly (read-only mount => EROFS on homepage's seed).
@@ -106,4 +147,6 @@ spec:
         - name: config
           emptyDir: {}
         - name: cache
+          emptyDir: {}
+        - name: prerender
           emptyDir: {}
