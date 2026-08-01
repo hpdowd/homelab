@@ -1,10 +1,10 @@
 # The config we author lives here in git — homepage has no database and no PVC.
 # A pod loss re-renders the page from this ConfigMap.
 #
-# This holds ONLY the files we control (settings/services/bookmarks/widgets).
-# Homepage v1.x seeds the rest of its skeleton set (docker.yaml, kubernetes.yaml,
-# proxmox.yaml, custom.css, custom.js) into /app/config at startup by COPYING
-# from /app/src/skeleton — a write. So /app/config must be writable: the
+# This holds ONLY the files we control (settings/services/bookmarks/widgets +
+# custom.css). Homepage v1.x seeds the rest of its skeleton set (docker.yaml,
+# kubernetes.yaml, proxmox.yaml, custom.js) into /app/config at startup by
+# COPYING from /app/src/skeleton — a write. So /app/config must be writable: the
 # deployment mounts an emptyDir there and an initContainer copies these files in
 # (see deployment.yaml). Mounting this ConfigMap read-only over /app/config
 # directly makes that seed copy fail EROFS and crashloops the pod — that was the
@@ -22,25 +22,29 @@ data:
     title: Dowd Homelab
     theme: dark
     color: slate
-    headerStyle: boxedWidgets
+    # `clean` = no chrome around the header widgets; the masthead's weight and
+    # spacing come from custom.css instead of homepage's boxes.
+    headerStyle: clean
     target: _blank        # open service links in a new tab
     hideVersion: true     # drop the homepage version from the footer
-    # Groups map to the named groups in services.yaml below. Group icons are
-    # Material Design Icons (mdi-*, browser-fetched); per-service brand icons
-    # are on the services themselves.
+    useEqualHeights: true # ragged card heights are the main "unfinished" tell
+    quicklaunch:
+      searchDescriptions: true
+      showSearchSuggestions: false
+    # Groups map to the named groups in services.yaml below, and the order here
+    # is the order they render: the household's services first, Henry's last.
+    # No group icons on purpose — the uppercase label + rule in custom.css is
+    # the whole heading treatment, and mdi icons would fight the brand icons.
     layout:
-      Infrastructure:
-        style: row
-        columns: 4
-        icon: mdi-server-network
       Media:
         style: row
         columns: 3
-        icon: mdi-multimedia
       Tools:
         style: row
         columns: 4
-        icon: mdi-tools
+      Infrastructure:
+        style: row
+        columns: 4
 
   services.yaml: |
     # Links-only first pass (phase 9 step 1): public + ungated, so NO widget:
@@ -48,6 +52,39 @@ data:
     # A link is not a secret; it's a hostname DNS already publishes.
     # Brand icons are dashboard-icons slugs (browser-fetched from the icon CDN);
     # each slug was verified to resolve before being pinned here.
+    #
+    # Descriptions say what the thing is *for*, in household language, not what
+    # it is technically — "Photos and videos", not "self-hosted photo library".
+    - Media:
+        - Immich:
+            href: https://immich.henrydowd.dev
+            description: Photos and videos
+            icon: immich.png
+        - Nextcloud:
+            href: https://nextcloud.henrydowd.dev
+            description: Files and calendar
+            icon: nextcloud.png
+        - Collabora:
+            href: https://collabora.henrydowd.dev
+            description: Documents and spreadsheets
+            icon: collabora-online.png
+    - Tools:
+        - Paperless:
+            href: https://paperless.henrydowd.dev
+            description: Scanned paperwork
+            icon: paperless-ngx.png
+        - Gitea:
+            href: https://git.henrydowd.dev
+            description: Code and repositories
+            icon: gitea.png
+        - Kiwix:
+            href: https://wiki.henrydowd.dev
+            description: Wikipedia, offline
+            icon: kiwix.png
+        - AMP:
+            href: https://amp.henrydowd.dev
+            description: Game servers
+            icon: amp.png
     - Infrastructure:
         - Proxmox:
             href: https://proxmox.henrydowd.dev
@@ -55,50 +92,23 @@ data:
             icon: proxmox.png
         - ArgoCD:
             href: http://argocd.lan
-            description: GitOps (LAN-only)
+            description: Deployments · LAN only
             icon: argo-cd.png
         - Grafana:
             href: http://grafana.lan
-            description: Metrics (LAN-only)
+            description: Metrics · LAN only
             icon: grafana.png
         - Technitium:
             href: http://technitium.lan
-            description: DNS (LAN-only)
+            description: DNS · LAN only
             icon: technitium.png
-    - Media:
-        - Immich:
-            href: https://immich.henrydowd.dev
-            description: Photos
-            icon: immich.png
-        - Nextcloud:
-            href: https://nextcloud.henrydowd.dev
-            description: Files
-            icon: nextcloud.png
-        - Collabora:
-            href: https://collabora.henrydowd.dev
-            description: Office
-            icon: collabora-online.png
-    - Tools:
-        - Gitea:
-            href: https://git.henrydowd.dev
-            description: Git
-            icon: gitea.png
-        - Kiwix:
-            href: https://wiki.henrydowd.dev
-            description: Offline wiki
-            icon: kiwix.png
-        - AMP:
-            href: https://amp.henrydowd.dev
-            description: Game server
-            icon: amp.png
-        # Added as they go live:
-        # - Paperless:   { href: https://paperless.henrydowd.dev, description: Documents }
+        # Added as it goes live:
         # - Vaultwarden: { href: https://vault.henrydowd.dev, description: Passwords }
 
   bookmarks.yaml: |
     - Reference:
         - Kubernetes docs:
-            - abbr: K8s
+            - abbr: K8
               href: https://kubernetes.io/docs/
         - ArgoCD docs:
             - abbr: CD
@@ -110,7 +120,8 @@ data:
   widgets.yaml: |
     # Header information widgets only — all non-sensitive. The `resources`
     # widget (CPU/mem/disk) stays out until the page is gated (step 4); no need
-    # to paint infra telemetry onto a world-readable page.
+    # to paint infra telemetry onto a world-readable page. Same reason there's
+    # no weather widget: it would publish the house's coordinates.
     - greeting:
         text_size: xl
         text: Dowd Homelab
@@ -122,3 +133,203 @@ data:
         provider: duckduckgo
         target: _blank
 
+  custom.css: |
+    /* Dowd Homelab — "house at night": deep field, tungsten light, glass cards.
+       Loaded before homepage's own stylesheet, so selectors are id-scoped to win
+       on specificity rather than leaning on !important. */
+
+    :root {
+      --hd-void: #070a11;
+      --hd-night: #121a2b;
+      --hd-ink: #eeece7;
+      --hd-mute: #868ea1;
+      --hd-lamp: #f0b45f;
+      --hd-line: rgba(255, 255, 255, 0.08);
+    }
+
+    html:root {
+      background:
+        radial-gradient(95% 60% at 18% 108%, rgba(240, 180, 95, 0.12) 0%, transparent 62%),
+        radial-gradient(85% 60% at 92% -5%, rgba(104, 138, 205, 0.18) 0%, transparent 62%),
+        linear-gradient(178deg, var(--hd-night) 0%, var(--hd-void) 62%);
+      background-attachment: fixed;
+    }
+
+    /* homepage paints an opaque --bg-color on body and #__next; let the field
+       through (specificity beats its `#__next,body,html{...}` rule) */
+    html body,
+    body #__next {
+      background: transparent;
+    }
+
+    /* --- masthead ---------------------------------------------------------- */
+
+    #information-widgets {
+      border-bottom: 1px solid var(--hd-line);
+      padding-bottom: 1.1rem;
+    }
+
+    #information-widgets .information-widget-greeting span {
+      font-size: 1.9rem;
+      font-weight: 200;
+      letter-spacing: -0.025em;
+      color: var(--hd-ink);
+    }
+
+    #information-widgets .information-widget-datetime span {
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: var(--hd-mute);
+    }
+
+    #information-widgets .information-widget-search {
+      flex: 0 1 19rem;
+    }
+
+    #information-widgets .information-widget-search input {
+      border: 1px solid var(--hd-line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      padding-left: 2.1rem;
+      height: 2.2rem;
+    }
+
+    #information-widgets .information-widget-search input::placeholder {
+      color: var(--hd-mute);
+    }
+
+    /* --- group headings: label, then a shelf out to the edge ---------------- */
+
+    #page_wrapper .service-group-name,
+    #page_wrapper .bookmark-group-name {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--hd-mute);
+    }
+
+    #page_wrapper .service-group-name::after,
+    #page_wrapper .bookmark-group-name::after {
+      content: "";
+      flex: 1;
+      margin-left: 1rem;
+      border-top: 1px solid var(--hd-line);
+    }
+
+    /* --- service cards: dark windows that light up on hover ---------------- */
+
+    #page_wrapper .service-card {
+      border: 1px solid var(--hd-line);
+      border-radius: 14px;
+      padding: 0.35rem;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 10px 22px -16px rgba(0, 0, 0, 0.95);
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease,
+        background 0.2s ease;
+    }
+
+    #page_wrapper .service-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(240, 180, 95, 0.38);
+      background: linear-gradient(180deg, rgba(240, 180, 95, 0.11), rgba(255, 255, 255, 0.02));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 16px 32px -18px rgba(0, 0, 0, 1),
+        0 0 38px -14px rgba(240, 180, 95, 0.5);
+    }
+
+    /* the icon is the filament: dim at rest, full colour when the card lights */
+    #page_wrapper .service-card img,
+    #page_wrapper .service-card svg {
+      filter: saturate(0.75) brightness(0.92);
+      transition: filter 0.2s ease;
+    }
+
+    #page_wrapper .service-card:hover img,
+    #page_wrapper .service-card:hover svg {
+      filter: saturate(1.05) brightness(1.05)
+        drop-shadow(0 0 10px rgba(240, 180, 95, 0.35));
+    }
+
+    #page_wrapper .service-name {
+      font-weight: 600;
+      letter-spacing: 0.005em;
+      color: var(--hd-ink);
+    }
+
+    #page_wrapper .service-description {
+      margin-top: 0.1rem;
+      font-weight: 400;
+      color: var(--hd-mute);
+    }
+
+    /* --- bookmarks --------------------------------------------------------- */
+
+    #bookmarks .bookmark-group {
+      flex: 0 1 auto;
+      max-width: 30rem;
+    }
+
+    #bookmarks .bookmark-icon {
+      border: 1px solid var(--hd-line);
+      border-right: 0;
+      border-radius: 12px 0 0 12px;
+      background: rgba(240, 180, 95, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--hd-lamp);
+    }
+
+    #bookmarks .bookmark-text {
+      border: 1px solid var(--hd-line);
+      border-left: 0;
+      border-radius: 0 12px 12px 0;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    #bookmarks .bookmark-name {
+      color: var(--hd-ink);
+    }
+
+    #bookmarks .bookmark-description {
+      color: var(--hd-mute);
+    }
+
+    /* --- odds and ends ------------------------------------------------------ */
+
+    html:root {
+      scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+    }
+
+    ::selection {
+      background: rgba(240, 180, 95, 0.28);
+      color: var(--hd-ink);
+    }
+
+    /* --- accessibility ----------------------------------------------------- */
+
+    #page_wrapper a:focus-visible,
+    #information-widgets input:focus-visible {
+      outline: 2px solid var(--hd-lamp);
+      outline-offset: 2px;
+      border-radius: 10px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #page_wrapper .service-card,
+      #page_wrapper .service-card img,
+      #page_wrapper .service-card svg {
+        transition: none;
+      }
+      #page_wrapper .service-card:hover {
+        transform: none;
+      }
+    }

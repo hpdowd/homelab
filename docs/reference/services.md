@@ -208,10 +208,22 @@ root). See ADR 009.
   The pod-IP entry is required or the kubelet probe — which hits the pod IP,
   not a hostname — 400s on host validation and the pod never goes Ready. The
   health endpoint is `/api/healthcheck` (v1.x; not `GET /`).
-- **Read-only root filesystem:** two `emptyDir` scratch mounts, `/app/.next/cache`
-  (Next.js render cache) and `/app/config/logs`. The ConfigMap ships all files
-  homepage looks for (incl. empty `docker.yaml`/`kubernetes.yaml`/`custom.*`)
-  because it can't create missing defaults on a read-only mount.
+- **Read-only root filesystem, three writable `emptyDir`s.** `/app/config`
+  (seeded by an initContainer with the files we author; homepage creates its
+  own skeleton files there at runtime — the readonly-config-erofs lesson),
+  `/app/.next/cache` (Next.js render cache), and `/app/.next/server/pages`
+  (seeded from the image by the `seed-prerender` initContainer). That last one
+  is not optional: homepage serves a **prerendered** page and rewrites it via
+  `/api/revalidate`; without a writable path that write fails EROFS and the
+  dashboard silently serves the image's demo page while still returning 200 —
+  the prerender-erofs lesson. A `startupProbe` on `/api/revalidate` regenerates
+  the page once before the pod goes Ready.
+- **Look:** `custom.css` ships as a ConfigMap key (hence the initContainer's
+  `cp -L /defaults/*`, not `*.yaml`) and is served at `/api/config/custom.css`.
+  It loads *before* homepage's own stylesheet, so its selectors are id-scoped
+  (`#page_wrapper …`) to win on specificity instead of using `!important`.
+  Everything else is `settings.yaml`: `headerStyle: clean`, `useEqualHeights`,
+  no group icons.
 - **A ConfigMap edit does NOT hot-reload** — after editing config,
   `kubectl -n homepage rollout restart deploy/homepage`.
 - Nothing to back up (stateless; config in git). The `dash.*` hosts carry no
