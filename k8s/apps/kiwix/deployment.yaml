@@ -64,9 +64,19 @@ spec:
               mountPath: /data
           resources:
             requests: { memory: "128Mi", cpu: "50m" }
-            # 768Mi not 512Mi: the cache bound above should hold this near
-            # ~150MiB, but cluster size varies per ZIM, so this is margin while
-            # the bound is proven. Walk it back once the plateau is confirmed.
+            # 768Mi not 512Mi. Measured under synthetic load far heavier than
+            # this thing ever really sees (1800 random-article reads + 360
+            # searches): anon plateaus at ~202MiB and stays there. Search is
+            # the bigger half of that (~60MiB of it arrives on the first few
+            # queries) but it bounds itself too.
+            #
+            # NOTE: memory.current will sit at ~99% of whatever limit you give
+            # it, and that is NOT a problem here — it is reclaimable ZIM page
+            # cache expanding to fill the cgroup. Under load memory.events
+            # shows `max` incrementing (reclaim happening) with oom_kill 0.
+            # Watch container_memory_rss, not working_set/current. The pre-fix
+            # failure looked the opposite way round: anon climbing to 452MiB
+            # while file cache got squeezed 260 -> 50MiB to make room for it.
             limits: { memory: "768Mi" }
       volumes:
         - name: data

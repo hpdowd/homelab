@@ -7,12 +7,13 @@
 ~1h to alert triage and root cause. Fix staged, not yet applied (see Status).
 
 ## Status
-Mitigated (root cause confirmed, fix staged not applied)
+Resolved
 
-The alert self-resolved — the pod restarted on its own and came back Ready.
-The underlying leak is unfixed in the cluster: the manifest change below is
-committed to the repo but has not been synced or verified against a running
-pod yet.
+Root cause confirmed, fix synced via ArgoCD (`5d966ab`) and load-tested
+against the running pod — anon memory plateaus at ~202MiB under load heavier
+than real traffic, against a 768Mi limit. Worth noting the alert had already
+"self-resolved" on its own before any of this: the pod restarted and came back
+Ready, which is precisely what made it look like a non-event.
 
 ## Context
 - **System / component:** `kiwix` Deployment, `kiwix` namespace, single
@@ -104,16 +105,17 @@ resources:
   limits: { memory: "768Mi" }   # was 512Mi
 ```
 
-`4 x 12 ZIMs` ≈ 100 MiB of cluster cache. The 768Mi is deliberate margin
-*while the bound is proven*, not the fix — cluster size varies per ZIM, and
+`4 x 12 ZIMs` ≈ 100 MiB of cluster cache. The 768Mi is margin, not the fix —
 raising the limit alone would only have moved the OOM a day or two out, since
-the cache grows to whatever ceiling it is given.
+the cache grows to whatever ceiling it is given. Measured plateau came in at
+~202 MiB anon, so 768Mi leaves ~3.8x headroom.
 
 Left alone on purpose: `KIWIX_ARCHIVE_CACHE_SIZE` / `KIWIX_SEARCHER_CACHE_SIZE`
-default to ~10% of book count, which is negligible at 12 books. They are not
-the driver here and tuning them would be noise.
+default to ~10% of book count, which is negligible at 12 books. Search turned
+out to be the larger half of the footprint, but it bounds itself at ~202 MiB,
+so there was nothing to buy by tuning them.
 
-**Not yet applied.** Requires a push to `git.henrydowd.dev` for ArgoCD to sync.
+Applied via ArgoCD auto-sync on push (`5d966ab`).
 
 ## Verification
 Done so far — that the var name is real for *this* build, rather than trusting
@@ -132,22 +134,57 @@ Worth noting: `ZIM_DIRENTCACHE` is documented upstream but is **absent** from
 this binary. Setting it would have been a silent no-op — which is the general
 hazard with tuning by env var, since an unrecognised name never errors.
 
-Still to do. The check that proves the fix — RSS must plateau well
-below the limit instead of climbing to meet it:
+Then synced and load-tested against the running pod, rather than waiting days
+on the crawler. Load was driven at the Service from an in-cluster pod, all
+responses checked for HTTP 200 (the first attempt at this silently 404'd —
+`/random?content=` wants the *content id* with the date suffix,
+`serverfault.com_en_all_2026-02`, not the catalog `<name>`. 300 requests of
+"flat memory" that were all 404s proved nothing. Always assert the status
+code before believing a load test).
 
-```bash
-# after sync, confirm the env var landed
-kubectl get deploy kiwix -n kiwix -o jsonpath='{.spec.template.spec.containers[0].env}'
+**Article reads — cluster cache bound holds:**
 
-# then watch anon memory over a few days of ambient crawl traffic.
-# PASS = plateaus ~150MiB. FAIL = still climbing toward 768Mi.
-kubectl exec -n kiwix deploy/kiwix -c kiwix -- \
-  sh -c 'grep -E "^anon " /sys/fs/cgroup/memory.stat; cat /sys/fs/cgroup/memory.current'
+| after | requests | anon |
+|---|---|---|
+| T0 | 0 | 26 MiB |
+| T1 | 600 | 60 MiB |
+| T2 | 1200 | 59 MiB |
+| T3 | 1800 | 59 MiB |
+
+Fills once, then completely flat over 1200 further reads — against the
+pre-fix behaviour of an unbroken 17 → 452 MiB climb.
+
+**Search — a separate path, also bounded.** Article reads alone were not a
+sufficient test; xapian searchers allocate independently of the cluster cache:
+
+| after | searches | anon |
+|---|---|---|
+| S1 | 120 | 199 MiB |
+| S2 | 240 (new terms) | 202 MiB |
+| S3 | 360 (repeat terms) | 202 MiB |
+
+Search is the bigger half of the footprint and most of it arrives on the
+first few queries, but it plateaus at ~202 MiB and holds.
+
+**Reading the result correctly.** At S2/S3 `memory.current` was 764MiB of the
+768Mi limit — 99%, which looks like the original problem. It is not:
+
+```text
+anon=202MiB  file=559MiB  inactive_file=404MiB  current=764MiB
+memory.events: low 0  high 0  max 750  oom 0  oom_kill 0
 ```
 
-Judge this on the **`container_memory_rss` trend over days**, not on a single
-reading — a fresh pod reads low for the first hour regardless of whether the
-fix works, which is exactly what made the original OOM look like a one-off.
+`max 750` means the cgroup kept hitting its ceiling and **reclaiming**, with
+`oom_kill 0` throughout. That is page cache correctly expanding to fill the
+cgroup and being evicted at the boundary. The pre-fix signature was the exact
+inverse — anon climbing while `cache` was squeezed 260 → 50MiB to make room.
+
+So: judge this on **`container_memory_rss` / cgroup `anon`**, never on
+`working_set` or `memory.current`, both of which will sit near the limit by
+design and mean nothing on their own. Over ambient traffic, judge on the
+multi-day trend — a fresh pod reads low for its first hour regardless of
+whether the fix works, which is exactly what made the original OOM look like
+a one-off.
 
 ## Prevention
 - The alert did its job; triage did not. `PodOOMKilled` on a pod that is
