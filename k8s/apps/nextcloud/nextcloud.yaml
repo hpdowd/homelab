@@ -33,6 +33,19 @@ spec:
       labels:
         app: nextcloud
     spec:
+      # Pin to the worker, same as every other app in k8s/apps/. Nextcloud was
+      # the one app namespace without a pin, and on 2026-08-10 that cost us:
+      # the worker rebooted for the containerd/local-path move to vdb, the
+      # scheduler placed these pods on k3s-control, and nothing moved them
+      # back — Kubernetes does not rebalance once a node returns. They ran
+      # there for 8 days serving a 60Gi Longhorn volume whose only replica is
+      # on the worker (control has allowScheduling=false), so every read and
+      # write crossed the network, and control's MemAvailable fell ~1GiB to
+      # within 25MiB of NodeMemoryLowControl firing.
+      # The cron and backup Jobs need no pin of their own: their podAffinity
+      # already co-locates them with this pod.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
       securityContext:
         seccompProfile:
           type: RuntimeDefault

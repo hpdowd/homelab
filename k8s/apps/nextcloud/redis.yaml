@@ -13,6 +13,10 @@ spec:
       labels:
         app: redis
     spec:
+      # Pinned to the worker for the same reason as the main nextcloud pod —
+      # see the note in nextcloud.yaml.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
       # Cache/lock state only (no PVC) — run it fully locked down.
       securityContext:
         runAsNonRoot: true
