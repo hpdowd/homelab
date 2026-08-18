@@ -36,7 +36,10 @@ spec:
                   topologyKey: kubernetes.io/hostname
           containers:
             - name: cron
-              image: nextcloud:33-apache
+              # Must stay byte-identical to the tag in nextcloud.yaml — this
+              # runs occ against the same data dir, so a version skew here
+              # is the same downgrade trap.
+              image: nextcloud:33.0.7-apache
               command:
                 [
                   "su",

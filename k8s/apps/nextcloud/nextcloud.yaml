@@ -51,10 +51,21 @@ spec:
           type: RuntimeDefault
       containers:
         - name: nextcloud
-          # 33-apache tag tracks the latest 33.x patch. Source AIO was on 33.0.5.1,
-          # so any 33.x is import-compatible. Do NOT jump to 34 here — Nextcloud
-          # only supports one-major-at-a-time upgrades, and you'd skip the migration.
-          image: nextcloud:33-apache
+          # Pinned to an exact patch, NOT the floating 33-apache tag. The
+          # floating tag made the running version a function of which node
+          # happened to pull it and when: control pulled 33.0.7 while the
+          # worker still had 33.0.5 cached, 33.0.7 upgraded the data dir, and
+          # when the pod moved back to the worker on 2026-08-18 Nextcloud
+          # refused to boot ("version of the data is higher than the docker
+          # image version" — downgrades are not supported). An exact tag makes
+          # the version a property of this file instead of the node cache.
+          #
+          # Bumping it is a deliberate act: check the release notes, then move
+          # this tag. Do NOT jump to 34 — Nextcloud only supports
+          # one-major-at-a-time upgrades, and you'd skip the migration.
+          # 33.0.8 is out as of 2026-08-18; this is held at 33.0.7 because
+          # that is what the data dir is already on, so it starts clean.
+          image: nextcloud:33.0.7-apache
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
