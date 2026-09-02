@@ -1,0 +1,50 @@
+# The one ForwardAuth middleware, referenced cross-namespace by every gated
+# Ingress/IngressRoute. Requires providers.kubernetesCRD.allowCrossNamespace=true
+# on Traefik (k8s/infrastructure/traefik.yaml) — without it Traefik silently
+# refuses the cross-namespace reference and the router 404s, which looks
+# nothing like an auth problem.
+#
+# Reference syntax (a typo here drops the whole router silently → 404, see the
+# Traefik/ingress gotcha):
+#   Ingress annotation:
+#     traefik.ingress.kubernetes.io/router.middlewares: authelia-forwardauth@kubernetescrd
+#     (format is <middleware-namespace>-<name>@kubernetescrd — compare the
+#      existing nextcloud-nextcloud-wellknown@kubernetescrd)
+#   IngressRoute:
+#     middlewares: [{name: forwardauth, namespace: authelia}]
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: forwardauth
+  namespace: authelia
+spec:
+  forwardAuth:
+    address: http://authelia.authelia.svc.cluster.local:9091/api/authz/forward-auth
+
+    # REQUIRED for the access_control `lan` network rule to mean anything.
+    # Without it Traefik does not pass the X-Forwarded-* set to the auth
+    # server and Authelia cannot see who is calling.
+    #
+    # This is safe ONLY because Traefik's forwardedHeaders.trustedIPs is left
+    # empty: Traefik therefore overwrites any client-supplied X-Forwarded-For
+    # with the real peer address before forwarding it here. Tunnel requests
+    # arrive as the cloudflared pod IP (10.42.x) and LAN requests as the real
+    # 192.168.1.x, which is exactly what the ACL needs. Adding the pod CIDR to
+    # trustedIPs would let the internet spoof itself onto the LAN — don't.
+    trustForwardHeader: true
+
+    # NOTE: Authelia's Traefik guide also lists `maxResponseBodySize: 8192`.
+    # That key exists for the file/label providers but NOT in the Traefik
+    # Middleware CRD this cluster runs — `kubectl apply --dry-run=server`
+    # rejects it with `unknown field "spec.forwardAuth.maxResponseBodySize"`,
+    # and ArgoCD would fail the sync the same way. Deliberately omitted; the
+    # CRD default is adequate.
+
+    # Identity handed down to the backend app. Harmless for the ForwardAuth
+    # services here (none of them consume it today), and the hook that any
+    # future header-auth integration would use.
+    authResponseHeaders:
+      - Remote-User
+      - Remote-Groups
+      - Remote-Email
+      - Remote-Name

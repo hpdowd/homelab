@@ -1,0 +1,178 @@
+# Authelia's whole configuration except the secrets, which arrive as files via
+# AUTHELIA_*_FILE env vars (see deployment.yaml). Everything in here is safe in
+# plain git: no keys, no hashes, no passwords.
+#
+# Validated against 4.39.20 with:
+#   docker run --rm -v "$PWD:/c" docker.io/authelia/authelia:4.39.20 \
+#     authelia validate-config --config /c/configuration.yml
+# Re-run that after ANY edit here and after every image bump. Authelia refuses
+# to start on an unknown key rather than ignoring it, so a schema drift between
+# 4.x minors is a CrashLoopBackOff, and because this pod gates other services
+# that crashloop is an outage of everything ForwardAuth'd, not just of itself.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authelia-config
+  namespace: authelia
+data:
+  configuration.yml: |
+    theme: 'light'
+
+    server:
+      address: 'tcp://0.0.0.0:9091'
+      # Stops Authelia writing /app/.healthcheck.env on boot. That file feeds
+      # the image's own healthcheck.sh, which nothing here uses — the pod is
+      # probed with httpGet on /api/health — and writing it is the ONLY thing
+      # that made the container fail against readOnlyRootFilesystem. Verified:
+      # with this false and a read-only rootfs the pod dies during startup
+      # checks with no useful error; with it true it starts clean and needs no
+      # writable mount over /app.
+      disable_healthcheck: true
+      # The authz endpoints (/api/authz/forward-auth among them) are enabled by
+      # default in 4.38+, so there is deliberately no `endpoints:` block here.
+      # Declaring one REPLACES the defaults rather than adding to them, which
+      # is an easy way to 404 the middleware.
+
+    log:
+      level: 'info'
+      format: 'text'
+
+    ntp:
+      # Authelia NTP-checks the clock at startup because TOTP depends on it.
+      # Keep the check (a skewed clock silently breaks every 2FA code) but stop
+      # it being able to KILL startup: disable_failure downgrades an
+      # unreachable time server from fatal to a logged warning. The nodes get
+      # their time from the Proxmox host, so Authelia's own probe is a
+      # second opinion, not the mechanism — and it is not worth letting an
+      # external UDP dependency keep the cluster's auth gateway from booting.
+      disable_failure: true
+
+    totp:
+      issuer: 'auth.henrydowd.dev'
+
+    identity_validation:
+      reset_password:
+        # jwt_secret arrives via
+        # AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE.
+        jwt_lifespan: '5 minutes'
+
+    authentication_backend:
+      # File backend, not LDAP: one or two humans live here (ADR 018). The
+      # file is a SealedSecret mounted read-only, so `watch` picks up a resealed
+      # users file without a pod restart.
+      file:
+        path: '/secrets/users/users.yml'
+        watch: true
+        password:
+          algorithm: 'argon2'
+
+    session:
+      # session.secret arrives via AUTHELIA_SESSION_SECRET_FILE.
+      name: 'authelia_session'
+      expiration: '12 hours'
+      inactivity: '2 hours'
+      remember_me: '1 month'
+      cookies:
+        # ONE cookie domain. henrydowd.dev covers every gated host, which is
+        # what makes a single login work across wiki/dash/proxmox/amp.
+        #
+        # Deliberately absent: `.lan` (not a parent of henrydowd.dev, and LAN
+        # hosts are served by bare un-annotated Ingresses anyway) and dowd.ie
+        # (a second apex — a cookie there would need its own authelia_url, so
+        # its own cert, tunnel route and DNS record; deferred, see ADR 018).
+        - domain: 'henrydowd.dev'
+          authelia_url: 'https://auth.henrydowd.dev'
+          default_redirection_url: 'https://dash.henrydowd.dev'
+
+    regulation:
+      # Brute-force lockout. This is the only thing standing between a public
+      # login page and an unlimited password-guessing budget.
+      max_retries: 3
+      find_time: '2 minutes'
+      ban_time: '5 minutes'
+
+    storage:
+      # storage.encryption_key arrives via AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE.
+      # Lose that key and this file is unreadable — see ADR 018's loss policy.
+      local:
+        path: '/data/db.sqlite3'
+
+    notifier:
+      # LOAD-BEARING, and not obvious: with the startup check enabled, a relay
+      # that refuses the connection is FATAL. Verified against 4.39.20 — a bad
+      # SMTP password produces
+      #   error="failed to dial connection: SMTP AUTH failed: 535 5.7.8 ..."
+      #   fatal="One or more providers had fatal failures performing startup
+      #          checks" providers="[notification]"
+      # and the process exits. That would let a rotated Brevo key, or Brevo
+      # simply being down at the wrong moment, take the auth gateway with it
+      # and 502 every ForwardAuth'd service — an email outage escalated into a
+      # cluster-wide auth outage. Off, so a broken relay costs only the thing
+      # it should: password-reset and verification mail.
+      #
+      # The trade is that a bad SMTP credential now fails quietly until someone
+      # needs a reset email. Step 2 of the phase-8 plan covers that by
+      # requiring a real password-reset mail to arrive before going further.
+      disable_startup_check: true
+      smtp:
+        # Same Brevo relay and the same verified sender as Alertmanager
+        # (victoria-metrics.yaml). The sender address is NOT arbitrary: Brevo
+        # only accepts senders verified on the account, so reuse the one that
+        # already works rather than inventing auth@ or noreply@.
+        address: 'submission://smtp-relay.brevo.com:587'
+        username: 'ae07ea001@smtp-brevo.com'
+        # password arrives via AUTHELIA_NOTIFIER_SMTP_PASSWORD_FILE.
+        sender: 'Authelia <homelab-monitor@henrydowd.dev>'
+        # The startup check is disabled at the notifier level above, so this
+        # address is only used if it is ever turned back on. It points at a
+        # real mailbox in our own domain rather than the upstream default of
+        # test@authelia.com, which a relay can legitimately refuse.
+        startup_check_address: 'homelab-monitor@henrydowd.dev'
+
+    telemetry:
+      metrics:
+        # Scraped by k8s/apps/monitoring/authelia-scrape.yaml. An auth outage
+        # takes every ForwardAuth'd service down with it, so this is one of the
+        # more load-bearing scrapes in the cluster.
+        enabled: true
+        address: 'tcp://0.0.0.0:9959'
+
+    access_control:
+      default_policy: 'deny'
+
+      networks:
+        - name: 'lan'
+          # NEVER add 10.42.0.0/16 here. That is the pod CIDR, and tunnel
+          # traffic arrives from it (the cloudflared pod) — adding it would
+          # make the entire internet count as "lan".
+          networks: ['192.168.1.0/24']
+
+      # These rules are INERT until the matching Ingress/IngressRoute carries
+      # the forwardauth middleware: with no middleware, no request for that
+      # host is ever shown to Authelia. That is deliberate — it lets the rules
+      # ship ahead of enforcement so that gating a service is a one-line
+      # annotation change per commit, per the phase-8 plan's step 4.
+      rules:
+        - domain: 'wiki.henrydowd.dev'
+          policy: 'one_factor'
+
+        # Gating this is the precondition for phase 9's keyed live-data
+        # widgets. Only the henrydowd.dev host is listed: dash.lan is served by
+        # a separate bare Ingress, and home.dowd.ie is out of scope until the
+        # dowd.ie decision is made (ADR 018) — it remains public and ungated,
+        # so DO NOT add keyed widgets to homepage until that is resolved.
+        - domain: 'dash.henrydowd.dev'
+          policy: 'one_factor'
+
+        # Two-factor for the two that reach real infrastructure. Proxmox is
+        # gated on the tunnel path only, by design — see ADR 018.
+        - domain:
+            - 'proxmox.henrydowd.dev'
+            - 'amp.henrydowd.dev'
+          policy: 'two_factor'
+
+        # Optional LAN softening, left off for now. First match wins, so these
+        # would have to go ABOVE the two_factor rule to have any effect:
+        #   - domain: 'amp.henrydowd.dev'
+        #     networks: ['lan']
+        #     policy: 'one_factor'

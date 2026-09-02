@@ -1,0 +1,15 @@
+# 1Gi is enormous for what this holds — a SQLite file with TOTP enrolments,
+# OIDC consent records, and the regulation (brute-force) ledger. It will sit
+# in the low single-digit MB. 1Gi is simply the smallest size worth asking
+# Longhorn for.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: authelia-data
+  namespace: authelia
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi

@@ -275,6 +275,44 @@ spec:
           annotations:
             summary: "No backup jobs at all in {{ $labels.namespace }}"
             description: "kube_job_status_completion_time has no backup-job series for {{ $labels.namespace }}, so BackupJobMissing is blind there. The CronJob was probably deleted or never recreated. Check `kubectl -n {{ $labels.namespace }} get cronjob`."
+    - name: homelab.authelia
+      rules:
+        # Authelia is the only workload here whose failure takes OTHER services
+        # down with it: while it is unavailable every ForwardAuth'd host
+        # (wiki/dash/amp on henrydowd.dev, and proxmox over the tunnel) returns
+        # 502 to the internet, because Traefik cannot complete the auth
+        # subrequest. So this is not "a pod is down", it is "the public side of
+        # four services is down", which is why it is critical rather than a
+        # warning and why the window is short.
+        #
+        # The LAN paths (.lan hosts, and proxmox over websecure) are ungated by
+        # design and keep working throughout — that is the break-glass route
+        # while this is firing. See ADR 018.
+        - alert: AutheliaDown
+          expr: |
+            up{job="authelia"} == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Authelia is down — every gated service is 502 from the internet"
+            description: "up{job=\"authelia\"} has been 0 for 3m. wiki/dash/amp.henrydowd.dev and proxmox.henrydowd.dev are returning 502 to the internet. LAN hostnames (.lan) and proxmox over HTTPS on the LAN are unaffected and are the way back in. Check `kubectl -n authelia logs deploy/authelia` — a config schema error after an image bump exits at startup checks."
+
+        # Guard for the alert above (the LonghornMetricsAbsent/Portfolio
+        # pattern): if the scrape itself breaks, up{job="authelia"} stops
+        # existing rather than going to 0, and AutheliaDown can never fire.
+        # This also trips if the deployment is scaled to zero or the
+        # VMServiceScrape is removed.
+        - alert: AutheliaMetricsAbsent
+          expr: |
+            absent(up{job="authelia"})
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Authelia metrics missing from VictoriaMetrics"
+            description: "up{job=\"authelia\"} has had no series for 15m — the authelia VMServiceScrape is broken, the Service lost its `app: authelia` label, or telemetry.metrics was disabled in the ConfigMap. AutheliaDown is blind until this is fixed."
+
     - name: homelab.portfolio
       rules:
         # The portfolio's live panels read VictoriaMetrics and Gitea over the

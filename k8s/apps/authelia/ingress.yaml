@@ -1,0 +1,38 @@
+# The login portal itself. Deliberately carries NO forwardauth annotation —
+# gating the thing you log in with is a redirect loop with extra steps.
+#
+# ONE hostname, and NOT the usual public+`.lan` pair every other service here
+# has. auth.lan was in the original plan and was removed after testing: the
+# portal HTML loads on it (200) but every API call returns 403, because
+# `auth.lan` matches no configured `session.cookies` domain and Authelia will
+# not issue or accept a session for a host it has no cookie for. The result is
+# a login page that renders perfectly and then refuses every submission, which
+# is a genuinely confusing thing to debug.
+#
+# Nothing is lost. auth.henrydowd.dev already resolves on the LAN — Technitium
+# split-horizon answers it with 192.168.1.200 and Traefik serves it with the
+# wildcard cert (ADR 007), which is the same mechanism that makes the OIDC
+# discovery URL work identically from the LAN, the internet, and inside the
+# cluster. One name for the portal everywhere is also what the session cookie
+# and every OIDC redirect_uri are pinned to.
+#
+# Adding a `.lan` portal later would mean a second entry in session.cookies
+# with its own authelia_url, which is the same cost as the dowd.ie problem in
+# ADR 018 — not worth it for a name that already resolves.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authelia
+  namespace: authelia
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: auth.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authelia
+                port: { number: 9091 }

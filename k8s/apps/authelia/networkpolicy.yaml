@@ -1,0 +1,35 @@
+# Default-deny ingress + minimum allowlist, same shape as the kiwix policy
+# (ADR 011). Two ports are reachable and nothing else:
+#   9091  the auth API + portal — from Traefik and from kubelet probes
+#   9959  Prometheus metrics — from vmagent
+#
+# Both callers are in-cluster, so the pod CIDR covers them; the two /32s are
+# the nodes, because kubelet probes arrive from the node IP rather than a pod
+# IP. Egress is left open (Brevo SMTP, and NTP, both leave the cluster).
+#
+# Safe against ADR 011's carve-out 2. That race — kube-router not yet having
+# registered a fresh pod's IP into the namespace source-set — bites short-lived
+# pods connecting to a same-namespace service in their first seconds, which is
+# what pulled the immich and nextcloud netpols. Nothing of that shape exists
+# here: one long-lived pod, no cron, and the traffic that matters arrives
+# cross-namespace and is matched by `ipBlock` on the pod CIDR rather than by a
+# podSelector, so it does not depend on that registration at all. Same
+# reasoning as the gitea netpol, which was kept.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-ingress
+  namespace: authelia
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - ipBlock: { cidr: 10.42.0.0/16 }
+        - ipBlock: { cidr: 192.168.1.10/32 }
+        - ipBlock: { cidr: 192.168.1.11/32 }
+      ports:
+        - { protocol: TCP, port: 9091 }
+        - { protocol: TCP, port: 9959 }

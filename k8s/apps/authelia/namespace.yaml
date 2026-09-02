@@ -1,0 +1,11 @@
+# Explicit namespace per ADR 014 (CreateNamespace=true is gone repo-wide).
+#
+# NOT given `Prune=false`. ADR 018 decides the SQLite DB is regenerable: it
+# holds TOTP enrolments and OIDC consents, both of which can be re-enrolled in
+# minutes, and nothing in it is irreplaceable the way nextcloud/immich/gitea
+# data is. If that decision is ever revisited (a household of users who'd all
+# have to re-enrol), guard this namespace and authelia-data the same way.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: authelia

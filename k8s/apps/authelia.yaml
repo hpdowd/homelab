@@ -1,0 +1,23 @@
+# Root-app is non-recursive: an app directory with no top-level Application
+# here is silently orphaned, never synced, and nothing warns about it.
+#
+# No CreateNamespace=true — the namespace is declared in
+# k8s/apps/authelia/namespace.yaml per ADR 014.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authelia
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.henrydowd.dev/henry/homelab.git
+    targetRevision: HEAD
+    path: k8s/apps/authelia
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authelia
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

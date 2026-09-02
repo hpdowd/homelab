@@ -24,6 +24,14 @@ spec:
         providers:
           kubernetesCRD:
             enabled: true
+            # Lets an Ingress/IngressRoute in one namespace reference a
+            # Middleware in another. Required for the single
+            # authelia-forwardauth@kubernetescrd middleware to be usable from
+            # kiwix/amp/homepage/proxmox instead of copying a Middleware object
+            # into each namespace. Without it Traefik refuses the reference and
+            # the router 404s silently — which looks like a routing bug, not an
+            # auth one.
+            allowCrossNamespace: true
           kubernetesIngress:
             enabled: true
 

@@ -1,0 +1,16 @@
+# Ports are NAMED because the VMServiceScrape in k8s/apps/monitoring selects
+# the endpoint by name (`metrics`), not by number.
+apiVersion: v1
+kind: Service
+metadata:
+  name: authelia
+  namespace: authelia
+  # This label is what the VMServiceScrape in k8s/apps/monitoring selects on.
+  labels:
+    app: authelia
+spec:
+  selector:
+    app: authelia
+  ports:
+    - { name: http,    port: 9091, targetPort: 9091 }
+    - { name: metrics, port: 9959, targetPort: 9959 }

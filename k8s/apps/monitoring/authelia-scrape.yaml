@@ -1,0 +1,29 @@
+# Scrape Authelia's telemetry endpoint (authelia:9959/metrics, enabled in
+# k8s/apps/authelia/configmap.yaml).
+#
+# This one matters more than most scrapes. Authelia is the only component whose
+# failure takes OTHER services down with it: every ForwardAuth'd host 502s while
+# it is unavailable, so "is Authelia up" is really "are wiki/dash/amp/proxmox
+# reachable from the internet". The AutheliaDown + AutheliaMetricsAbsent pair in
+# homelab-rules.yaml is the alert; this is what feeds it.
+#
+# VMServiceScrape (VictoriaMetrics operator), NOT ServiceMonitor — one wrong
+# kind fails the whole Application's sync batch (the grafana-monitoring-sync
+# cascade lesson).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: authelia
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: vm-k8s-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - authelia
+  selector:
+    matchLabels:
+      app: authelia
+  endpoints:
+    - port: metrics
+      path: /metrics

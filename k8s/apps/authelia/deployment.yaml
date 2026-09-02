@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authelia
+  namespace: authelia
+spec:
+  replicas: 1
+  # RWO Longhorn volume — Recreate, same as every other stateful pod here. A
+  # RollingUpdate would deadlock: the new pod can't attach the volume until the
+  # old one lets go, and the old one won't terminate until the new one is Ready.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authelia
+  template:
+    metadata:
+      labels:
+        app: authelia
+    spec:
+      # Same docker-link hygiene as paperless/immich: a Service named `authelia`
+      # in this namespace would otherwise inject AUTHELIA_PORT=tcp://ip:9091
+      # into the pod, and Authelia reads AUTHELIA_*-prefixed env vars as
+      # configuration. That collision is not hypothetical here the way it is
+      # elsewhere — this app's entire config surface is AUTHELIA_*.
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      securityContext:
+        # The image ships no USER and its entrypoint branches on uid: as root
+        # it chowns /config and su-execs down to PUID/PGID, but when the pod is
+        # already non-root it just `exec authelia` directly. Running as 1000
+        # takes that second branch, so the container needs no CHOWN/SETUID/
+        # SETGID at all and can drop every capability — a stronger posture than
+        # the capless-root shape paperless needs (ADR 011).
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Longhorn volumes arrive root-owned; fsGroup makes the kubelet chown
+        # the mount to 1000 so authelia can create db.sqlite3. This is the
+        # clean version of kiwix's chmod-777 init container.
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: authelia
+          # Pinned exactly. 4.39.20 (2026-05-26). Authelia's config schema
+          # drifts between 4.x minors and it hard-fails on unknown keys, so a
+          # floating tag turns an unattended autosync into a cluster-wide auth
+          # outage. Bump deliberately, and re-run validate-config (configmap.yaml)
+          # against the new tag first.
+          image: docker.io/authelia/authelia:4.39.20
+          args: ["--config", "/config/configuration.yml"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # Everything it writes lives on the PVC or the /tmp emptyDir.
+            readOnlyRootFilesystem: true
+          ports:
+            - { name: http, containerPort: 9091 }
+            - { name: metrics, containerPort: 9959 }
+          # Secrets as FILES, never as literal env values: an env var is
+          # visible in `kubectl describe pod` and in any crash dump, a mounted
+          # file is not. Authelia resolves every one of these itself.
+          env:
+            - name: AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE
+              value: /secrets/authelia/jwt_secret
+            - name: AUTHELIA_SESSION_SECRET_FILE
+              value: /secrets/authelia/session_secret
+            - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
+              value: /secrets/authelia/storage_encryption_key
+            - name: AUTHELIA_NOTIFIER_SMTP_PASSWORD_FILE
+              value: /secrets/authelia/smtp_password
+          volumeMounts:
+            - { name: config,  mountPath: /config,          readOnly: true }
+            - { name: secrets, mountPath: /secrets/authelia, readOnly: true }
+            - { name: users,   mountPath: /secrets/users,    readOnly: true }
+            - { name: data,    mountPath: /data }
+            - { name: tmp,     mountPath: /tmp }
+          # /api/health is the liveness endpoint (unauthenticated, returns 200
+          # once the server is listening). Startup is generous because the
+          # first boot creates and migrates the SQLite schema.
+          startupProbe:
+            httpGet: { path: /api/health, port: 9091 }
+            periodSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: { path: /api/health, port: 9091 }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /api/health, port: 9091 }
+            periodSeconds: 10
+          resources:
+            requests: { memory: "128Mi", cpu: "100m" }
+            # Measured elsewhere at ~100Mi resident for a file-backend install
+            # of this size; 512Mi is headroom, not an expectation. Keep the
+            # request honest — the worker schedules on requests and it is the
+            # binding constraint on this cluster (capacity-headroom.md).
+            limits: { memory: "512Mi" }
+      volumes:
+        - name: config
+          configMap:
+            name: authelia-config
+        - name: secrets
+          secret:
+            secretName: authelia-secrets
+            defaultMode: 0440
+        - name: users
+          secret:
+            secretName: authelia-users
+            defaultMode: 0440
+        - name: data
+          persistentVolumeClaim:
+            claimName: authelia-data
+        - name: tmp
+          emptyDir: {}
