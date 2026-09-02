@@ -19,11 +19,24 @@
 # Adding a `.lan` portal later would mean a second entry in session.cookies
 # with its own authelia_url, which is the same cost as the dowd.ie problem in
 # ADR 018 — not worth it for a name that already resolves.
+#
+# It DOES carry forceproto, though, and that is not optional. The portal is
+# reached through the tunnel like everything else, so it arrives on Traefik's
+# `web` entrypoint as plain HTTP. Serving the login page survives that, but
+# POST /api/user/session/elevation — the endpoint that issues the one-time
+# code for enrolling TOTP or WebAuthn — refuses with
+#   "Error occurred determining issuer"
+#   error="invalid X-Forwarded-Proto header value 'http'"
+# and the browser shows "Failed to generate One-Time Code. Please try again
+# later", which reads like a mail problem and is not one. Same root cause as
+# the gated hosts; the portal needs it too even though it is never gated.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: authelia
   namespace: authelia
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-forceproto@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
