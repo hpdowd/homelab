@@ -63,8 +63,10 @@ ansible-playbook -i inventory.ini site.yml --check --diff   # read the diff
 ansible-playbook -i inventory.ini site.yml
 ```
 
-That applies the journald cap, `/etc/rancher/k3s/config.yaml`, and the
-`k3s-agent` ↔ iSCSI shutdown ordering. It is idempotent, it restarts
+That applies the journald cap, `/etc/rancher/k3s/config.yaml`, the
+`k3s-agent` ↔ iSCSI shutdown ordering, and the `vdb` directories and bind
+mount that keep containerd and local-path off the OS disk. It is
+idempotent, it restarts
 nothing but journald, and it is the only mechanism that reapplies any of
 this. These steps used to live here as commands to copy; on 2026-07-27 the
 iSCSI ordering was found missing from the live worker two days after the
@@ -149,13 +151,45 @@ patch 404s, wait and retry. Confirm with
 
 ### Disk reservation, set this before the disk is created
 
-Longhorn reserves 30% of a disk by default. That default is written for
-a *shared* OS disk; `vdb` is dedicated to Longhorn and needs nothing like
-it. Left at 30 it reserves ~147GiB of the 491GiB disk, and because
-Longhorn schedules on **provisioned** size rather than actual usage, the
-disk crosses into `Schedulable: False` / `DiskPressure` long before it is
-anywhere near full. An unschedulable disk silently disables auto-salvage,
-which is how a routine reboot became a 16-hour outage on 2026-07-25.
+Longhorn reserves 30% of a disk by default. Left at 30 it reserves ~147GiB
+of the 491GiB disk, and because Longhorn schedules on **provisioned** size
+rather than actual usage, the disk crosses into `Schedulable: False` /
+`DiskPressure` long before it is anywhere near full. An unschedulable disk
+silently disables auto-salvage, which is how a routine reboot became a
+16-hour outage on 2026-07-25.
+
+The reserve is not free to set at zero either, and this changed on
+2026-08-10. **`vdb` is no longer dedicated to Longhorn.** It now also
+carries containerd's image store (~24GiB) and the local-path PVs (~6GiB),
+both moved off the worker's OS disk (known-risks #3). The reserve is what
+stops Longhorn from scheduling into space that data needs, so it has to
+cover them with room to grow: 16% = 80GiB against ~30GiB in use today, and
+~60GiB if containerd and the local-path claims both grow out to their
+plausible maximum.
+
+Squeezed from both sides, and the two failure modes are not symmetric:
+
+- **Too low** and Longhorn schedules into space containerd needs. With
+  333GiB actually free on `vdb`, this is not currently a credible failure.
+- **Too high** and `ProvisionedLimit = StorageMaximum − reserved` drops
+  under `ScheduledTotal` (351GiB of *provisioned* volume sizes), the disk
+  goes `Schedulable: False`, and auto-salvage silently stops working. That
+  is the 2026-07-25 outage, and it is the one that has actually happened.
+
+So err low. The ceiling is ~140GiB; anything near it reproduces the
+outage. There is also a softer ceiling worth respecting:
+`LonghornProvisioningHeadroomLow` warns when `ScheduledTotal /
+ProvisionedLimit > 0.9`, which a 100GiB reserve reaches at 0.8975 — close
+enough that one new PVC would trip it.
+
+| | GiB |
+|---|---|
+| StorageMaximum | 491.1 |
+| reserved (16%) | 80.0 |
+| ProvisionedLimit | 411.1 |
+| ScheduledTotal | 351.0 |
+| headroom | 60.1 |
+| alert ratio | 0.854 (warns >0.90) |
 
 Set the *setting* first, so the default disk is created correctly and a
 rebuild never inherits the problem:
@@ -163,7 +197,7 @@ rebuild never inherits the problem:
 ```bash
 kubectl -n longhorn-system patch settings.longhorn.io \
   storage-reserved-percentage-for-default-disk \
-  --type=merge -p '{"value":"10"}'
+  --type=merge -p '{"value":"16"}'
 ```
 
 If the disk already exists, the setting does not retroactively change it,
@@ -179,12 +213,12 @@ kubectl -n longhorn-system get nodes.longhorn.io k3s-worker1 \
 # default-disk-25a91b93472172c4  /mnt/longhorn  reserved=158188673433
 ```
 
-Then patch it (52729557811 = 10% of the 527295578112 StorageMaximum;
-recompute if the disk is a different size):
+Then patch it (85899345920 = 80GiB ≈ 16% of the 527295578112
+StorageMaximum; recompute if the disk is a different size):
 
 ```bash
 kubectl -n longhorn-system patch nodes.longhorn.io k3s-worker1 --type=merge \
-  -p '{"spec":{"disks":{"<disk-key>":{"storageReserved":52729557811}}}}'
+  -p '{"spec":{"disks":{"<disk-key>":{"storageReserved":85899345920}}}}'
 ```
 
 Verify the condition, not the setting; the setting can be right while the

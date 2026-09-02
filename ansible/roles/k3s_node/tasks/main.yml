@@ -32,9 +32,11 @@
         - traefik
         - servicelb
       write-kubeconfig-mode: "0644"
-      # local-path writes here. Left at the k3s default for now; pointing it
-      # at vdb is known-risks #3 and needs the directory to exist on the
-      # target node first.
+      # local-path writes here. A server flag, so it is cluster-wide even
+      # though the disk pressure it solves is the worker's — see the variable
+      # for what that means for control, which has no vdb. Existing PVs keep
+      # the path recorded in their own spec.local.path; this only affects
+      # PVs created from here on.
       default-local-storage-path: {{ k3s_local_storage_path }}
   when: inventory_hostname in groups['k3s_servers']
 

@@ -1,0 +1,131 @@
+---
+# Keeping the worker's 41GiB OS disk off the kubelet eviction threshold.
+#
+# vda2 hit 85% for the third time on 2026-08-10. The space was never
+# garbage — 54 container images all in use, journal already capped at 200M,
+# kubelet logging FreeDiskSpaceFailed every 90 seconds and freeing zero
+# bytes. Growing the disk was already tried in June (32→44GiB) and the creep
+# came back, so the two large consumers move to vdb instead:
+#
+#   containerd images   24GiB   bind-mounted, below
+#   local-path PVs      6.1GiB  k3s server flag, roles/k3s_node
+#
+# This role only ever *prepares* the move: directories, the mount unit, the
+# ordering drop-in. It does not stop k3s and it does not copy data, matching
+# the rest of the ansible layer — the actual cutover is a maintenance-window
+# action with volumes detaching, not something an Ansible run should do as a
+# side effect of running the playbook.
+
+- name: Ensure containerd target directory exists on the data disk
+  ansible.builtin.file:
+    path: "{{ k3s_containerd_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure local-path target directory exists on the data disk
+  ansible.builtin.file:
+    path: "{{ k3s_local_storage_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# systemd derives the unit name from the mount point, so this file has to be
+# named for the path it mounts, escaping and all. `Requires=mnt-longhorn.mount`
+# is what stops containerd from being handed an empty directory if vdb ever
+# fails to mount — without it the bind would happily land on the OS disk's
+# empty mountpoint and containerd would re-pull every image onto the exact
+# disk this role exists to protect.
+- name: Install the containerd bind-mount unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/var-lib-rancher-k3s-agent-containerd.mount
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/data_disk). Do not edit by hand.
+      [Unit]
+      Description=containerd image store on the data disk (vdb)
+      Requires=mnt-longhorn.mount
+      After=mnt-longhorn.mount
+      Before=k3s-agent.service
+
+      [Mount]
+      What={{ k3s_containerd_path }}
+      Where=/var/lib/rancher/k3s/agent/containerd
+      Type=none
+      Options=bind
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Reload systemd
+
+# Also created by roles/longhorn_node, which runs first in site.yml. Repeated
+# here so this role does not depend on play ordering to be correct.
+- name: Ensure k3s-agent drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s-agent.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Order k3s-agent after the containerd bind mount
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s-agent.service.d/30-containerd-mount.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/data_disk). Do not edit by hand.
+      # RequiresMountsFor pulls in the .mount unit and fails k3s-agent if the
+      # bind is not there, rather than starting containerd on an empty
+      # directory and silently re-pulling 24GiB onto the OS disk.
+      [Unit]
+      RequiresMountsFor=/var/lib/rancher/k3s/agent/containerd
+  notify: Reload systemd
+
+# There is exactly one state in which enabling the mount loses data: real
+# containerd data sits on the OS disk and has not been copied to vdb yet.
+# Enabling then would shadow it at the next boot and containerd would
+# re-pull 24GiB onto the disk this role exists to protect. Two states are
+# safe, and both need the mount enabled:
+#
+#   migrated   the target holds a content store — the live worker, post-cutover
+#   fresh      no containerd directory at all — a rebuild, where an empty
+#              target is the correct starting point and enabling it *first*
+#              is what stops the OS disk ever accumulating images
+#
+# Getting this wrong in the "fresh" direction is the quiet one: a rebuilt
+# node comes up working, and only shows up as the OS disk creeping toward
+# 85% again weeks later.
+- name: Check whether containerd data has been migrated to the data disk
+  ansible.builtin.stat:
+    path: "{{ k3s_containerd_path }}/io.containerd.content.v1.content"
+  register: containerd_migrated
+
+- name: Check whether containerd has ever run on the OS disk
+  ansible.builtin.stat:
+    path: /var/lib/rancher/k3s/agent/containerd/io.containerd.content.v1.content
+  register: containerd_on_os_disk
+
+- name: Enable the containerd bind mount at boot
+  ansible.builtin.systemd_service:
+    name: var-lib-rancher-k3s-agent-containerd.mount
+    enabled: true
+  when: >-
+    (containerd_migrated.stat.isdir | default(false))
+    or not (containerd_on_os_disk.stat.isdir | default(false))
+
+- name: Report that the containerd cutover has not been done yet
+  ansible.builtin.debug:
+    msg: >-
+      containerd data is on the OS disk and has not been copied to
+      {{ k3s_containerd_path }}. The bind mount is installed but deliberately
+      left disabled — enabling it now would shadow the live image store. The
+      copy is a maintenance-window step; see known-risks #3.
+  when:
+    - not (containerd_migrated.stat.isdir | default(false))
+    - containerd_on_os_disk.stat.isdir | default(false)

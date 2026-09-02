@@ -18,6 +18,24 @@ with no matching top-level `<name>.yaml` Application is silently
 orphaned, nothing syncs, nothing errors. See
 `docs/lessons/k8s/grafana-monitoring-sync-cascade.md`.
 
+**Suspending auto-sync on one app is not enough — `root-app` manages the
+Application objects too.** Patching `spec.syncPolicy.automated: null` on
+`immich` was reverted by `root-app` within seconds, and `selfHeal` then
+put a `scale --replicas=0` back within 3. To actually stop a workload for
+maintenance, suspend `root-app` **first**, then the child app. Save the
+originals before touching them and diff them back afterwards:
+
+```bash
+kubectl -n argocd get app <name> -o jsonpath='{.spec.syncPolicy}'   # save this
+kubectl -n argocd patch app root-app --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+```
+
+An operator-owned resource needs its own brake as well: ArgoCD only
+manages what is in git, so the VictoriaMetrics operator will rebuild a
+`vmsingle` Deployment regardless. That one needs `spec.paused: true` on
+the VMSingle CR.
+
 **selfHeal fights anything that scales a managed workload.** A job that
 scales a Deployment to 0 (like the Gitea backup) gets reverted within
 seconds; the backup then runs against a live app while still reporting
@@ -209,6 +227,66 @@ dead backend. See `docs/lessons/k8s/netpol-fresh-pod-race.md`.
   button does):
   `kubectl -n longhorn-system patch replicas.longhorn.io <r> --type=merge -p '{"spec":{"failedAt":""}}'`.
   See `docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`.
+
+## local-path / PersistentVolumes
+
+**A PV's path cannot be edited.** `spec.persistentVolumeSource` is
+immutable, so `kubectl patch pv ... spec.local.path` is rejected. Worse,
+`kubectl delete pv` on a bound PV *appears* to succeed but parks it in
+`Terminating` behind the `kubernetes.io/pv-protection` finalizer, which
+only clears when the PV is no longer bound — so the old path stays live
+and a re-`apply` hits the immutability error. Always server-dry-run first:
+
+```bash
+kubectl patch pv <pv> --type=merge --dry-run=server \
+  -p '{"spec":{"local":{"path":"/new/path"}}}'
+```
+
+**Moving an existing local-path volume** therefore means recreating it,
+and the new PV gets a new UID and so a new directory name:
+
+1. `kubectl patch pv <pv> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'`
+2. stop the consumer (see the ArgoCD note above — this is the hard part)
+3. delete the **PVC**, which releases the PV; `Retain` keeps the data
+4. let the PVC be recreated; it provisions a fresh PV at the new path
+5. copy the old data into the new directory, matching ownership —
+   check `ls -ln` on the original rather than assuming, these are
+   `0:0` not `1000:1000`
+6. delete the old directory and the `Released` PV
+
+**`local-path-config` is not the knob.** The ConfigMap in `kube-system`
+is owned by k3s and re-applied from
+`/var/lib/rancher/k3s/server/manifests/local-storage.yaml` on every
+restart. The durable setting is the k3s **server** flag
+`--default-local-storage-path` (`k3s_local_storage_path` in Ansible). It
+is cluster-wide, and it only affects PVs created *after* it changes.
+Restart `local-path-provisioner` afterwards so it re-reads the config.
+
+## k3s node operations
+
+**`systemctl stop k3s-agent` does not stop the containers.** The unit is
+`KillMode=process`, so the stop returns in ~0.1s having killed only the
+k3s process — containerd's shims and all 52 containers keep running, with
+Longhorn volumes still mounted. Anything that needs a quiescent
+containerd data directory has to stop them separately.
+
+`k3s-killall.sh` does it, but read it before reaching for it: it
+`kill -9`s every shim tree and force-unmounts `/var/lib/kubelet/pods`,
+which for three live postgres instances means an unclean shutdown. For a
+planned window, TERM the container processes in dependency order instead
+— workloads first so databases flush while their volumes are still up,
+Longhorn/CSI second, `pause` sandboxes last — and leave `open-iscsi`
+alone entirely. Done that way the 2026-08-10 move produced clean ext4
+mounts on all 11 volumes with no journal recovery, against the
+"potential data loss!" the July shutdown logged.
+
+**Check the shutdown ordering actually applies.** The
+`k3s-agent`-before-`open-iscsi` drop-in only orders units systemd is
+stopping. If `k3s-agent` is *already* stopped when you reboot, systemd
+has nothing to order and the containers get swept concurrently with
+`open-iscsi` — the exact 2026-07-25 failure. Either reboot with
+`k3s-agent` running, or stop the containers yourself first and confirm
+`ls /sys/class/iscsi_session | wc -l` is 0 before rebooting.
 
 ## restic / backups
 

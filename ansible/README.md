@@ -19,6 +19,7 @@ Helm cannot reach:
 | `common` | journald size cap | OS-level; journald predates the cluster |
 | `k3s_node` | `/etc/rancher/k3s/config.yaml` | k3s reads it at process start, before any workload exists |
 | `longhorn_node` | `k3s-agent` ↔ iSCSI shutdown ordering | systemd unit ordering on the host |
+| `data_disk` | containerd + local-path directories on `vdb`, the bind mount and its ordering | a mount unit on the host; the kubelet is downstream of it |
 
 It does **not** manage: Proxmox VM definitions (see Non-goals), k3s
 installation itself, or anything inside the cluster.
@@ -71,6 +72,33 @@ the server) and adds an explicit `node-ip` pinning what k3s currently
 auto-detects. The worker's join URL and token stay in
 `/etc/systemd/system/k3s-agent.service.env`, which is correct — they are
 bootstrap credentials, not configuration.
+
+## Moving the worker off its OS disk, 2026-08-10
+
+`vda2` reached 85% for the third time. The first two rounds treated it as a
+cleanup problem — grow the disk 32→44GiB in June, vacuum the journal and prune
+images in July — and both times it crept back, because the space was never
+reclaimable. 54 images, all in use; kubelet failing image GC every 90 seconds
+at the `imagefs.available<15%` eviction threshold and freeing zero bytes.
+
+So the data moved instead of the disk growing. `roles/data_disk` prepares
+both halves and `k3s_local_storage_path` now points at `vdb`.
+
+Two things about this are worth knowing before re-running the playbook:
+
+- **The role never performs the cutover.** It creates the directories, writes
+  the mount unit and the ordering drop-in, and stops. Copying 24GiB of
+  containerd state means stopping `k3s-agent`, which detaches every Longhorn
+  volume on the node — a maintenance-window action, not a playbook side
+  effect. The mount unit is only *enabled* once the role can see containerd's
+  content store at the target, so running this on a node that has not been cut
+  over cannot leave a reboot pointing containerd at an empty directory.
+- **`default-local-storage-path` is a server flag**, so it is cluster-wide even
+  though only the worker has a `vdb`. A local-path PVC scheduled onto control
+  would create that path on control's own OS disk. There are none today and
+  control has 20GiB free, but it is why this is one variable and not a per-node
+  map — k3s owns `local-path-config` and re-applies it on every restart, so
+  the ConfigMap is not a durable place to put a per-node override.
 
 ## Non-goals, for now
 

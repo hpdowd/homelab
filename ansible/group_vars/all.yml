@@ -9,7 +9,32 @@ journald_max_use: 200M
 # containerd's shutdown was still incomplete at that point.
 k3s_agent_stop_timeout: 300
 
-# k3s default. Moving this to vdb is known-risks #3 — it needs the target
-# directory to exist on the node and a k3s restart, so it is a deliberate
-# change rather than a variable flip.
-k3s_local_storage_path: /var/lib/rancher/k3s/storage
+# Both paths below moved off the worker's OS disk on 2026-08-10. vda2 is
+# 41GiB and had crept back to 85% with nothing reclaimable: 54 images all in
+# use, journal already capped, kubelet failing image GC every 90s at the
+# imagefs.available<15% eviction threshold. That was the third round of the
+# same problem (grown 32→44GiB in June, cleaned in July), so this time the
+# data moved rather than the disk growing again. See known-risks #3.
+#
+# Both live *inside* /mnt/longhorn because that is vdb's only mountpoint —
+# there is no sibling directory available without remounting the disk and
+# repointing Longhorn's disk path, which is not worth a replica migration.
+# Longhorn manages `replicas/` and its own `longhorn-disk.cfg` and ignores
+# anything else in the directory.
+#
+# The cost of sharing a filesystem: foreign data now eats into Longhorn's
+# free space, so `storageReserved` on the disk was raised to match (see
+# cluster-rebuild.md §3). Watch that number if either path grows a lot.
+
+# Cluster-wide default for local-path — it is a k3s *server* flag, so it is
+# set on control and applies to every node. Control has no vdb, so a
+# local-path PVC landing there creates this path on its OS disk instead;
+# that is 20GiB free and there are no local-path PVCs on control today, but
+# it is the reason this is not a per-node setting.
+k3s_local_storage_path: /mnt/longhorn/local-path
+
+# Bind-mount target for /var/lib/rancher/k3s/agent/containerd, 24GiB of
+# extracted image layers and the single biggest consumer of the OS disk.
+# A bind mount rather than k3s's --data-dir, which would move all of
+# /var/lib/rancher/k3s and drag the kubelet and CNI state along with it.
+k3s_containerd_path: /mnt/longhorn/k3s-containerd

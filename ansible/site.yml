@@ -22,3 +22,7 @@
   gather_facts: false
   roles:
     - longhorn_node
+    # Same group by definition: longhorn_nodes is the set of nodes with a vdb
+    # data disk, which is exactly what data_disk needs. Runs second so the
+    # k3s-agent drop-in directory already exists.
+    - data_disk

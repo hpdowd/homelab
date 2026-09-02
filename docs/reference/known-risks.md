@@ -2,7 +2,8 @@
 
 Standing list of things that have not broken yet but are on a path to breaking, with the
 evidence for each and what would stop it. Reviewed 2026-07-26 after the Longhorn
-auto-salvage incident; §1 and §6 updated 2026-07-27 when the live fixes went in.
+auto-salvage incident; §1 and §6 updated 2026-07-27 when the live fixes went in; §3 closed
+and §1 revised 2026-08-10 when containerd and local-path moved off the worker's OS disk.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -20,7 +21,7 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | ~~2~~ | ~~`site.yml --check --diff` and apply~~ — **done 2026-07-27**, see §6 | — | — | — |
 | 3 | Route `severity: critical` to a channel that interrupts | ~1h | Needs you to pick ntfy/Gotify/Pushover | Low |
 | ~~4~~ | ~~Remove the hand-added `[Journal]` block from the worker's `journald.conf`~~ — **done 2026-07-27**, now a role task | — | — | — |
-| 5 | Repoint local-path onto `vdb` | window | Needs #2 (sets the k3s flag) + k3s restart | Moderate — k3s restart |
+| ~~5~~ | ~~Repoint local-path onto `vdb`~~ — **done 2026-08-10**, together with containerd, see §3 | — | — | — |
 | 6 | Adopt `k8s/infrastructure/longhorn.yaml` | window | Volumes must be healthy | **Highest here.** Never mid-incident |
 | 7 | Decide on worker memory limits at 191% of allocatable | judgement | — | Alert is currently ambient noise |
 | 8 | Add a Longhorn `trim` recurring job | ~15 min | — | Low |
@@ -28,11 +29,16 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 10 | Adopt `k8s/infrastructure/sealed-secrets.yaml` | window | Verify `kubeseal --fetch-cert` against the backup first | Moderate — the controller's key is the trust root for every secret in the repo |
 | 11 | Exercise `bootstrap/bootstrap.sh` end-to-end against a scratch cluster | half a day | Needs a throwaway VM | None to prod; it is the only way to test the rebuild path |
 
-With items 1, 2 and 4 closed, nothing left here carries ongoing exposure — but item 6 now
+With items 1, 2, 4 and 5 closed, nothing left here carries ongoing exposure — but item 6 now
 inherits part of it, because it is what makes the item 1 fix survive a rebuild (§1 below).
-Items 5 and 6 want the same maintenance window. Item 6 is the one to be slowest about: it is
-the highest-value structural fix and the easiest to do damage with. Item 9 is a verification,
-not a change, and it is the only one with a date attached.
+Item 6 is the one to be slowest about: it is the highest-value structural fix and the easiest
+to do damage with. Item 9 is a verification, not a change, and it is the only one with a date
+attached.
+
+Item 5 is closed as of 2026-08-10 and took the worker's OS disk from 85% to 6% (§3). It also
+changed §1's arithmetic: `vdb` is a shared disk now, so `storageReserved` went 49.1 → 80 GiB
+to cover containerd and local-path. That makes item 6 slightly more load-bearing again —
+there is one more hand-applied Longhorn setting for it to adopt.
 
 Item 2 turned out to matter more than its "~30 min" suggested: running the playbook revealed
 that the iSCSI shutdown ordering had never reached the worker at all. See §6.
@@ -76,17 +82,29 @@ does not retroactively touch a disk that already exists, `storageReserved` on
 `default-disk-25a91b93472172c4` was patched from 158188673433 to 52729557811. Both commands
 are in `docs/runbooks/cluster-rebuild.md` §3.
 
+**Revised 2026-08-10 (10% → 16%).** `vdb` stopped being a dedicated Longhorn disk when
+containerd and the local-path PVs moved onto it (§3). The reserve is what keeps Longhorn
+from scheduling into space that data needs, so it was raised to 80 GiB: ~30 GiB of foreign
+data today, ~60 GiB if containerd and the local-path claims both grow out.
+
+100 GiB was tried first and rejected. It works, but it lands at 0.8975 on the
+`LonghornProvisioningHeadroomLow` ratio, a quarter of a percent under the warning
+threshold — one new PVC from a false alarm. The ceiling proper is ~140 GiB, where
+`ProvisionedLimit` drops below `ScheduledTotal` and this whole item comes back. Err low:
+under-reserving costs nothing while `vdb` has 333 GiB actually free, and over-reserving is
+the failure that has already happened once.
+
 Verified after the change:
 
 ```text
-setting storage-reserved-percentage-for-default-disk   10
-/mnt/longhorn  storageReserved   49.1 GiB   (was 147.3 GiB)
+setting storage-reserved-percentage-for-default-disk   16
+/mnt/longhorn  storageReserved   80.0 GiB   (was 147.3, then 49.1)
 Schedulable    True                         (was False / DiskPressure)
 ScheduledTotal    351.0 GiB
-ProvisionedLimit  442.0 GiB   (100% of 491.1 GiB max − 49.1 GiB reserved)
+ProvisionedLimit  411.1 GiB   (100% of 491.1 GiB max − 80.0 GiB reserved)
 ```
 
-91 GiB of headroom, 79% of the limit consumed. All 11 volumes `attached` / `healthy`.
+60.1 GiB of headroom, 85% of the limit consumed. All 11 volumes `attached` / `healthy`.
 `longhorn_disk_status{condition="schedulable"}` is 1 on both nodes, and neither
 `LonghornDiskUnschedulable` nor `LonghornProvisioningHeadroomLow` is firing.
 
@@ -140,50 +158,64 @@ new rule.
 
 ## 3. Worker OS disk cannot absorb its own local-path claims
 
-**Severity: high. Slow-moving, no natural stopping point.**
+**Resolved 2026-08-10. `/dev/vda2` went 85% → 6% by moving both consumers onto `vdb`.**
 
-`/dev/vda2` is 41 GiB and sat at 84% before this review, 82% after cleanup. The space is
-not garbage:
+`vda2` is 41 GiB and reached 85% for the third time. The first two rounds treated it as a
+cleanup problem — grow the disk 32→44 GiB in June, vacuum the journal and prune images in
+July — and it crept back both times, because none of the space was reclaimable. At 85%
+kubelet was logging `FreeDiskSpaceFailed` every 90 seconds and freeing zero bytes, sitting
+on the `imagefs.available<15%` eviction threshold at 14.9%.
 
-| Consumer | Size | Reclaimable? |
+So the data moved instead of the disk growing again:
+
+| Consumer | Was | Now |
 |---|---|---|
-| containerd images | 24 GiB | No. 49 of 54 images are in use by running containers; 642 snapshot dirs against 643 containerd records, so nothing is orphaned |
-| local-path PVs | 6.2 GiB | Only by moving them |
-| journal | 183 MiB | Now capped at 200M |
+| containerd images | 24 GiB on `vda2` | bind-mounted to `/mnt/longhorn/k3s-containerd` |
+| local-path PVs | 6.1 GiB on `vda2` | re-provisioned under `/mnt/longhorn/local-path` |
+| journal | 203 MiB | unchanged, still capped at 200M |
 
-The real hazard is the local-path claims. `vmsingle` (10Gi request, 5.4 GiB used, 30d
-retention) and `immich-model-cache` (10Gi request, 786 MiB used) total **20 GiB of claims
-on a disk with ~7 GiB free**. local-path is a plain hostPath directory and enforces no
-quota, so nothing stops either from filling root. Kubernetes believes both claims are
-satisfiable; the disk disagrees.
+```text
+/dev/vda2   41G  2.3G   37G   6%   /          (was 33G used, 85%)
+/dev/vdb   492G  134G  333G  29%   /mnt/longhorn
+nodefs  avail 89.6%   imagefs avail 67.7%     (eviction at <15%)
+```
 
-Filling root means kubelet DiskPressure and eviction on the node that holds every workload
-and every Longhorn replica.
+Both halves are in `ansible/roles/data_disk` and `k3s_local_storage_path`, so a rebuild
+gets this without anyone remembering. The role prepares but never performs the cutover —
+copying containerd means stopping `k3s-agent`, which detaches every Longhorn volume.
 
-**Prevention, in order:**
+**Three things worth keeping, because they are the parts that bite:**
 
-1. **Repoint local-path's storage directory onto `vdb`** (492 GiB, 23% used). Note the
-   mechanism, because the obvious one does not stick: the `local-path-config` ConfigMap in
-   `kube-system` is owned by k3s (`objectset.rio.cattle.io` annotations) and is re-applied
-   from `/var/lib/rancher/k3s/server/manifests/` on every k3s restart, so editing it is
-   reverted. The durable knob is the k3s server flag `--default-local-storage-path`, set in
-   `/etc/rancher/k3s/config.yaml` (see item below on why not the systemd unit).
+1. **`local-path-config` is not the knob.** The ConfigMap in `kube-system` is owned by k3s
+   (`objectset.rio.cattle.io` annotations) and re-applied from
+   `/var/lib/rancher/k3s/server/manifests/` on every restart, so editing it is reverted.
+   The durable setting is the k3s **server** flag `--default-local-storage-path` in
+   `/etc/rancher/k3s/config.yaml`. Being a server flag makes it cluster-wide: control has no
+   `vdb`, so a local-path PVC landing there would create that path on its own OS disk.
+   None do today and control has 20 GiB free, but that is why it is one value and not a
+   per-node map.
 
-   This keeps the volumes on local-path rather than promoting them to Longhorn, which
-   matters: ADR 005 puts monitoring data on local-path deliberately, because it is
-   regenerable and should not consume Longhorn replicas or `vdb`'s replica budget. The fix
-   is moving where local-path *lives*, not which class the PVCs use.
+2. **A PV's path cannot be edited.** `spec.persistentVolumeSource` is immutable, and
+   deleting the PV alone just parks it in `Terminating` behind the `pv-protection`
+   finalizer while it stays bound. Moving an existing local-path volume means: set the PV
+   to `Retain`, stop the consumer, delete the PVC, let the PVC be recreated (it provisions
+   a fresh PV at the new path under a *new* UID directory), then copy the old data into
+   that new directory. The flag alone only redirects *new* volumes.
 
-   One coupling to weigh: local-path data under `/mnt/longhorn` shares a filesystem with
-   Longhorn replicas, so its growth reduces Longhorn's `storageAvailable`. Either use a
-   sibling directory on `vdb` outside the Longhorn path, or accept it given 363 GiB free.
-   A separate `vdc` is the clean separation if Proxmox access is convenient.
-
-2. Move `/var/lib/rancher/k3s/agent/containerd` to `vdb`. Largest single win at 24 GiB,
-   costs a k3s restart.
-3. Grow `vda`. Needs Proxmox host access.
+3. **Stopping the consumer means suspending GitOps at the root.** `selfHeal` reverted a
+   `scale --replicas=0` within 3 seconds, and patching the app's own `syncPolicy` was
+   itself reverted by `root-app` seconds later — app-of-apps means suspending the child is
+   not enough. `vmsingle` additionally needs `spec.paused: true` on the VMSingle CR,
+   because the operator (not ArgoCD) owns its Deployment. Save every `syncPolicy` before
+   touching it and diff them back afterwards.
 
 `DiskFillingUp` already fires on this and did during the incident, so the warning path works.
+
+**What is left.** `vdb` is now a shared disk rather than a dedicated Longhorn one, which is
+the coupling this item previously warned about: containerd growth reduces Longhorn's free
+space. It is accounted for — `storageReserved` was raised 49.1 → 80 GiB (§1) — but the two
+are linked now, so re-check headroom after anything that grows the image set. A separate
+`vdc` is still the clean separation if Proxmox access is convenient.
 
 ---
 
