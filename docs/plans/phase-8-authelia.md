@@ -7,25 +7,27 @@ wrong about manifests that already exist. Every change carries an inline
 holds. Verify Authelia minor version + config keys against the docs for the
 exact pinned image before each step, config schema drifts between 4.x minors.*
 
-> ## Status: DEPLOYED and enforcing, 2026-09-03
+> ## Status: COMPLETE and verified end to end, 2026-09-03
 >
 > Authelia 4.39.20 is live, `Synced/Healthy`, scraped and alerted on. Four hosts
-> are gated and verified **through the real Cloudflare path**, not just on the
-> LAN: `wiki`, `amp`, `dash` and `proxmox` on `henrydowd.dev` all 302 to the
-> portal for an anonymous request. Every LAN path (`wiki.lan`, `amp.lan`,
-> `dash.lan`, and Proxmox over HTTPS on both its names) still answers 200,
-> which is the break-glass route and is deliberate (ADR 018).
+> are gated and verified **through the real Cloudflare path**: `wiki`, `amp`,
+> `dash` and `proxmox` on `henrydowd.dev`. Every LAN path (`wiki.lan`,
+> `amp.lan`, `dash.lan`, and Proxmox over HTTPS on both its names) still answers
+> 200 — the break-glass route, deliberate per ADR 018.
 >
-> **The one thing not yet proven is a human logging in.** Nobody has entered a
-> password, enrolled TOTP, or confirmed a password-reset email arrives. That
-> last one matters more than it looks: the SMTP startup check is deliberately
-> off, so a wrong Brevo credential will not announce itself any other way, and
-> reset mail is the way back in if the password is lost.
+> **The human half is done too.** Login works, TOTP is enrolled, the
+> identity-verification email arrived (so the Brevo relay is confirmed — the one
+> thing the disabled SMTP startup check no longer covers), and Proxmox has been
+> reached from end to end through the full stack: Cloudflare Access, then
+> Authelia at `two_factor`, then PVE's own login.
+>
+> **The ForwardAuth half of phase 8 is therefore finished.**
 >
 > **Still outstanding:** step 5, the OIDC provider and its clients (grafana,
-> gitea, nextcloud, immich, paperless, argocd). None of it is written.
+> gitea, nextcloud, immich, paperless, argocd). None of it is written, and it is
+> the natural next session.
 >
-> ### What the rollout actually caught
+> ### What the rollout caught
 >
 > Landing kiwix first as a canary paid for itself immediately. The LAN path
 > redirected correctly while the real internet path returned **400**, because
@@ -33,7 +35,13 @@ exact pinned image before each step, config schema drifts between 4.x minors.*
 > Traefik's `web` entrypoint as plain HTTP. Fixed with a `forceproto` headers
 > middleware chained ahead of `forwardauth`; had all four services been gated in
 > one commit, all four would have broken publicly at once while looking fine
-> from the LAN. Written up in gotchas.md.
+> from the LAN.
+>
+> That fix was then applied one ingress short. The portal's own Ingress needs
+> `forceproto` too — without it, 2FA enrolment fails with *"Failed to generate
+> One-Time Code"*, which reads as a mail fault but is really
+> `invalid X-Forwarded-Proto header value 'http'` on the session-elevation
+> endpoint. Both traps are written up in gotchas.md.
 >
 > It also disproved a claim this plan repeated throughout — that Proxmox was
 > "public with no CF Access". It was not; Access was already in front of it, and

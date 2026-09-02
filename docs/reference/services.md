@@ -61,6 +61,10 @@ root). See ADR 009.
 
 ## Authelia (SSO)
 
+- **The portal's own Ingress carries `forceproto`** (but never `forwardauth`).
+  Without it, 2FA enrolment fails with "Failed to generate One-Time Code" — the
+  session-elevation endpoint rejects the `http` scheme the tunnel arrives with.
+  See the gotchas entry; the symptom points at mail and the cause is not mail.
 - **One hostname, `auth.henrydowd.dev`, with no `.lan` alias** — the exception
   to the pattern every other service follows. A host that matches no
   `session.cookies` domain serves the portal HTML but 403s every API call, so

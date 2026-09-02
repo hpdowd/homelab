@@ -107,6 +107,15 @@ with `helm template` against the pinned chart version. See
   `forwardedHeaders.trustedIPs`: that would also make Traefik honour a
   client-supplied `X-Forwarded-For`, which is what Authelia's `lan` network
   rule keys off, letting the internet claim LAN trust.
+- **The Authelia portal's OWN Ingress needs forceproto too**, even though it is
+  never gated — and the symptom lies to you. Enrolling TOTP or WebAuthn fails
+  with *"Failed to generate One-Time Code. Please try again later"*, identically
+  for both methods, which reads as a broken mail relay. It is not: the log says
+  `Error occurred determining issuer, error="invalid X-Forwarded-Proto header
+  value 'http'"` on `POST /api/user/session/elevation`. Serving the login page
+  tolerates a wrong scheme; the endpoint that issues the enrolment code does
+  not, and it never gets as far as sending mail. Retrying also trips Authelia's
+  rate limiter (`delay≈280s`), which is in-memory — a pod restart clears it.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 - **TLS on the LAN path is one default cert, not per-Ingress config.**

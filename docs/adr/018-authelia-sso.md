@@ -154,6 +154,10 @@ mail, which is what it should cost. The trade is that a bad credential fails
 quietly until someone needs a reset, so proving a reset email actually arrives
 is a required step during bring-up rather than a nicety.
 
+*Verified 2026-09-03:* the Brevo relay works. TOTP enrolment sent its identity
+-verification code and the mail arrived, which exercises exactly the path the
+disabled startup check no longer covers.
+
 **Nor must a time-server outage be one.** The NTP check exists because TOTP
 depends on the clock and is worth keeping, but `disable_failure` downgrades an
 unreachable time server from fatal to a logged warning. The nodes get their
