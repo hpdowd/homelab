@@ -193,6 +193,15 @@ spec:
         # A silently-broken backup is the worst failure mode here — you only
         # find out when you need it. Fire on the first failed run.
         #
+        # Deliberately NOT scoped to a namespace list. It used to read
+        # `namespace=~"nextcloud|gitea|immich"`, which meant paperless went
+        # live on 2026-07-23 with a nightly restic job that nothing watched —
+        # 25 days of unmonitored backups, found on 2026-08-18. The docs,
+        # the restore runbook and backup-verification.md had all been updated
+        # to include paperless; only this regex was missed. Any hardcoded app
+        # list here rots the same way, so match on the job name instead and
+        # let new services be covered the day they start backing up.
+        #
         # The `unless` is what lets it resolve. kube_job_status_failed counts
         # failed *pod attempts* and never decrements, so with backoffLimit 1 a
         # run that failed once and succeeded on the retry kept this firing until
@@ -204,9 +213,9 @@ spec:
         # that matters.
         - alert: BackupJobFailed
           expr: |
-            kube_job_status_failed{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"} > 0
+            kube_job_status_failed{job_name=~".*backup.*"} > 0
               unless on (namespace, job_name)
-            kube_job_status_succeeded{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"} > 0
+            kube_job_status_succeeded{job_name=~".*backup.*"} > 0
           for: 1m
           labels:
             severity: critical
@@ -217,10 +226,16 @@ spec:
         # Catches the case where the CronJob isn't even running — e.g. the
         # whole job got deleted, schedule broken, or the cluster was down at
         # 03:00. 26h gives a bit of buffer past the 24h cadence.
+        #
+        # `by (namespace)` makes this self-scoping: every namespace that has
+        # backup Jobs gets its own series, so new services are covered without
+        # touching this rule. What it can NOT see is a namespace whose backups
+        # vanish entirely — no Jobs means no series means nothing to compare
+        # against. BackupJobsAbsent below is the guard for that.
         - alert: BackupJobMissing
           expr: |
             time() - max by (namespace) (
-              kube_job_status_completion_time{namespace=~"nextcloud|gitea|immich", job_name=~".*backup.*"}
+              kube_job_status_completion_time{job_name=~".*backup.*"}
             ) > 26 * 3600
           for: 1h
           labels:
@@ -229,6 +244,37 @@ spec:
             summary: "No recent backup in {{ $labels.namespace }}"
             description: "No successful backup job completed in > 26h. The daily CronJob may not be running."
 
+        # Guard for BackupJobMissing (same pattern as LonghornMetricsAbsent
+        # and PortfolioMetricsAbsent). The two rules above are self-scoping,
+        # which is what stops the paperless gap recurring — but self-scoping
+        # cuts both ways: delete a CronJob, let its last Job age out of
+        # successfulJobsHistoryLimit, and the namespace simply stops existing
+        # as far as they're concerned. No series, no alert, no backup.
+        #
+        # So this is the one place the expected set is written down. It is a
+        # list that must be updated when a service starts or stops being
+        # backed up, but its failure mode is loud (it fires) rather than
+        # silent, which is the right way round. Keep it in step with the
+        # `for ns in ...` loops in docs/runbooks/backup-verification.md.
+        #
+        # successfulJobsHistoryLimit is 3 on all four CronJobs against a daily
+        # schedule, so a completed Job is always present in steady state; the
+        # 1h `for` rides out the gap while a run is in flight. Verified live:
+        # all four namespaces return no series, and the same expression with a
+        # bogus namespace appended returns exactly one, labelled — i.e. this
+        # guard can actually fire, unlike the first cut of the Longhorn one.
+        - alert: BackupJobsAbsent
+          expr: |
+            absent(kube_job_status_completion_time{namespace="nextcloud", job_name=~".*backup.*"})
+            or absent(kube_job_status_completion_time{namespace="gitea", job_name=~".*backup.*"})
+            or absent(kube_job_status_completion_time{namespace="immich", job_name=~".*backup.*"})
+            or absent(kube_job_status_completion_time{namespace="paperless", job_name=~".*backup.*"})
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "No backup jobs at all in {{ $labels.namespace }}"
+            description: "kube_job_status_completion_time has no backup-job series for {{ $labels.namespace }}, so BackupJobMissing is blind there. The CronJob was probably deleted or never recreated. Check `kubectl -n {{ $labels.namespace }} get cronjob`."
     - name: homelab.portfolio
       rules:
         # The portfolio's live panels read VictoriaMetrics and Gitea over the
