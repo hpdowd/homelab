@@ -5,6 +5,8 @@
 # redirect-loop forever.
 #
 # Public host: gated at one_factor (rule in k8s/apps/authelia/configmap.yaml).
+# TWO middlewares, in this order: forceproto must run before forwardauth or the
+# tunnel path 400s (Authelia rejects an http target — see middleware-proto.yaml).
 # LAN host: deliberately bare. The LAN is a trusted network and this is also
 # the break-glass path — if Authelia is down, wiki.lan still serves.
 apiVersion: networking.k8s.io/v1
@@ -13,7 +15,7 @@ metadata:
   name: kiwix
   namespace: kiwix
   annotations:
-    traefik.ingress.kubernetes.io/router.middlewares: authelia-forwardauth@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:

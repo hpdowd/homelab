@@ -1,0 +1,39 @@
+# Forces X-Forwarded-Proto: https for Authelia's benefit, and it is REQUIRED in
+# front of forwardauth on any host reached through the Cloudflare tunnel.
+#
+# Why: Authelia refuses to authorize a target whose scheme is http —
+#   "Target URL 'http://wiki.henrydowd.dev/' has an insecure scheme 'http',
+#    only the 'https' and 'wss' schemes are supported so session cookies can
+#    be transmitted securely"
+# and answers 400. That collides head-on with this cluster's tunnel design:
+# cloudflared delivers to Traefik's `web` entrypoint over PLAIN HTTP (pinning
+# routers to websecure 404s the tunnel — see gotchas.md), and Traefik rewrites
+# X-Forwarded-Proto to the scheme it actually received on, because it trusts no
+# upstream by default. So every tunnel request reached Authelia claiming http
+# and was rejected, while the LAN HTTPS path worked fine — a split that makes
+# this look like a tunnel fault rather than an auth one.
+#
+# The header is accurate, not a lie: the client-to-Cloudflare leg genuinely is
+# HTTPS, and Cloudflare terminates it. Only the in-house cloudflared->Traefik
+# hop is plain, and that hop never leaves the cluster network.
+#
+# Why not the obvious alternative: setting `forwardedHeaders.trustedIPs` to the
+# pod CIDR on Traefik would make it honour cloudflared's own
+# X-Forwarded-Proto — and would simultaneously make it honour a
+# client-supplied X-Forwarded-For, which is exactly what the `lan` network rule
+# in Authelia's ACL keys off. That would let anyone on the internet assert a
+# 192.168.1.x source address and claim LAN trust. This middleware touches only
+# the scheme and leaves the client IP alone, so the ACL stays honest.
+#
+# Chain it BEFORE forwardauth — Traefik applies middlewares left to right, so
+# the annotation reads:
+#   authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: forceproto
+  namespace: authelia
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
