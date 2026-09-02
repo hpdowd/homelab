@@ -7,14 +7,20 @@
 ## What problem this solves
 
 Eleven services are reachable from the internet through the cloudflared tunnel
-and, until now, exactly one of them had an authentication layer in front of the
-app itself: file-parser, behind a Cloudflare Access policy, because it handles
-documents that matter. Everything else was protected by whatever login the
-application happened to ship with. For Nextcloud, Immich, Gitea and Paperless
-that is a real login. For Proxmox it is a real login on a hypervisor that can
-delete every VM in the house, published to the internet on a hostname anyone
-can resolve. For AMP it is a control panel that can start and stop game servers
-on LXC 102. For Kiwix and the homepage dashboard there is no login at all.
+and, until now, only two of them had an authentication layer in front of the
+app itself: file-parser and Proxmox, both behind Cloudflare Access policies.
+Everything else was protected by whatever login the application happened to
+ship with. For Nextcloud, Immich, Gitea and Paperless that is a real login. For
+AMP it is a control panel that can start and stop game servers on LXC 102,
+published to the internet with nothing in front of it. For Kiwix and the
+homepage dashboard there is no login at all.
+
+*(Corrected 2026-09-03: the phase-8 plan asserted throughout that Proxmox was
+"public with no CF Access today", and the first draft of this ADR repeated it.
+It is not true — `proxmox.henrydowd.dev` redirects to
+`hpd-homelab.cloudflareaccess.com` and always did. The claim survived because
+nobody tested the public path from outside the LAN, where split-horizon DNS
+hides Access entirely. See the stacking note below.)*
 
 That is a wide and uneven perimeter, and the unevenness is the problem more than
 any single service is: I could not answer "what is required to reach X from
@@ -49,6 +55,17 @@ dependency for reaching my own services; the whole point of running this at home
 is that the failure modes are mine. It stays in place for file-parser, which is
 a deliberate belt-and-braces on the one service holding other people's
 documents.
+
+**Stacking on Proxmox is an open question.** Because Access was already there,
+reaching the Proxmox UI from the internet now costs three sequential logins:
+Cloudflare Access, then Authelia at `two_factor`, then PVE's own. That is
+defensible for the highest-value target in the house and it is genuinely
+belt-and-braces — the two systems fail independently, and Access stops traffic
+before it enters the network at all. It is also a lot of friction for a
+hypervisor you tend to reach for when something is already wrong. Left stacked
+for now because removing a working control is not something to do casually, and
+because the LAN path is ungated anyway, which is the one that matters during an
+incident. Revisit if the friction bites.
 
 **LLDAP as a users backend** was rejected for the same reason as Authentik:
 another pod and another database so that a two-entry user list can be edited in

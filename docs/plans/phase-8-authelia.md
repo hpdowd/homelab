@@ -7,32 +7,37 @@ wrong about manifests that already exist. Every change carries an inline
 holds. Verify Authelia minor version + config keys against the docs for the
 exact pinned image before each step, config schema drifts between 4.x minors.*
 
-> ## Status: built 2026-09-02, not yet deployed
+> ## Status: DEPLOYED and enforcing, 2026-09-03
 >
-> Everything that lives in git is written and validated — the `authelia` app,
-> the Traefik change, the ingress splits, the middleware references, the scrape
-> and alerts, ADR 018, and the docs. **Nothing has been applied to the cluster.**
+> Authelia 4.39.20 is live, `Synced/Healthy`, scraped and alerted on. Four hosts
+> are gated and verified **through the real Cloudflare path**, not just on the
+> LAN: `wiki`, `amp`, `dash` and `proxmox` on `henrydowd.dev` all 302 to the
+> portal for an anonymous request. Every LAN path (`wiki.lan`, `amp.lan`,
+> `dash.lan`, and Proxmox over HTTPS on both its names) still answers 200,
+> which is the break-glass route and is deliberate (ADR 018).
 >
-> Two things stand between here and a working login, in this order:
+> **The one thing not yet proven is a human logging in.** Nobody has entered a
+> password, enrolled TOTP, or confirmed a password-reset email arrives. That
+> last one matters more than it looks: the SMTP startup check is deliberately
+> off, so a wrong Brevo credential will not announce itself any other way, and
+> reset mail is the way back in if the password is lost.
 >
-> 1. **Secrets.** Run `k8s/apps/authelia/seal-secrets.sh` (step 1). It needs a
->    password from you and produces the two SealedSecrets. Until they exist the
->    pod cannot start.
-> 2. **Land it in the right order** (step 2a below). The enforcement commit must
->    come *after* Authelia is verified healthy, or four services 502 on their
->    public hostnames while it is still broken.
+> **Still outstanding:** step 5, the OIDC provider and its clients (grafana,
+> gitea, nextcloud, immich, paperless, argocd). None of it is written.
 >
-> **Still outstanding after that:** step 5, the OIDC provider and its clients.
-> None of it is written — it needs an RSA key, per-client secrets, and
-> per-application configuration that is partly UI-driven (Gitea, Immich) and
-> cannot be expressed in this repo. The ForwardAuth half is complete without it.
+> ### What the rollout actually caught
 >
-> Version pinned to **4.39.20** and the configuration validated against that
-> exact binary. Three things were found by testing it rather than reading docs,
-> and each is recorded where it applies: a failing SMTP startup check is fatal,
-> `readOnlyRootFilesystem` needs `server.disable_healthcheck`, and Authelia's
-> own Traefik guide lists a `maxResponseBodySize` field the Middleware CRD
-> rejects.
+> Landing kiwix first as a canary paid for itself immediately. The LAN path
+> redirected correctly while the real internet path returned **400**, because
+> Authelia refuses any target with an `http` scheme and cloudflared delivers to
+> Traefik's `web` entrypoint as plain HTTP. Fixed with a `forceproto` headers
+> middleware chained ahead of `forwardauth`; had all four services been gated in
+> one commit, all four would have broken publicly at once while looking fine
+> from the LAN. Written up in gotchas.md.
+>
+> It also disproved a claim this plan repeated throughout — that Proxmox was
+> "public with no CF Access". It was not; Access was already in front of it, and
+> split-horizon DNS had hidden that from every test anyone had run.
 
 Architecture: Authelia is the identity provider. Two integration modes, and a
 standing list of what stays out of both:
@@ -402,8 +407,14 @@ curl -s -H "Host: wiki.henrydowd.dev" http://192.168.1.200/ -I   # expect 302 �
 - Tunnel (phone off wifi): same flow
 - Second service later: no login prompt (cookie domain works)
 
-**4b. Proxmox** (the prize, public with no CF Access today), `two_factor`
-policy. **Decided 2026-09-02: gate the tunnel path only.** The middleware goes
+**4b. Proxmox** — `two_factor` policy. *Correction 2026-09-03: this plan said
+"the prize, public with no CF Access today" in several places and that was
+simply wrong.* `proxmox.henrydowd.dev` redirects to
+`hpd-homelab.cloudflareaccess.com` and always did; the error survived because
+the public path was never tested from outside the LAN, where split-horizon DNS
+resolves the name to Traefik and hides Access completely. Authelia therefore
+*adds* a layer rather than supplying the first one, and the internet path now
+costs three logins (Access → Authelia → PVE). See ADR 018's stacking note. **Decided 2026-09-02: gate the tunnel path only.** The middleware goes
 on the `proxmox` route's `Host(proxmox.henrydowd.dev)` rule and
 `proxmox-websecure` is left alone, so LAN HTTPS to either hostname bypasses
 Authelia. That is deliberate: Proxmox is where you go to fix the cluster, and

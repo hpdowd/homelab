@@ -10,6 +10,7 @@ for how a request actually flows see architecture.md.
 | Service | LAN | Public | Backend | Auth on the public host |
 |---|---|---|---|---|
 | Authelia | — (see note) | auth.henrydowd.dev | k3s pod (`authelia` ns) | n/a — it *is* the login |
+| file-parser | — | secure.henrydowd.dev, secure.dowd.ie | k3s pod (`file-parser` ns) | Cloudflare Access (stays there, not Authelia) |
 | Gitea | gitea.lan | git.henrydowd.dev | k3s pod (`gitea` ns) | native (Authelia OIDC pending) |
 | Nextcloud | nextcloud.lan | nextcloud.henrydowd.dev | k3s pod (`nextcloud` ns) | native (Authelia OIDC pending) |
 | Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) | none by design (WOPI backend) |
@@ -20,7 +21,7 @@ for how a request actually flows see architecture.md.
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) | none by design (public CV, no secrets) |
 | Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) | **ForwardAuth one_factor on dash.henrydowd.dev only** — `home.dowd.ie` is still public, see below |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 | **Authelia ForwardAuth, two_factor** |
-| Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) | **ForwardAuth two_factor on the tunnel path only** — LAN HTTPS is ungated by design (ADR 018) |
+| Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) | **Cloudflare Access + ForwardAuth two_factor, tunnel path only** (three logins with PVE's own) — LAN HTTPS is ungated by design (ADR 018) |
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 | LAN-only |
 | ArgoCD | argocd.lan | — | k3s pod (`argocd` ns) — deliberately LAN-only | LAN-only |
 | WireGuard/SSH | — | home.henrydowd.dev | LXC 101 (DNS-only A record, not proxied) | network layer, outside Authelia |
