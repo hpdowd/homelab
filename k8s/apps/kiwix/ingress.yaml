@@ -1,12 +1,23 @@
+# TWO Ingress objects, not one with two hosts. The ForwardAuth middleware
+# annotation attaches to the Ingress OBJECT, so a single dual-host Ingress
+# cannot gate wiki.henrydowd.dev while leaving wiki.lan alone — and it must,
+# because .lan is outside the henrydowd.dev session-cookie domain and would
+# redirect-loop forever.
+#
+# Public host: gated at one_factor (rule in k8s/apps/authelia/configmap.yaml).
+# LAN host: deliberately bare. The LAN is a trusted network and this is also
+# the break-glass path — if Authelia is down, wiki.lan still serves.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: kiwix
   namespace: kiwix
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-forwardauth@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
-    - host: wiki.lan
+    - host: wiki.henrydowd.dev
       http:
         paths:
           - path: /
@@ -15,7 +26,16 @@ spec:
               service:
                 name: kiwix
                 port: { number: 8080 }
-    - host: wiki.henrydowd.dev
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kiwix-lan
+  namespace: kiwix
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: wiki.lan
       http:
         paths:
           - path: /
