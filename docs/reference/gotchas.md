@@ -93,6 +93,20 @@ with `helm template` against the pinned chart version. See
   `docs/lessons/networking/proxmox-401-secure-cookie-plain-http.md`.
 - A missing or misnamed Middleware reference drops the whole router
   silently → 404.
+- **Authelia ForwardAuth needs `X-Forwarded-Proto: https` forced on the
+  tunnel path, or every public hit 400s.** Authelia refuses to authorize a
+  target with an http scheme (*"has an insecure scheme 'http', only the
+  'https' and 'wss' schemes are supported so session cookies can be
+  transmitted securely"*). cloudflared delivers to `web` over plain HTTP and
+  Traefik rewrites `X-Forwarded-Proto` to the scheme it actually received on,
+  because it trusts no upstream by default — so the LAN HTTPS path works and
+  the tunnel 400s, which reads as a tunnel fault rather than an auth one.
+  Chain `authelia-forceproto@kubernetescrd` **before**
+  `authelia-forwardauth@kubernetescrd` on every gated host; middlewares apply
+  left to right. Do NOT instead add the pod CIDR to
+  `forwardedHeaders.trustedIPs`: that would also make Traefik honour a
+  client-supplied `X-Forwarded-For`, which is what Authelia's `lan` network
+  rule keys off, letting the internet claim LAN trust.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 - **TLS on the LAN path is one default cert, not per-Ingress config.**

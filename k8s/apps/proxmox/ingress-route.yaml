@@ -23,6 +23,25 @@
 #                      names straight to Traefik (Technitium split-horizon) and
 #                      hit it over HTTPS; TLS terminates with the default
 #                      wildcard cert (TLSStore default, traefik ns).
+#
+# AUTHELIA (phase 8): the forwardauth middleware is on the TUNNEL rule only —
+# the Host(`proxmox.henrydowd.dev`) rule of the `proxmox` route below, which is
+# the path every request from the internet takes. The `proxmox-websecure` route
+# is deliberately left UNGATED, and it is worth being explicit that this is a
+# choice rather than an oversight, because it means a LAN client reaching
+# https://proxmox.henrydowd.dev under split-horizon DNS bypasses Authelia
+# entirely.
+#
+# That is the point. Proxmox is where you go to fix the cluster, and Authelia
+# runs *on* the cluster: gating the LAN path would mean a failed Authelia pod,
+# a corrupted session DB, or a bad config sync could lock you out of the
+# hypervisor that hosts the thing you need to repair. The LAN is already the
+# trust boundary for that class of access (same reasoning as the bare .lan
+# Ingresses on kiwix/amp/homepage). The internet-facing path, which is the one
+# that was genuinely unauthenticated before this phase, is now two_factor.
+#
+# Splitting proxmox-websecure per-host to gate the henrydowd.dev name on the
+# LAN too was considered and rejected for the reason above. See ADR 018.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -44,6 +63,16 @@ spec:
   routes:
     - match: Host(`proxmox.henrydowd.dev`)
       kind: Rule
+      # two_factor via the ACL in k8s/apps/authelia/configmap.yaml. The PVE
+      # login screen still appears afterwards — Authelia is a perimeter in
+      # front of it, not a replacement for it.
+      # forceproto MUST come first: the tunnel arrives on `web` as plain HTTP
+      # and Authelia 400s an http target (see middleware-proto.yaml).
+      middlewares:
+        - name: forceproto
+          namespace: authelia
+        - name: forwardauth
+          namespace: authelia
       services:
         - name: proxmox-external
           port: 8006

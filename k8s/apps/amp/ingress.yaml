@@ -1,8 +1,16 @@
+# Split for the same reason as kiwix's: the middleware annotation is per-Ingress
+# -object, and amp.lan must stay outside the gate (cookie domain + break-glass).
+#
+# Public host: two_factor — AMP is a game-server control panel that can start,
+# stop and reconfigure services on LXC 102, and it is reachable from the
+# internet.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: amp
   namespace: amp
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
@@ -16,6 +24,15 @@ spec:
                 name: amp-external
                 port:
                   number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amp-lan
+  namespace: amp
+spec:
+  ingressClassName: traefik
+  rules:
     - host: amp.lan
       http:
         paths:

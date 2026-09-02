@@ -323,12 +323,28 @@ In order of "should come up first":
    then LAN HTTPS is valid again. If it sticks at `pending`, read the
    Challenge's `status.reason` and see
    `docs/lessons/networking/certmanager-dns01-split-horizon.md`.
-5. App namespaces, Postgres / Redis, then the apps themselves
+5. **Authelia**, before the services it gates. Its ForwardAuth annotations
+   are in git, so a rebuild re-gates kiwix, amp, homepage and the Proxmox
+   tunnel route automatically — which means that until Authelia is
+   `Synced/Healthy` those four return **502 on their public hostnames**. That
+   is expected during a rebuild, not a new fault, and it clears on its own once
+   the pod is up. Two things gate Authelia itself: the Sealed Secrets master
+   key (both `authelia-secrets` and `authelia-users` must decrypt) and the
+   `authelia-data` PVC.
+6. App namespaces, Postgres / Redis, then the apps themselves
 
 If something's stuck, the usual suspects: Sealed Secrets master key
 isn't the right one (apps can't read their creds); the ArgoCD patch
 wasn't applied (external services have no endpoints); MetalLB hasn't
 finished and Traefik's Service is `<pending>`.
+
+**You are never locked out while this settles.** Every gated service keeps an
+ungated path by design (ADR 018): `wiki.lan`, `dash.lan`, `amp.lan`, and
+Proxmox over HTTPS on the LAN. Use those to work on the cluster rather than
+trying to fix Authelia through a hostname Authelia is currently breaking. If
+Authelia will not come up and it is in the way, removing the middleware
+references (the `router.middlewares` annotations and the Proxmox route's
+`middlewares:` block) and syncing degates everything within a sync interval.
 
 ## 6. Restore the data
 
@@ -340,6 +356,11 @@ data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 - Restore the data PVC from restic
 - For Nextcloud, also restore the DB dump and run `occ files:scan --all`
 - For Gitea, run `gitea admin regenerate hooks` after scaling back up
+
+Authelia needs nothing here. `db.sqlite3` is deliberately not backed up
+(ADR 018) — log in, re-enrol TOTP from the portal, and that is the whole
+restore. The parts that *cannot* be recreated, `storage_encryption_key` and the
+sealed `users.yml`, came back with the Sealed Secrets master key in step 4.
 
 ## 7. Check the boring stuff still works
 

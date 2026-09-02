@@ -7,22 +7,23 @@ for how a request actually flows see architecture.md.
 
 ## Live services
 
-| Service | LAN | Public | Backend |
-|---|---|---|---|
-| Gitea | gitea.lan | git.henrydowd.dev | k3s pod (`gitea` ns) |
-| Nextcloud | nextcloud.lan | nextcloud.henrydowd.dev | k3s pod (`nextcloud` ns) |
-| Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) |
-| Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) |
-| Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) |
-| Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) |
-| Grafana | grafana.lan | — | k3s pod (`monitoring` ns) — deliberately LAN-only |
-| Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) |
-| Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) — public + ungated, links only |
-| AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 |
-| Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) |
-| Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 |
-| ArgoCD | argocd.lan | — | k3s pod (`argocd` ns) — deliberately LAN-only |
-| WireGuard/SSH | — | home.henrydowd.dev | LXC 101 (DNS-only A record, not proxied) |
+| Service | LAN | Public | Backend | Auth on the public host |
+|---|---|---|---|---|
+| Authelia | — (see note) | auth.henrydowd.dev | k3s pod (`authelia` ns) | n/a — it *is* the login |
+| Gitea | gitea.lan | git.henrydowd.dev | k3s pod (`gitea` ns) | native (Authelia OIDC pending) |
+| Nextcloud | nextcloud.lan | nextcloud.henrydowd.dev | k3s pod (`nextcloud` ns) | native (Authelia OIDC pending) |
+| Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) | none by design (WOPI backend) |
+| Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) | **Authelia ForwardAuth, one_factor** |
+| Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) | native (Authelia OIDC pending) |
+| Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) | native (Authelia OIDC pending) |
+| Grafana | grafana.lan | — | k3s pod (`monitoring` ns) — deliberately LAN-only | LAN-only |
+| Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) | none by design (public CV, no secrets) |
+| Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) | **ForwardAuth one_factor on dash.henrydowd.dev only** — `home.dowd.ie` is still public, see below |
+| AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 | **Authelia ForwardAuth, two_factor** |
+| Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) | **ForwardAuth two_factor on the tunnel path only** — LAN HTTPS is ungated by design (ADR 018) |
+| Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 | LAN-only |
+| ArgoCD | argocd.lan | — | k3s pod (`argocd` ns) — deliberately LAN-only | LAN-only |
+| WireGuard/SSH | — | home.henrydowd.dev | LXC 101 (DNS-only A record, not proxied) | network layer, outside Authelia |
 
 Technitium's row is ingress glue only, the DNS server itself runs on
 the LXC, not in the cluster. Same selectorless-Service + EndpointSlice
@@ -56,6 +57,67 @@ root). See ADR 009.
   (`/usr/local/bin/cloudflare-ddns.sh`, cron every 5 min; only PUTs when
   the IP actually changed, logs changes and failures to
   `/var/log/cloudflare-ddns.log` in the container).
+
+## Authelia (SSO)
+
+- **One hostname, `auth.henrydowd.dev`, with no `.lan` alias** — the exception
+  to the pattern every other service follows. A host that matches no
+  `session.cookies` domain serves the portal HTML but 403s every API call, so
+  an `auth.lan` would render a login page that refuses every submission.
+  Split-horizon already resolves `auth.henrydowd.dev` on the LAN, and the
+  session cookie plus every OIDC `redirect_uri` are pinned to that one name.
+- `docker.io/authelia/authelia`, pinned **4.39.20**, namespace `authelia`,
+  worker-pinned, one replica, `strategy: Recreate` (RWO PVC). ~100Mi resident.
+  See ADR 018 for why Authelia and not Authentik/Cloudflare Access.
+- **The image tag is not a detail.** Authelia's config schema drifts between
+  4.x minors and it refuses to start on an unknown key rather than ignoring it,
+  so a floating tag turns an unattended autosync into a cluster-wide auth
+  outage. Before any bump, re-run the validator named in `configmap.yaml`:
+  `docker run --rm -v "$PWD:/c" authelia/authelia:<tag> authelia validate-config
+  --config /c/configuration.yml`.
+- Runs as **uid 1000, all capabilities dropped, read-only root filesystem**.
+  That last one only works because `server.disable_healthcheck: true` stops it
+  writing `/app/.healthcheck.env` on boot; the pod is probed with httpGet on
+  `/api/health` and never uses the image's own healthcheck script.
+- **Two startup checks are deliberately declawed** (ADR 018): the SMTP notifier
+  check is disabled outright, because a relay that refuses the connection is
+  otherwise *fatal* and would let a Brevo outage 502 every gated service; and
+  NTP runs with `disable_failure: true`, so an unreachable time server logs a
+  warning instead of blocking startup.
+- SealedSecrets: `authelia-secrets` (jwt_secret, session_secret,
+  storage_encryption_key, smtp_password) and `authelia-users` (`users.yml`,
+  argon2 hashes). Mounted as **files** and read via `AUTHELIA_*_FILE` env vars,
+  never as literal env values. `storage_encryption_key` is under the same loss
+  policy as `RESTIC_PASSWORD` — lose it and `db.sqlite3` is unreadable.
+- PVC `authelia-data` 1Gi (SQLite: TOTP enrolments, OIDC consents, the
+  brute-force ledger). **Not backed up and deliberately not `Prune=false`** —
+  it is regenerable, see ADR 018.
+- ACLs live in the ConfigMap in plain git (`access_control.rules`). A rule is
+  **inert** until the matching Ingress/IngressRoute carries the
+  `authelia-forwardauth@kubernetescrd` middleware, so rules can ship ahead of
+  enforcement. The inverse is not safe: annotate a host that has no rule and
+  `default_policy: deny` gives it a hard 403.
+- **Two** Middlewares in the `authelia` namespace, referenced cross-namespace
+  and always chained in this order:
+  `authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd`.
+  `forceproto` is not optional — Authelia 400s any target with an http scheme,
+  and the tunnel reaches Traefik as plain HTTP, so without it every gated host
+  works on the LAN and fails from the internet. Cross-namespace referencing
+  needs
+  `providers.kubernetesCRD.allowCrossNamespace=true` on Traefik. It sets
+  `trustForwardHeader: true` so the client IP reaches Authelia for the `lan`
+  network rule — safe only because Traefik's `forwardedHeaders.trustedIPs` is
+  empty and it therefore overwrites any spoofed `X-Forwarded-For`. **Never add
+  the pod CIDR (10.42.0.0/16) to trustedIPs or to the `lan` network**: tunnel
+  traffic arrives from it, so either would make the whole internet count as LAN.
+  Note that Authelia's own Traefik guide lists `maxResponseBodySize`, which is
+  not a field in the Middleware CRD and is rejected by the API server.
+- **Every gated service keeps an ungated path** — `wiki.lan`, `dash.lan`,
+  `amp.lan` as separate bare Ingress objects, and Proxmox's LAN HTTPS route.
+  That is the break-glass route when Authelia is down, and the reason the LAN
+  bypass exists at all (ADR 018).
+- Metrics on `:9959`, scraped by `k8s/apps/monitoring/authelia-scrape.yaml`,
+  alerted by `AutheliaDown` / `AutheliaMetricsAbsent` in `homelab-rules.yaml`.
 
 ## Nextcloud
 
@@ -142,8 +204,10 @@ root). See ADR 009.
 - OCR is capped (`TASK_WORKERS=1`, `THREADS_PER_WORKER=1`, limit 1.5Gi) to
   fit the tight worker; peak scales with the document, so a big scan can
   spike — stagger bulk ingest away from Immich imports.
-- Auth: native login now; Authelia **OIDC** planned after phase 8 (Paperless
-  Mobile hits `/api` directly, so OIDC not ForwardAuth).
+- Auth: native login now; Authelia **OIDC** still pending. Paperless Mobile
+  hits `/api` directly, so this must be OIDC and must NOT be ForwardAuth'd —
+  a middleware on this Ingress would break the mobile app. See ADR 018 and
+  step 5 of `docs/plans/phase-8-authelia.md`.
 - Ingest: drop files into the `consume` PVC (watch folder); they're OCR'd,
   tagged, and indexed automatically.
 - Backup: 04:30 nightly to `hpd.homelab/paperless` (`pg_dump` + media RO
@@ -197,13 +261,18 @@ root). See ADR 009.
 - `gethomepage/homepage`, pinned `v1.13.2`, namespace `homepage`, pinned to
   the worker. One stateless container, no DB, no PVC — all config is the
   `homepage` ConfigMap in git, so a pod loss just re-renders the page.
-- **Auth state: public + ungated, links only.** The first pass ships a link
-  grid + bookmarks with **no** `widget:` blocks and no API keys — a link is a
-  hostname DNS already publishes. Live-data widgets (Grafana/Immich/Proxmox
-  polling their APIs with stored keys) are deferred to phase 8, once
-  `dash.henrydowd.dev` sits behind Authelia `one_factor`; adding keyed widgets
-  before that would paint infra telemetry onto a world-readable page. See
-  `docs/plans/phase-9-homepage.md` step 4.
+- **Auth state: partially gated, and the widgets are still blocked.**
+  `dash.henrydowd.dev` now sits behind Authelia ForwardAuth (`one_factor`) via
+  its own Ingress object; `dash.lan` and `home.dowd.ie` are served by a second,
+  bare Ingress (`homepage-ungated`).
+  **`home.dowd.ie` is the catch:** it is public, it answers the same pod, and
+  being a second apex it cannot share the `henrydowd.dev` session cookie, so it
+  cannot be ForwardAuth'd without a redirect loop. The dashboard is therefore
+  still world-readable, and the live-data widgets (Grafana/Immich/Proxmox
+  polling their APIs with stored keys) remain **unsafe to add** despite the
+  phase-9 precondition technically reading as met. That stays blocked until the
+  `dowd.ie` decision in ADR 018 is made. See `docs/plans/phase-9-homepage.md`
+  step 4.
 - **`HOMEPAGE_ALLOWED_HOSTS` is load-bearing** (`$(MY_POD_IP):3000,dash.lan,dash.henrydowd.dev`).
   The pod-IP entry is required or the kubelet probe — which hits the pod IP,
   not a hostname — 400s on host validation and the pod never goes Ready. The
