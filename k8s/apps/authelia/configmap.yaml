@@ -210,8 +210,14 @@ data:
             # authenticates with tokens and never touches this flow.
             authorization_policy: 'two_factor'
             token_endpoint_auth_method: 'client_secret_basic'
-            require_pkce: true
-            pkce_challenge_method: 'S256'
+            # NO PKCE here, unlike grafana — and this is a real limitation, not
+            # a preference. Gitea 1.24's openidConnect source (goth) does not
+            # send a `code_challenge` at all, and `gitea admin auth add-oauth`
+            # exposes no flag to turn it on. With require_pkce: true the
+            # authorization request is rejected outright. Verified against the
+            # live request, which carries only client_id/redirect_uri/
+            # response_type/scope/state. Revisit if Gitea gains PKCE support.
+            require_pkce: false
             consent_mode: 'implicit'
             # Gitea derives its callback from the auth SOURCE NAME, not from
             # the client id: /user/oauth2/<source name>/callback. The source is
