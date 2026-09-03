@@ -94,6 +94,15 @@ spec:
             #   oauth_pkce_enabled: true
             #     allauth's pkce_enabled_default is False, so PKCE is off unless
             #     asked for. Authelia advertises S256.
+            # REQUIRED, and easy to miss: PAPERLESS_SOCIALACCOUNT_PROVIDERS
+            # alone does nothing. django-allauth only registers a provider's
+            # URLs if its app is in INSTALLED_APPS, and paperless builds that
+            # list with `*env_apps` from PAPERLESS_APPS (settings/__init__.py
+            # lines 126 and 153). Without this line the JSON below parses
+            # perfectly, the pod starts clean, and there is simply no
+            # /accounts/oidc/... route and no SSO button — a silent no-op with
+            # nothing in the logs.
+            - { name: PAPERLESS_APPS, value: "allauth.socialaccount.providers.openid_connect" }
             - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
               valueFrom:
                 secretKeyRef: { name: paperless-oidc, key: PAPERLESS_SOCIALACCOUNT_PROVIDERS }
