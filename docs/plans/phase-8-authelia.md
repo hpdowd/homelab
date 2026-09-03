@@ -7,7 +7,29 @@ wrong about manifests that already exist. Every change carries an inline
 holds. Verify Authelia minor version + config keys against the docs for the
 exact pinned image before each step, config schema drifts between 4.x minors.*
 
-> ## Status: ForwardAuth complete; OIDC provider live with Grafana wired, 2026-09-03
+> ## Status: PHASE 8 COMPLETE — all six OIDC clients wired, 2026-09-03
+>
+> Step 5 is finished. `grafana`, `gitea`, `nextcloud`, `immich`, `paperless` and
+> `argocd` are all registered and deployed; grafana, gitea, nextcloud and immich
+> are confirmed by real human logins. Paperless and argocd pass every check that
+> does not need a browser and are awaiting a first login.
+>
+> Two corrections this step forced on the plan, both already applied below:
+> ArgoCD did **not** stay on `argocd.lan` — it got the same websecure-pinned
+> `henrydowd.dev` host Grafana did, because the plan's "LAN-only via
+> split-horizon, no tunnel route" premise was wrong. And the five clients were
+> registered one commit at a time as their apps were wired, rather than up
+> front.
+>
+> The single most transferable lesson, learned the expensive way on Nextcloud:
+> **an authorization redirect proves nothing about the token exchange.**
+> `token_endpoint_auth_method` and `require_pkce` differ per client and fail
+> only after a successful login. `docs/reference/authelia.md` carries a
+> bogus-code probe that catches both without a browser.
+>
+> ---
+>
+> ## Superseded status: ForwardAuth complete; OIDC provider live with Grafana wired, 2026-09-03
 >
 > **Update, later on 2026-09-03.** Step 5a (the OIDC provider) is done and
 > Grafana is its first client. Discovery answers on
@@ -575,11 +597,11 @@ fetch it server-side: confirm resolution from a pod if anything 500s.
 | Order | App | Where | Notes |
 |---|---|---|---|
 | 1 ✅ | Grafana (**done**, LAN-only on `grafana.henrydowd.dev` via a websecure-pinned Ingress) | vm-stack inline values: `grafana.grafana.ini` `[auth.generic_oauth]` + secret via `grafana.envFromSecret` | confirm exact keys with `helm show values` (silent-drift gotcha); endpoints `/api/oidc/{authorization,token,userinfo}`; map `groups` → role |
-| 2 | Gitea | UI: Site Admin → Authentication Sources → OpenID Connect (or `gitea admin auth add-oauth`) | auto-discovery URL; account linking ON so existing `henry` maps; git-over-https keeps using tokens — unaffected |
-| 3 | Nextcloud | `occ app:install user_oidc` then `occ user_oidc:provider Authelia --clientid … --clientsecret … --discoveryuri …` | keep password login until mapped user verified; DAV clients keep app-passwords |
-| 4 | Immich | Admin → Settings → OAuth | issuer `https://auth.henrydowd.dev`; redirect URIs: `https://immich.henrydowd.dev/auth/login` **and** `app.immich:///oauth-callback` (mobile); keep password login enabled until both web+app proven |
-| 5 | Paperless | `PAPERLESS_SOCIALACCOUNT_PROVIDERS` (django-allauth JSON) in the deployment env + the client secret from its SealedSecret | *added 2026-09-02*: shipped as phase 10 after this plan was drafted, and both ADR 015 and services.md already promise "Authelia OIDC after phase 8", so it's a commitment, not an option. Verify the env key and JSON shape against v3.0.0's own docs before writing it, the allauth configuration moved across 2.x/3.x. Leave `PAPERLESS_DISABLE_REGULAR_LOGIN` unset until a mapped login is proven, and don't ForwardAuth it (Paperless Mobile hits `/api`) |
-| 6 (opt) | ArgoCD | `argocd-cm` `oidc.config` + secret in `argocd-secret` | LAN-only at `argocd.lan` = redirect URI outside the cert/cookie domain — either accept warnings or move UI to `argocd.henrydowd.dev` (LAN-only via split-horizon, no tunnel route) first. Defer if friction |
+| 2 ✅ | Gitea (**done**) | UI: Site Admin → Authentication Sources → OpenID Connect (or `gitea admin auth add-oauth`) | auto-discovery URL; account linking ON so existing `henry` maps; git-over-https keeps using tokens — unaffected |
+| 3 ✅ | Nextcloud (**done**) | `occ app:install user_oidc` then `occ user_oidc:provider Authelia --clientid … --clientsecret … --discoveryuri …` | keep password login until mapped user verified; DAV clients keep app-passwords |
+| 4 ✅ | Immich (**done**) | Admin → Settings → OAuth | issuer `https://auth.henrydowd.dev`; redirect URIs: `https://immich.henrydowd.dev/auth/login` **and** `app.immich:///oauth-callback` (mobile); keep password login enabled until both web+app proven |
+| 5 ✅ | Paperless (**done**) | `PAPERLESS_SOCIALACCOUNT_PROVIDERS` (django-allauth JSON) in the deployment env + the client secret from its SealedSecret | *added 2026-09-02*: shipped as phase 10 after this plan was drafted, and both ADR 015 and services.md already promise "Authelia OIDC after phase 8", so it's a commitment, not an option. Verify the env key and JSON shape against v3.0.0's own docs before writing it, the allauth configuration moved across 2.x/3.x. Leave `PAPERLESS_DISABLE_REGULAR_LOGIN` unset until a mapped login is proven, and don't ForwardAuth it (Paperless Mobile hits `/api`) |
+| 6 ✅ | ArgoCD (**done**, websecure-pinned `argocd.henrydowd.dev`, `admins` → `role:admin`) | `argocd-cm` `oidc.config` + secret in `argocd-secret` | LAN-only at `argocd.lan` = redirect URI outside the cert/cookie domain — either accept warnings or move UI to `argocd.henrydowd.dev` (LAN-only via split-horizon, no tunnel route) first. Defer if friction |
 
 After each: log out, log in via "Sign in with Authelia", confirm the account
 **linked** rather than duplicated, then (optionally, much later) disable
