@@ -255,7 +255,41 @@ data:
               - 'https://nextcloud.henrydowd.dev/apps/user_oidc/code'
             scopes: ['openid', 'profile', 'email', 'groups']
 
-        # The remaining three clients from the phase-8 plan are NOT registered
+          - client_id: 'immich'
+            client_name: 'Immich'
+            client_secret: '$pbkdf2-sha512$310000$AQp5xjlkOSykSSEN1eXr3g$0ue9A9nnl5ckfpeA6yqBbPHwPG7SPY8jZR/IFWvN/Q.6xQN27f5cP2xpw8qAyoH7mxltba6BLgrIavjUpiloGg'
+            public: false
+            # two_factor, same bracket as gitea and nextcloud: internet-facing
+            # and holding personal photos.
+            authorization_policy: 'two_factor'
+            # client_secret_post, like nextcloud and unlike the other two. Read
+            # out of the image rather than guessed: server/dist/config.js sets
+            # tokenEndpointAuthMethod to ClientSecretPost as Immich's default,
+            # and oauth.repository.js switches on it. Getting this wrong fails
+            # at the TOKEN endpoint, after a successful login — see the
+            # per-client table in docs/reference/authelia.md.
+            token_endpoint_auth_method: 'client_secret_post'
+            # Immich gates PKCE on the provider advertising it
+            # (`client.serverMetadata().supportsPKCE()` in oauth.repository.js)
+            # and Authelia's discovery advertises S256, so it will send one.
+            require_pkce: true
+            pkce_challenge_method: 'S256'
+            consent_mode: 'implicit'
+            # Three URIs, and all three are needed:
+            #   /auth/login     the web sign-in callback
+            #   /user-settings  linking OAuth to an existing account from the
+            #                   settings page, a different callback in Immich
+            #   app.immich:///  the MOBILE app's custom scheme. Note the three
+            #                   slashes — the authority is empty. Without it the
+            #                   phone app cannot log in even though the web can,
+            #                   which reads as "OAuth is broken on mobile only".
+            redirect_uris:
+              - 'https://immich.henrydowd.dev/auth/login'
+              - 'https://immich.henrydowd.dev/user-settings'
+              - 'app.immich:///oauth-callback'
+            scopes: ['openid', 'profile', 'email']
+
+        # The remaining two clients from the phase-8 plan are NOT registered
         # yet, on purpose. A client registration is only useful once its app is
         # actually wired, and minting a secret months early means a plaintext
         # that has to be kept safe with nothing using it. Add each one in the
