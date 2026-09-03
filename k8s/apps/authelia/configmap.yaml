@@ -152,6 +152,70 @@ data:
         enabled: true
         address: 'tcp://0.0.0.0:9959'
 
+    identity_providers:
+      oidc:
+        # hmac_secret and the jwks issuer key are deliberately NOT here. They
+        # arrive from sealed-oidc.yaml as a SECOND --config file, because the
+        # jwks private key is a structured list entry rather than a scalar and
+        # so has no AUTHELIA_*_FILE env var that could carry it. seal-oidc.sh
+        # documents the split, including the validate-config check that proves
+        # Authelia deep-merges the two halves — a shallow merge would silently
+        # drop every client registered below, and the symptom would be
+        # "invalid_client" on an app that looks correctly configured.
+        #
+        # `client_secret` below is a PBKDF2 DIGEST, not the secret itself. That
+        # is what makes this safe in plain git, exactly like the argon2 password
+        # hashes in sealed-users.yaml: the matching plaintext lives only in the
+        # client application and the password manager. Mint both halves with
+        # ./new-oidc-client.sh, which prints the digest and the plaintext
+        # side by side precisely because swapping them is the easy mistake.
+        clients:
+          - client_id: 'grafana'
+            client_name: 'Grafana'
+            client_secret: '$pbkdf2-sha512$310000$rs6fmbtagnzh4ugs7mM7pg$lB8be6aT01IobSQcF1KmHHH8Kdc/EV.Myfdg/ZMYyKY9vwIJOkQgUBYOeZ6Uv.a5s8TxE2BX/F9D3ImPkGXZUw'
+            public: false
+            # one_factor, not two_factor: Grafana is reachable only from the LAN
+            # (see the websecure-only Ingress in k8s/apps/monitoring), so the
+            # network is already doing the work a second factor would. amp and
+            # proxmox are two_factor because they are reachable from the
+            # internet, which this is not.
+            authorization_policy: 'one_factor'
+            # Explicit rather than defaulted. Grafana's OAuth client is
+            # x/oauth2 with AuthStyleAutoDetect, which probes basic first, so
+            # pinning Authelia's default here keeps the pair deterministic
+            # instead of dependent on a probe.
+            token_endpoint_auth_method: 'client_secret_basic'
+            require_pkce: true
+            pkce_challenge_method: 'S256'
+            # A first-party app we run ourselves, so skip the consent screen.
+            consent_mode: 'implicit'
+            # MUST match Grafana's root_url exactly, scheme included. This host
+            # is served by a websecure-only Ingress so it resolves on the LAN
+            # over HTTPS and 404s through the tunnel — see that Ingress for why
+            # a plain `grafana.henrydowd.dev` Ingress would publish Grafana to
+            # the internet.
+            redirect_uris:
+              - 'https://grafana.henrydowd.dev/login/generic_oauth'
+            scopes: ['openid', 'profile', 'email', 'groups']
+
+        # The remaining five clients from the phase-8 plan are NOT registered
+        # yet, on purpose. A client registration is only useful once its app is
+        # actually wired, and minting a secret months early means a plaintext
+        # that has to be kept safe with nothing using it. Add each one in the
+        # commit that wires its app. The shape is the block above; the
+        # per-app redirect URIs the plan settled on are:
+        #
+        #   gitea      https://git.henrydowd.dev/user/oauth2/authelia/callback
+        #   nextcloud  https://nextcloud.henrydowd.dev/apps/user_oidc/code
+        #   immich     https://immich.henrydowd.dev/auth/login
+        #              app.immich:///oauth-callback        (mobile app)
+        #   paperless  https://paperless.henrydowd.dev/accounts/oidc/authelia/login/callback/
+        #   argocd     https://argocd.lan/auth/callback     (LAN-only, see plan)
+        #
+        # Verify each against its own app's docs before committing: a wrong
+        # redirect_uri is not a validation error, it is a runtime
+        # "invalid_redirect_uri" at the end of a login the user already did.
+
     access_control:
       default_policy: 'deny'
 

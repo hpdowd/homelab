@@ -50,7 +50,18 @@ spec:
           # outage. Bump deliberately, and re-run validate-config (configmap.yaml)
           # against the new tag first.
           image: docker.io/authelia/authelia:4.39.20
-          args: ["--config", "/config/configuration.yml"]
+          # Two config files, merged by Authelia in the order given. The second
+          # holds only identity_providers.oidc.hmac_secret and .jwks, because
+          # the jwks private key is a structured list entry and so cannot be
+          # carried by any AUTHELIA_*_FILE env var the way the four secrets
+          # below are. The merge is a DEEP merge — verified against 4.39.20,
+          # see seal-oidc.sh — so the clients registered in the ConfigMap and
+          # the key material here coexist under identity_providers.oidc.
+          args:
+            - "--config"
+            - "/config/configuration.yml"
+            - "--config"
+            - "/secrets/oidc/oidc.yml"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -75,6 +86,7 @@ spec:
           volumeMounts:
             - { name: config,  mountPath: /config,          readOnly: true }
             - { name: secrets, mountPath: /secrets/authelia, readOnly: true }
+            - { name: oidc,    mountPath: /secrets/oidc,     readOnly: true }
             - { name: users,   mountPath: /secrets/users,    readOnly: true }
             - { name: data,    mountPath: /data }
             - { name: tmp,     mountPath: /tmp }
@@ -105,6 +117,10 @@ spec:
         - name: secrets
           secret:
             secretName: authelia-secrets
+            defaultMode: 0440
+        - name: oidc
+          secret:
+            secretName: authelia-oidc
             defaultMode: 0440
         - name: users
           secret:
