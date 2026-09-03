@@ -228,19 +228,88 @@ spec:
             # nextcloud/ingress.yaml for the full story. tl;dr: cloudflared
             # speaks plain HTTP, websecure-only routers 404.
             annotations: {}
-            # LAN-only (like argocd.lan / technitium.lan): no henrydowd.dev host,
-            # so the public *.henrydowd.dev tunnel has no Traefik route for
-            # grafana and 404s it. root_url below must match, or LAN logins /
-            # share links redirect to the now-unrouted WAN host.
+            # This host stays grafana.lan ONLY. The HTTPS host Grafana now
+            # advertises as root_url, grafana.henrydowd.dev, is served by a
+            # separate websecure-only Ingress in k8s/apps/monitoring, because it
+            # needs an entrypoint pin that this block must not have — see the
+            # note directly above and that file's header.
+            #
+            # Adding grafana.henrydowd.dev to THIS list instead would publish
+            # Grafana to the internet: the chart renders one router across both
+            # entrypoints, and the tunnel's wildcard public hostname forwards
+            # every *.henrydowd.dev name to Traefik whether or not anyone
+            # configured a route for it (verified 2026-09-03 — an unused name
+            # returns Traefik's own 404 through the Cloudflare edge, not
+            # Cloudflare's).
             hosts:
               - grafana.lan
             path: /
             pathType: Prefix
+          # The OIDC client secret as a FILE, not an env var: grafana.ini's
+          # $__file{} indirection reads it at startup, so the plaintext never
+          # appears in `kubectl describe pod`. Same reasoning as the
+          # AUTHELIA_*_FILE env vars in k8s/apps/authelia/deployment.yaml.
+          # The Secret is minted and sealed by
+          # k8s/apps/authelia/new-oidc-client.sh and lives at
+          # k8s/apps/monitoring/grafana-oidc-secret.sealed.yaml.
+          extraSecretMounts:
+            - name: grafana-oidc
+              secretName: grafana-oidc
+              mountPath: /etc/secrets/grafana-oidc
+              readOnly: true
+              defaultMode: 0440
           grafana.ini:
             server:
-              root_url: "http://grafana.lan"
+              # Moved off http://grafana.lan for OIDC: the redirect_uri
+              # registered with Authelia must match this EXACTLY, scheme
+              # included, and it has to be an HTTPS origin inside the
+              # henrydowd.dev cookie domain. Served by the websecure-only
+              # Ingress in k8s/apps/monitoring/grafana-ingress.yaml, which is
+              # LAN-only by construction — read the comment there before
+              # assuming this made Grafana public, because the reasoning is
+              # not the one the phase-8 plan assumed.
+              #
+              # grafana.lan still works and is still the break-glass path; it
+              # just redirects here for generated links.
+              root_url: "https://grafana.henrydowd.dev"
             security:
               disable_initial_admin_creation: false
+            # SSO via Authelia. Password login is deliberately LEFT ENABLED:
+            # Grafana runs on an emptyDir and is where you look when the
+            # cluster is unwell, so locking its only door behind a pod that
+            # might itself be the thing that is down is exactly the failure
+            # ADR 018's recoverability rule exists to prevent. Set
+            # disable_login_form only once OIDC has been trusted for a while.
+            auth.generic_oauth:
+              enabled: true
+              name: Authelia
+              icon: signin
+              client_id: grafana
+              client_secret: $__file{/etc/secrets/grafana-oidc/client_secret}
+              scopes: "openid profile email groups"
+              empty_scopes: false
+              # Authelia's endpoints live under /api/oidc/, which is not the
+              # path most generic_oauth examples use. Confirm against
+              # https://auth.henrydowd.dev/.well-known/openid-configuration
+              # after any Authelia bump rather than trusting these.
+              auth_url: "https://auth.henrydowd.dev/api/oidc/authorization"
+              token_url: "https://auth.henrydowd.dev/api/oidc/token"
+              api_url: "https://auth.henrydowd.dev/api/oidc/userinfo"
+              login_attribute_path: preferred_username
+              name_attribute_path: name
+              groups_attribute_path: groups
+              # Authelia registers this client with require_pkce, so this is
+              # not optional — without it the authorization request is
+              # rejected before the user ever sees a login form.
+              use_pkce: true
+              # JMESPath over the `groups` claim. `admins` is the group the
+              # sealed users.yml puts henry in; anyone else who ever gets an
+              # account lands on Viewer rather than inheriting Admin.
+              role_attribute_path: "contains(groups[*], 'admins') && 'Admin' || 'Viewer'"
+              # Grafana's own accounts and Authelia's are matched on email, so
+              # logging in via Authelia adopts the existing admin user instead
+              # of creating a parallel one.
+              oauth_allow_insecure_email_lookup: true
           plugins: []
           extraEnvVars:
             GF_INSTALL_PLUGINS: ""

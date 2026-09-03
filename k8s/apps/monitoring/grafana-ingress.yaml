@@ -1,0 +1,61 @@
+# A SECOND Ingress for Grafana, alongside the grafana.lan one the vm-k8s-stack
+# chart renders (k8s/infrastructure/victoria-metrics.yaml). It exists for one
+# reason: OIDC needs Grafana to live at an HTTPS origin inside the
+# `henrydowd.dev` cookie domain, and grafana.lan is neither.
+#
+# WHY THIS IS NOT A PUBLIC HOST, AND WHY THAT IS NOT OBVIOUS.
+#
+# The phase-8 plan assumed a `*.henrydowd.dev` name with no cloudflared route
+# would simply be LAN-only. That is false here. The tunnel is token-managed
+# (its ingress rules live in the Cloudflare dashboard, not in this repo) and it
+# carries a WILDCARD public hostname, so an arbitrary name that has never been
+# configured anywhere — nonsense-xyz.henrydowd.dev — still reaches Traefik from
+# the internet and comes back with Traefik's own 404, wrapped in Cloudflare
+# headers. Verified 2026-09-03. A plain Ingress for grafana.henrydowd.dev would
+# therefore have published Grafana to the internet the moment it synced.
+#
+# What actually separates the two paths is the ENTRYPOINT, which is the same
+# mechanism k8s/apps/proxmox/ingress-route.yaml already relies on:
+#
+#   cloudflared terminates TLS at Cloudflare's edge and delivers to Traefik as
+#   plain HTTP, so every request from the internet lands on `web`.
+#   LAN clients resolve grafana.henrydowd.dev straight to Traefik (Technitium
+#   split-horizon, 192.168.1.200) and speak real HTTPS, landing on `websecure`.
+#
+# Pinning this router to `websecure` therefore makes it LAN-only by
+# construction: the tunnel arrives on `web`, finds no matching router and 404s.
+# Note that this is the exact inverse of the warning on the nextcloud and
+# grafana.lan Ingresses — there, pinning entrypoints is the bug, because those
+# hosts are MEANT to be served over the tunnel. Here it is the mechanism.
+#
+# The cert is the default wildcard from the TLSStore in the traefik namespace
+# (cert-manager-config/tlsstore.yaml), so there is deliberately no `tls:` block
+# and no secretName: `router.tls: "true"` is what puts the router on the TLS
+# side of the websecure entrypoint, and the store supplies *.henrydowd.dev.
+#
+# grafana.lan stays as it is, un-annotated and served on both entrypoints. It is
+# the break-glass path: if Authelia is down or its OIDC config is broken,
+# Grafana's own admin login still works there (ADR 018's recoverability rule).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-henrydowd
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: grafana.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Rendered by the vm-k8s-stack chart, not by this directory.
+                # `kubectl -n monitoring get svc` if a chart bump renames it.
+                name: vm-grafana
+                port:
+                  number: 80
