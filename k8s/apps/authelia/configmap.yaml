@@ -227,14 +227,32 @@ data:
               - 'https://git.henrydowd.dev/user/oauth2/authelia/callback'
             scopes: ['openid', 'profile', 'email', 'groups']
 
-        # The remaining four clients from the phase-8 plan are NOT registered
+          - client_id: 'nextcloud'
+            client_name: 'Nextcloud'
+            client_secret: '$pbkdf2-sha512$310000$NboQf5xtELRcWDDls0bnJw$7FXSrClB0QDC9SvhkhbmtIoH50sk9Co3d0KIcjqSc70NQ.rvv52WCxqAUZQnMwR2aBDRNXpRZXAvHwClUqtPlQ'
+            public: false
+            # two_factor, same reasoning as gitea: internet-facing and holding
+            # personal files. DAV and the sync clients are unaffected — they
+            # authenticate with app passwords and never enter this flow.
+            authorization_policy: 'two_factor'
+            token_endpoint_auth_method: 'client_secret_basic'
+            # Left false until it is confirmed what user_oidc 8.11 actually
+            # sends. Gitea taught the lesson: require_pkce: true against a
+            # client that omits code_challenge rejects the request before any
+            # login form appears. Tighten to true once verified.
+            require_pkce: false
+            consent_mode: 'implicit'
+            redirect_uris:
+              - 'https://nextcloud.henrydowd.dev/apps/user_oidc/code'
+            scopes: ['openid', 'profile', 'email', 'groups']
+
+        # The remaining three clients from the phase-8 plan are NOT registered
         # yet, on purpose. A client registration is only useful once its app is
         # actually wired, and minting a secret months early means a plaintext
         # that has to be kept safe with nothing using it. Add each one in the
         # commit that wires its app. The shape is the block above; the
         # per-app redirect URIs the plan settled on are:
         #
-        #   nextcloud  https://nextcloud.henrydowd.dev/apps/user_oidc/code
         #   immich     https://immich.henrydowd.dev/auth/login
         #              app.immich:///oauth-callback        (mobile app)
         #   paperless  https://paperless.henrydowd.dev/accounts/oidc/authelia/login/callback/
