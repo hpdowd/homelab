@@ -77,6 +77,36 @@ spec:
             # secure-cookie and Immich trusted-proxy gotchas.
             - { name: PAPERLESS_PROXY_SSL_HEADER, value: '["HTTP_X_FORWARDED_PROTO","https"]' }
             - { name: PAPERLESS_TRUSTED_PROXIES, value: "10.42.0.0/16" }
+            # Authelia SSO (django-allauth openid_connect). The whole JSON
+            # blob is a Secret rather than a literal, because it carries the
+            # client secret — a literal here would show up in
+            # `kubectl describe pod`. Built and sealed alongside the client;
+            # see docs/reference/authelia.md.
+            #
+            # Two settings inside that JSON are pinned rather than left to
+            # allauth's negotiation, both read out of allauth 65.16.1 itself:
+            #   token_auth_method: client_secret_post
+            #     allauth's OIDC adapter otherwise picks basic vs post by
+            #     inspecting token_endpoint_auth_methods_supported, and Authelia
+            #     advertises both. It would land on post here anyway; pinning it
+            #     means an Authelia change cannot silently flip it and break the
+            #     token exchange AFTER a successful login.
+            #   oauth_pkce_enabled: true
+            #     allauth's pkce_enabled_default is False, so PKCE is off unless
+            #     asked for. Authelia advertises S256.
+            - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
+              valueFrom:
+                secretKeyRef: { name: paperless-oidc, key: PAPERLESS_SOCIALACCOUNT_PROVIDERS }
+            # No account is created from an SSO login that matches nothing.
+            # Paperless's `henry` has the placeholder email root@localhost, so it
+            # will NOT match Authelia's henry@dowd.ie: link the two once from
+            # Paperless's own profile page while logged in with the password,
+            # rather than letting SSO mint a second account.
+            - { name: PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS, value: "false" }
+            # PAPERLESS_DISABLE_REGULAR_LOGIN stays UNSET on purpose. Password
+            # login is the break-glass path, and Paperless Mobile talks to /api
+            # with its own credentials — which is also why this app gets OIDC
+            # and never ForwardAuth (ADR 015, phase-8 plan step 5).
             - { name: PAPERLESS_OCR_LANGUAGE, value: "eng" }
             - { name: PAPERLESS_TIME_ZONE, value: "Europe/Dublin" }
             # OCR is RAM-bursty; cap concurrency to fit the tight worker and
