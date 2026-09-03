@@ -325,6 +325,7 @@ Registered clients:
 |---|---|---|---|
 | `grafana` | `one_factor` | `https://grafana.henrydowd.dev/login/generic_oauth` | PKCE S256, `client_secret_basic`, `consent_mode: implicit` |
 | `gitea` | `two_factor` | `https://git.henrydowd.dev/user/oauth2/authelia/callback` | **No PKCE** — Gitea cannot send one, see below |
+| `nextcloud` | `two_factor` | `https://nextcloud.henrydowd.dev/apps/user_oidc/code` | PKCE S256 (verified, then enforced); `user_oidc` 8.11 |
 
 `one_factor` rather than `two_factor` because Grafana is reachable only from
 the LAN, so the network already does the work a second factor would. amp and
@@ -381,9 +382,47 @@ client is registered `require_pkce: false`. Grafana keeps PKCE. This surfaced as
 a rejected authorization request, *behind* a more obvious fault — see Operations
 for why a ConfigMap edit alone does nothing.
 
+### Nextcloud: also not in git
+
+Same shape as Gitea — the provider lives in Nextcloud's database, not in a
+manifest. Created once, with the secret passed by **environment variable** so it
+never reaches argv:
+
+```bash
+POD=$(kubectl -n nextcloud get pod -l app=nextcloud -o jsonpath='{.items[0].metadata.name}')
+kubectl -n nextcloud exec $POD -- env NC_OIDC_SECRET='<plaintext>' \
+  su -s /bin/sh www-data -c '
+php occ user_oidc:provider Authelia \
+  --clientid=nextcloud \
+  --clientsecret-env=NC_OIDC_SECRET \
+  --discoveryuri=https://auth.henrydowd.dev/.well-known/openid-configuration \
+  --scope="openid profile email groups" \
+  --unique-uid=0 \
+  --mapping-uid=preferred_username \
+  --mapping-display-name=name \
+  --mapping-email=email \
+  --check-bearer=0'
+```
+
+**`--unique-uid=0` is the account-linking setting and the one to get right.**
+Left at 1, user_oidc derives a hashed Nextcloud user id from the provider and
+creates a *new* account; at 0 it uses the `mapping-uid` claim verbatim, so
+Authelia's `preferred_username: henry` lands on the existing `henry` account.
+The equivalent of Gitea's `ACCOUNT_LINKING = auto`, but it fails the other way —
+silently duplicating rather than refusing.
+
+`--check-bearer=0` keeps WebDAV and the sync clients on app passwords rather
+than validating bearer tokens against Authelia. That is deliberate: it is what
+lets the desktop and mobile clients keep working untouched, and is the reason
+the plan put Nextcloud on OIDC instead of ForwardAuth.
+
+The `user_oidc` app itself is installed from the app store
+(`occ app:install user_oidc`) and lives on the data PVC, so it survives restarts
+but not a rebuild from empty. Listed in cluster-rebuild.md alongside Gitea's.
+
 ### Not yet wired
 
-nextcloud, immich, paperless and optionally argocd. Deliberately **not**
+immich, paperless and optionally argocd. Deliberately **not**
 pre-registered: a client registration is only useful once its app is wired, and
 minting a secret months early means a plaintext to keep safe with nothing using
 it. `configmap.yaml` carries the intended redirect URIs as a comment; add each

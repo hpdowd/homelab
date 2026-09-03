@@ -356,6 +356,11 @@ data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 - Restore the data PVC from restic
 - For Nextcloud, also restore the DB dump and run `occ files:scan --all`
 - For Gitea, run `gitea admin regenerate hooks` after scaling back up
+- **For Nextcloud, re-install and re-create the Authelia OIDC provider** if the
+  data volume was rebuilt rather than restored: `occ app:install user_oidc` then
+  the `occ user_oidc:provider` command in `docs/reference/authelia.md`. Watch
+  `--unique-uid=0` — without it the SSO login silently creates a *second*
+  account instead of adopting the existing one.
 - **For Gitea, also re-create the Authelia OAuth source** if the DB was rebuilt
   rather than restored. It lives only in `gitea.db`, not in app.ini, so it comes
   back missing with no sync error to say so — Gitea simply stops offering "Sign
