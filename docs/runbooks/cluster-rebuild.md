@@ -356,6 +356,9 @@ data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 - Restore the data PVC from restic
 - For Nextcloud, also restore the DB dump and run `occ files:scan --all`
 - For Gitea, run `gitea admin regenerate hooks` after scaling back up
+- **For Immich, re-apply the OAuth config** if the database was rebuilt rather
+  than restored — it lives in `system_metadata`, key `system-config`, not in any
+  manifest. SQL and settings in `docs/reference/authelia.md`.
 - **For Nextcloud, re-install and re-create the Authelia OIDC provider** if the
   data volume was rebuilt rather than restored: `occ app:install user_oidc` then
   the `occ user_oidc:provider` command in `docs/reference/authelia.md`. Watch

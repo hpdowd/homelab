@@ -326,6 +326,7 @@ Registered clients:
 | `grafana` | `one_factor` | `https://grafana.henrydowd.dev/login/generic_oauth` | PKCE S256, `client_secret_basic`, `consent_mode: implicit` |
 | `gitea` | `two_factor` | `https://git.henrydowd.dev/user/oauth2/authelia/callback` | **No PKCE** — Gitea cannot send one, see below |
 | `nextcloud` | `two_factor` | `https://nextcloud.henrydowd.dev/apps/user_oidc/code` | PKCE S256 (verified, then enforced); `user_oidc` 8.11 |
+| `immich` | `two_factor` | `/auth/login`, `/user-settings`, `app.immich:///oauth-callback` | PKCE S256; **three** URIs, mobile included |
 
 Two per-client settings that cannot be copied between clients, both of which
 were got wrong first time:
@@ -335,6 +336,7 @@ were got wrong first time:
 | `grafana` | `client_secret_basic` | S256 |
 | `gitea` | `client_secret_basic` | **none — cannot send one** |
 | `nextcloud` | **`client_secret_post`** | S256 |
+| `immich` | **`client_secret_post`** | S256 |
 
 Grafana and Gitea both authenticate through `golang.org/x/oauth2`, whose
 `AuthStyleAutoDetect` tries HTTP Basic first, so `client_secret_basic` suits
@@ -464,9 +466,56 @@ The `user_oidc` app itself is installed from the app store
 (`occ app:install user_oidc`) and lives on the data PVC, so it survives restarts
 but not a rebuild from empty. Listed in cluster-rebuild.md alongside Gitea's.
 
+### Immich: config lives in Postgres, and was set by SQL
+
+Immich has no `IMMICH_CONFIG_FILE` here, so its settings live in the database —
+table `system_metadata`, key `system-config`, a JSONB object holding only the
+values that differ from default. It is normally edited in Admin → Settings →
+OAuth; it was set here with an **additive JSONB merge**, which is safe precisely
+because the row holds overrides only:
+
+```sql
+UPDATE system_metadata
+SET value = value || '{"oauth": { ... }}'::jsonb
+WHERE key = 'system-config';
+```
+
+`||` replaces the `oauth` key and leaves every other override (`map`,
+`newVersionCheck`) untouched. Read the row back with
+`jsonb_pretty(value #- '{oauth,clientSecret}')` to inspect it without printing
+the secret. Restart `deploy/immich-server` afterwards.
+
+Settings worth knowing:
+
+- **`tokenEndpointAuthMethod: client_secret_post`** — Immich's own default, read
+  out of `server/dist/config.js` rather than guessed, after Nextcloud's
+  mismatch. Must match the Authelia registration.
+- **`autoRegister: false`.** Immich matches an OAuth login to an existing user
+  **by email**, so `henry@dowd.ie` links to the existing admin account. Left at
+  its default `true`, any future Authelia identity would silently get a new
+  Immich account. There is a second household user (`loridowd1@gmail.com`) who
+  has no Authelia account and keeps password login — which is the reason to
+  care.
+- **`issuerUrl` is the full `/.well-known/openid-configuration` URL**, not the
+  bare issuer. Confirmed working: discovery runs server-side, so a wrong value
+  fails immediately rather than at login.
+
+Immich performs discovery server-side when building the authorization URL, which
+makes it verifiable without a browser:
+
+```bash
+curl -s -X POST https://immich.henrydowd.dev/api/oauth/authorize \
+  -H 'Content-Type: application/json' \
+  -d '{"redirectUri":"https://immich.henrydowd.dev/auth/login"}'
+```
+
+A URL back means discovery, client id and PKCE are all good; a 500 means
+discovery failed. Repeat it with `app.immich:///oauth-callback` and
+`/user-settings` to prove the other two registered URIs.
+
 ### Not yet wired
 
-immich, paperless and optionally argocd. Deliberately **not**
+paperless and optionally argocd. Deliberately **not**
 pre-registered: a client registration is only useful once its app is wired, and
 minting a secret months early means a plaintext to keep safe with nothing using
 it. `configmap.yaml` carries the intended redirect URIs as a comment; add each
