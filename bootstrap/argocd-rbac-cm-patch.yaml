@@ -1,0 +1,31 @@
+# Strategic-merge patch for argocd-rbac-cm, applied during bootstrap alongside
+# argocd-cm-patch.yaml.
+#
+# Without this, an Authelia login succeeds and lands with NO permissions:
+# ArgoCD's built-in default for an authenticated-but-unmapped user is
+# `role:readonly` at best, and the SSO identity is not the local `admin`
+# account. That reads as "SSO is broken" when it is really "SSO worked and you
+# have no role".
+#
+# `admins` is the group in the sealed users.yml that henry belongs to, and it
+# arrives in the ID token because argocd-cm requests the `groups` claim
+# explicitly — see the note there.
+#
+# policy.default stays `role:readonly` rather than being widened: anyone who
+# authenticates but is not in admins can look and not touch.
+#
+# The live ConfigMap carried no data at all before this (ArgoCD was running on
+# built-in defaults), so a merge patch here adds keys without displacing
+# anything.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+data:
+  policy.default: role:readonly
+  policy.csv: |
+    g, admins, role:admin
+  # Map the `groups` claim rather than the default `sub`. Authelia's `sub` is a
+  # UUID, so leaving this unset makes every policy above match nothing.
+  scopes: "[groups]"

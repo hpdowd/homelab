@@ -324,20 +324,40 @@ data:
               - 'https://paperless.henrydowd.dev/accounts/oidc/authelia/login/callback/'
             scopes: ['openid', 'profile', 'email']
 
-        # The remaining client from the phase-8 plan is NOT registered
-        # yet, on purpose. A client registration is only useful once its app is
-        # actually wired, and minting a secret months early means a plaintext
-        # that has to be kept safe with nothing using it. Add each one in the
-        # commit that wires its app. The shape is the block above; the
-        # per-app redirect URIs the plan settled on are:
-        #
-        #   immich     https://immich.henrydowd.dev/auth/login
-        #              app.immich:///oauth-callback        (mobile app)
-        #   argocd     https://argocd.lan/auth/callback     (LAN-only, see plan)
-        #
-        # Verify each against its own app's docs before committing: a wrong
-        # redirect_uri is not a validation error, it is a runtime
-        # "invalid_redirect_uri" at the end of a login the user already did.
+          - client_id: 'argocd'
+            client_name: 'ArgoCD'
+            client_secret: '$pbkdf2-sha512$310000$J9MiD.dZ3h5UN/XNhGCxzg$BcRLoPZZAD9GTlQHYoZZW3taQlTlBiNmHPMsjLF4hH2SRop8xwEa/M0GlUKjbY/kVVwSG3Nf9wpUJ79lYRC2.g'
+            public: false
+            # two_factor even though argocd.henrydowd.dev is LAN-only. Grafana
+            # is one_factor on the same reasoning that the network already does
+            # the work — but this UI can change every workload in the cluster,
+            # including Authelia itself, so the blast radius earns the second
+            # factor that Grafana's does not.
+            authorization_policy: 'two_factor'
+            # x/oauth2 under the hood (go-oidc), which probes Basic first.
+            token_endpoint_auth_method: 'client_secret_basic'
+            # ArgoCD's enablePKCEAuthentication defaults to false and is not
+            # turned on in argocd-cm, so it sends no code_challenge — same
+            # situation as gitea. Do not copy nextcloud/immich/paperless here.
+            require_pkce: false
+            consent_mode: 'implicit'
+            redirect_uris:
+              # The web UI, matching `url:` in bootstrap/argocd-cm-patch.yaml.
+              - 'https://argocd.henrydowd.dev/auth/callback'
+              # `argocd login --sso` spins up a loopback listener on 8085 and
+              # expects to be redirected back to it. Harmless to register and
+              # annoying to discover missing later; localhost is not reachable
+              # by anyone but the person running the CLI.
+              - 'http://localhost:8085/auth/callback'
+            scopes: ['openid', 'profile', 'email', 'groups']
+
+        # Every client the phase-8 plan called for is now registered. When
+        # adding another: mint with ./new-oidc-client.sh, and do NOT copy the
+        # settings of whichever client is nearest in this file. Two of them
+        # differ per client and both fail only at the TOKEN endpoint, after a
+        # successful login — token_endpoint_auth_method and require_pkce. Read
+        # what the client actually sends, then verify with the bogus-code probe
+        # in docs/reference/authelia.md before calling it done.
 
     access_control:
       default_policy: 'deny'

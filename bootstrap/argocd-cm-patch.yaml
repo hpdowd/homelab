@@ -29,6 +29,43 @@ metadata:
   name: argocd-cm
   namespace: argocd
 data:
+  # The base URL ArgoCD builds its OIDC redirect from. It MUST match the
+  # redirect_uris registered in k8s/apps/authelia/configmap.yaml exactly,
+  # scheme included. This is the websecure-only host from
+  # k8s/apps/argocd/ingress.yaml — LAN-only, but real HTTPS and inside the
+  # henrydowd.dev cookie domain, which is what OIDC needs and argocd.lan
+  # cannot give. argocd.lan still serves the UI and still takes the local
+  # admin login; it just stops being the name in generated links.
+  url: https://argocd.henrydowd.dev
+
+  # Authelia SSO, talking to Authelia's OIDC provider directly — no Dex.
+  #
+  # clientSecret is a REFERENCE, not the secret: ArgoCD resolves a leading `$`
+  # as `$<secret-name>:<key>`, and it will only read a Secret carrying the
+  # label app.kubernetes.io/part-of: argocd. That label is set in
+  # k8s/apps/argocd/oidc-sealed-secret.yaml and is easy to lose when resealing.
+  #
+  # requestedIDTokenClaims is load-bearing for RBAC below. ArgoCD reads groups
+  # from the ID TOKEN, and Authelia does not put them there just because the
+  # `groups` scope was requested — the scope populates userinfo. Asking for the
+  # claim explicitly is what makes group RBAC work; Authelia advertises
+  # claims_parameter_supported: true and lists `groups` in claims_supported.
+  # Without it, login succeeds and the user lands with no permissions, which
+  # reads as an RBAC bug rather than a claims one.
+  oidc.config: |
+    name: Authelia
+    issuer: https://auth.henrydowd.dev
+    clientID: argocd
+    clientSecret: $argocd-oidc:clientSecret
+    requestedScopes:
+      - openid
+      - profile
+      - email
+      - groups
+    requestedIDTokenClaims:
+      groups:
+        essential: true
+
   resource.exclusions: |
     ### Network resources created by the Kubernetes control plane and excluded to reduce the number of watched events and UI clutter
     - apiGroups:

@@ -18,3 +18,45 @@ spec:
               service:
                 name: argocd-server
                 port: { number: 80 }
+---
+# The HTTPS host, added for OIDC. ArgoCD's redirect URI has to be an HTTPS
+# origin inside the henrydowd.dev cookie domain, and argocd.lan is neither.
+#
+# LAN-ONLY BY CONSTRUCTION, and not for the reason the comment above assumes.
+# The cloudflared tunnel carries a WILDCARD public hostname, so any
+# *.henrydowd.dev name added to Traefik is reachable from the internet the
+# moment it syncs — "there is no public hostname for it in the tunnel" is not a
+# thing that protects anything. What protects this one is the entrypoint pin:
+# the tunnel always delivers plain HTTP to `web`, LAN clients resolve straight
+# to Traefik (Technitium) and arrive on `websecure`, so a websecure-only router
+# is invisible to the internet and 404s there. Verified at the Cloudflare edge.
+# Same mechanism as k8s/apps/monitoring/grafana-ingress.yaml — read that file's
+# header before copying this, and gotchas.md for the full trap.
+#
+# No `tls:` block: the default TLSStore in the traefik namespace supplies the
+# wildcard cert. argocd.lan above stays un-annotated and plain HTTP, and remains
+# the break-glass path — ArgoCD's own admin login still works there if Authelia
+# is down, which matters more here than anywhere else, because ArgoCD is what
+# you would use to repair Authelia.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server-henrydowd
+  namespace: argocd
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: argocd.henrydowd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                # port 80: argocd-server runs with server.insecure=true
+                # (argocd-cmd-params-cm), so Traefik speaks plain HTTP to it.
+                port: { number: 80 }
