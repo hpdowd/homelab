@@ -235,7 +235,15 @@ data:
             # personal files. DAV and the sync clients are unaffected — they
             # authenticate with app passwords and never enter this flow.
             authorization_policy: 'two_factor'
-            token_endpoint_auth_method: 'client_secret_basic'
+            # client_secret_post, NOT basic like the other two. Nextcloud's
+            # user_oidc sends the credentials in the token request BODY, and
+            # Authelia enforces whatever is registered here — a mismatch fails
+            # at the TOKEN endpoint with "the OAuth 2.0 client registration does
+            # not allow this method", i.e. only after the user has already
+            # logged in successfully and been redirected back. grafana and gitea
+            # both go through golang.org/x/oauth2, which auto-detects and tries
+            # basic first, so they are fine; user_oidc does not negotiate.
+            token_endpoint_auth_method: 'client_secret_post'
             # Confirmed against the live authorization request: user_oidc 8.11
             # sends code_challenge with S256, so this is enforced rather than
             # merely accepted. (Gitea cannot, and is registered false — check
