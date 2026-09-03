@@ -20,6 +20,19 @@ data:
 
     server:
       address: 'tcp://0.0.0.0:9091'
+      # 4096 (the default read buffer) is too small for the forward-auth check
+      # on proxmox.henrydowd.dev, and ONLY that host. Traefik replays the whole
+      # client request's headers to /api/authz/forward-auth, so once PVE has
+      # issued its own cookies the Cookie header carries all of: Cloudflare
+      # Access's CF_Authorization JWT (~800B), authelia_session, PVEAuthCookie
+      # (a ~450B signed ticket) and CSRFPreventionToken. Past 4096 total,
+      # Authelia answers 431 and never sees the request, so every PVE API call
+      # fails immediately AFTER a successful PVE login — which reads as "the
+      # Proxmox login is broken" rather than as an Authelia fault. Measured on
+      # the live pod: 3500B of cookie -> 302, 4000B -> 431.
+      buffers:
+        read: 16384
+        write: 16384
       # Stops Authelia writing /app/.healthcheck.env on boot. That file feeds
       # the image's own healthcheck.sh, which nothing here uses — the pod is
       # probed with httpGet on /api/health — and writing it is the ONLY thing
