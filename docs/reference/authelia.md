@@ -328,6 +328,7 @@ Registered clients:
 | `nextcloud` | `two_factor` | `https://nextcloud.henrydowd.dev/apps/user_oidc/code` | PKCE S256 (verified, then enforced); `user_oidc` 8.11 |
 | `immich` | `two_factor` | `/auth/login`, `/user-settings`, `app.immich:///oauth-callback` | PKCE S256; **three** URIs, mobile included |
 | `paperless` | `two_factor` | `/accounts/oidc/authelia/login/callback/` | PKCE S256; **trailing slash** matters |
+| `argocd` | `two_factor` | `https://argocd.henrydowd.dev/auth/callback` (+ `localhost:8085` for the CLI) | **No PKCE**; needs the `groups` ID-token claim |
 
 Two per-client settings that cannot be copied between clients, both of which
 were got wrong first time:
@@ -339,6 +340,7 @@ were got wrong first time:
 | `nextcloud` | **`client_secret_post`** | S256 |
 | `immich` | **`client_secret_post`** | S256 |
 | `paperless` | **`client_secret_post`** | S256 (off by default, enabled explicitly) |
+| `argocd` | `client_secret_basic` | **none — `enablePKCEAuthentication` is off** |
 
 Grafana and Gitea both authenticate through `golang.org/x/oauth2`, whose
 `AuthStyleAutoDetect` tries HTTP Basic first, so `client_secret_basic` suits
@@ -560,17 +562,46 @@ so SSO cannot mint a second account. Log in with the password once and connect
 the Authelia identity from the Paperless profile page. (Fixing that placeholder
 email would also work, and is worth doing anyway.)
 
+### ArgoCD: a second host, and RBAC that fails as a login bug
+
+Gets the same treatment Grafana did — a `websecure`-pinned
+`argocd.henrydowd.dev` Ingress, LAN-only by construction, because OIDC needs an
+HTTPS origin inside the cookie domain and `argocd.lan` is neither. `argocd.lan`
+stays, un-annotated and plain HTTP, as the break-glass path; that matters more
+here than anywhere else, since ArgoCD is what you would use to repair Authelia.
+
+`two_factor` despite being LAN-only, where Grafana is `one_factor`. The network
+does the same work in both cases, but this UI can change every workload in the
+cluster, Authelia included.
+
+Config lives in **two ConfigMap patches applied at bootstrap**
+(`bootstrap/argocd-cm-patch.yaml`, `bootstrap/argocd-rbac-cm-patch.yaml`) rather
+than as GitOps-managed manifests, so ArgoCD does not take ownership of
+ConfigMaps its own install creates. `bootstrap.sh` applies both; they can be
+re-applied by hand with `kubectl patch --type merge --patch-file`.
+
+Three things that each look like a different bug when missing:
+
+- **`requestedIDTokenClaims`** in `oidc.config`. ArgoCD reads groups from the
+  **ID token**, and Authelia does not put them there just because the `groups`
+  scope was requested — the scope populates *userinfo*. Without the explicit
+  claim request the login succeeds and the user lands with no permissions,
+  which reads as an RBAC problem rather than a claims one. Authelia advertises
+  `claims_parameter_supported: true` and lists `groups` in `claims_supported`.
+- **`scopes: "[groups]"`** in `argocd-rbac-cm`. The default subject for policy
+  matching is `sub`, and Authelia's `sub` is a UUID that matches no policy line.
+- **The `app.kubernetes.io/part-of: argocd` label** on the `argocd-oidc` Secret.
+  ArgoCD resolves `clientSecret: $argocd-oidc:clientSecret` only from Secrets
+  carrying that label, and it is easy to drop when resealing.
+
 ### Not yet wired
 
-optionally argocd. Deliberately **not**
-pre-registered: a client registration is only useful once its app is wired, and
-minting a secret months early means a plaintext to keep safe with nothing using
-it. `configmap.yaml` carries the intended redirect URIs as a comment; add each
-client in the commit that wires its app.
+Nothing. Every client the phase-8 plan called for is registered.
 
-Constraints already known: argocd is LAN-only, so it needs the same
-websecure-only treatment Grafana got, or its redirect URI sits outside the cert
-and cookie domain; paperless must be OIDC and never ForwardAuth, because
-Paperless Mobile hits `/api`; Collabora gets neither. Several of those backends
-set substantial session cookies of their own, so re-check the read buffer as
-clients are added.
+When adding another, do **not** copy the settings of whichever client sits
+nearest in `configmap.yaml`. Two of them differ per client and both fail only at
+the token endpoint, after a successful login: `token_endpoint_auth_method` and
+`require_pkce`. Read what the client actually sends, then run the bogus-code
+probe above.
+
+Collabora still gets neither ForwardAuth nor OIDC, by design (WOPI backend).

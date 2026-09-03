@@ -76,6 +76,7 @@ ok "master key present and looks right"
 ok "repo token present"
 
 [[ -f argocd-cm-patch.yaml ]] || die "argocd-cm-patch.yaml missing from $(pwd)"
+[[ -f argocd-rbac-cm-patch.yaml ]] || die "argocd-rbac-cm-patch.yaml missing from $(pwd)"
 [[ -f ../k8s/argocd/root-app.yaml ]] || die "../k8s/argocd/root-app.yaml missing — is this a full clone?"
 ok "manifests present"
 
@@ -142,9 +143,15 @@ ok "installed"
 
 # Must land before root-app, or the EndpointSlices that point Traefik at the
 # LXC services are silently dropped. See argocd-cm-patch.yaml.
-info "Applying the argocd-cm exclusions patch"
+info "Applying the argocd-cm exclusions + SSO patch"
 kubectl patch configmap argocd-cm -n argocd --type merge \
   --patch-file argocd-cm-patch.yaml
+# Group RBAC for the Authelia SSO login. Without it an SSO login succeeds and
+# lands with no permissions, which reads as a broken login rather than a
+# missing role. See argocd-rbac-cm-patch.yaml.
+info "Applying the argocd-rbac-cm SSO group policy"
+kubectl patch configmap argocd-rbac-cm -n argocd --type merge \
+  --patch-file argocd-rbac-cm-patch.yaml
 kubectl -n argocd rollout restart deployment argocd-server
 kubectl -n argocd rollout status deployment argocd-server --timeout=300s
 ok "patched and restarted"

@@ -23,7 +23,7 @@ for how a request actually flows see architecture.md.
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 | **Authelia ForwardAuth, two_factor** |
 | Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) | **Cloudflare Access + ForwardAuth two_factor, tunnel path only** (three logins with PVE's own) — LAN HTTPS is ungated by design (ADR 018) |
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 | LAN-only |
-| ArgoCD | argocd.lan | — | k3s pod (`argocd` ns) — deliberately LAN-only | LAN-only |
+| ArgoCD | argocd.lan | argocd.henrydowd.dev (**LAN-only**) | k3s pod (`argocd` ns) | **Authelia OIDC, two_factor**, `admins` → `role:admin` + local admin login kept |
 | WireGuard/SSH | — | home.henrydowd.dev | LXC 101 (DNS-only A record, not proxied) | network layer, outside Authelia |
 
 Grafana's `henrydowd.dev` name is marked LAN-only for a reason that is not the
