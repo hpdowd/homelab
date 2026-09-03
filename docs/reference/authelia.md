@@ -327,6 +327,50 @@ Registered clients:
 | `gitea` | `two_factor` | `https://git.henrydowd.dev/user/oauth2/authelia/callback` | **No PKCE** — Gitea cannot send one, see below |
 | `nextcloud` | `two_factor` | `https://nextcloud.henrydowd.dev/apps/user_oidc/code` | PKCE S256 (verified, then enforced); `user_oidc` 8.11 |
 
+Two per-client settings that cannot be copied between clients, both of which
+were got wrong first time:
+
+| Client | `token_endpoint_auth_method` | PKCE |
+|---|---|---|
+| `grafana` | `client_secret_basic` | S256 |
+| `gitea` | `client_secret_basic` | **none — cannot send one** |
+| `nextcloud` | **`client_secret_post`** | S256 |
+
+Grafana and Gitea both authenticate through `golang.org/x/oauth2`, whose
+`AuthStyleAutoDetect` tries HTTP Basic first, so `client_secret_basic` suits
+them. Nextcloud's `user_oidc` puts the credentials in the token request **body**
+and does not negotiate. Authelia enforces exactly what is registered, so a
+mismatch fails at the *token* endpoint — after the user has already logged in
+and been redirected back — with "the OAuth 2.0 client registration does not
+allow this method".
+
+### Verify a client without a browser
+
+**An authorization redirect proves nothing about the token exchange.** Checking
+that a client reaches `?flow=openid_connect` exercises none of the client
+authentication, which is why the Nextcloud mismatch survived every check and
+surfaced only on a real login. This is the same shape as the Proxmox 431: a
+check that confirmed *reaching* something rather than *completing* it.
+
+Probe client auth directly with a deliberately invalid code. `invalid_grant`
+means the client authenticated and only the code was rejected — which is the
+pass. `invalid_client` means the registration is wrong:
+
+```bash
+# client_secret_post clients (nextcloud)
+curl -s -X POST https://auth.henrydowd.dev/api/oidc/token \
+  -d grant_type=authorization_code -d code=bogus \
+  -d redirect_uri='<the registered redirect_uri>' \
+  -d client_id='<id>' -d client_secret='<plaintext>'
+
+# client_secret_basic clients (grafana, gitea)
+curl -s -u '<id>:<plaintext>' -X POST https://auth.henrydowd.dev/api/oidc/token \
+  -d grant_type=authorization_code -d code=bogus \
+  -d redirect_uri='<the registered redirect_uri>'
+```
+
+Run this for every new client before calling it done.
+
 `one_factor` rather than `two_factor` because Grafana is reachable only from
 the LAN, so the network already does the work a second factor would. amp and
 proxmox are `two_factor` because they are reachable from the internet.
