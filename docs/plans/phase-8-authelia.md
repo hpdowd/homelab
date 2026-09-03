@@ -106,7 +106,7 @@ phase-11 Vaultwarden plan, 017 is the bootstrap layer; Authelia's ADR is
 | users.yml location | SealedSecret, NOT plain git | argon2 hashes don't belong in plain git |
 | 2FA | TOTP now, WebAuthn later | proxmox/amp public exposure warrants two_factor |
 | Prune guard (ADR 014) | decide together with the step-6 backup row | *revised 2026-09-02*: the namespace is a managed, prunable object now. Treat the TOTP DB as regenerable and it needs no `Prune=false`; back it up instead and guard the namespace + PVC the way nextcloud/immich/gitea are |
-| `*.dowd.ie` hosts | not covered by the cookie; gate at the edge or drop the host | *revised 2026-09-02*: `home.dowd.ie` is a second apex outside the `henrydowd.dev` cookie domain and serves the same homepage pod. See the decision in step 4 |
+| `*.dowd.ie` hosts | not covered by the cookie; gate at the edge or drop the host | *revised 2026-09-02*: `home.dowd.ie` is a second apex outside the `henrydowd.dev` cookie domain and serves the same homepage pod. **Resolved 2026-09-03: dropped the host** — the option this row named first |
 
 Preflight:
 
@@ -358,9 +358,10 @@ rules:
   # dash.henrydowd.dev (homepage, phase 9): gate ONLY the henrydowd.dev host —
   # leave dash.lan bare (cookie-domain redirect-loop). Gating here is the
   # precondition for adding the keyed live-data widgets (phase-9 step 4).
-  # BUT the same pod also answers on home.dowd.ie, which no rule here can
-  # cover (second apex, outside the cookie domain) — settle that first, see
-  # "The home.dowd.ie problem" below. Revised 2026-09-02.
+  # The same pod ALSO answered on home.dowd.ie, which no rule here could cover
+  # (second apex, outside the cookie domain), so this gate did not make the
+  # page private on its own. Settled 2026-09-03 by removing that host, so the
+  # precondition now genuinely holds. Revised 2026-09-02, updated 2026-09-03.
   - domain: dash.henrydowd.dev
     policy: one_factor
   - domain: [proxmox.henrydowd.dev, amp.henrydowd.dev]

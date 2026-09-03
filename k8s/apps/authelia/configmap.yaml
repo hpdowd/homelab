@@ -90,9 +90,11 @@ data:
         # what makes a single login work across wiki/dash/proxmox/amp.
         #
         # Deliberately absent: `.lan` (not a parent of henrydowd.dev, and LAN
-        # hosts are served by bare un-annotated Ingresses anyway) and dowd.ie
-        # (a second apex — a cookie there would need its own authelia_url, so
-        # its own cert, tunnel route and DNS record; deferred, see ADR 018).
+        # hosts are served by bare un-annotated Ingresses anyway) and dowd.ie.
+        # dowd.ie needed a second cookie domain with its own authelia_url —
+        # own cert, tunnel route and DNS record. That was resolved on
+        # 2026-09-03 by dropping home.dowd.ie entirely rather than paying for
+        # it, so one cookie domain still covers everything (ADR 018).
         - domain: 'henrydowd.dev'
           authelia_url: 'https://auth.henrydowd.dev'
           default_redirection_url: 'https://dash.henrydowd.dev'
@@ -170,10 +172,11 @@ data:
           policy: 'one_factor'
 
         # Gating this is the precondition for phase 9's keyed live-data
-        # widgets. Only the henrydowd.dev host is listed: dash.lan is served by
-        # a separate bare Ingress, and home.dowd.ie is out of scope until the
-        # dowd.ie decision is made (ADR 018) — it remains public and ungated,
-        # so DO NOT add keyed widgets to homepage until that is resolved.
+        # widgets, and as of 2026-09-03 the precondition is genuinely met:
+        # home.dowd.ie was removed, so dash.henrydowd.dev and the ungated
+        # dash.lan are the only hostnames left on this pod. Only the
+        # henrydowd.dev host is listed here because dash.lan is served by a
+        # separate bare Ingress and is trusted-network break-glass.
         - domain: 'dash.henrydowd.dev'
           policy: 'one_factor'
 

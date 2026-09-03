@@ -123,7 +123,36 @@ for the Longhorn and ArgoCD UIs — than own a lockout risk on the hypervisor.
 The internet-facing paths, which are the ones that were genuinely
 unauthenticated before this phase, are all gated.
 
-## Deferred: the `dowd.ie` hosts
+## Resolved 2026-09-03: `home.dowd.ie` dropped
+
+*(This section was written as "Deferred". The decision has since been made and
+the original reasoning is kept below it, because the consequence it warns about
+is exactly what forced the decision.)*
+
+**`home.dowd.ie` was removed from Traefik.** Of the three options left open
+below — drop the host, put it behind Cloudflare Access, or give Authelia a
+second cookie domain — dropping it was the cheapest and the only one that costs
+nothing to keep running. A second cookie domain would have meant a second portal
+hostname (`auth.dowd.ie`) with its own certificate, tunnel route and DNS record,
+permanently, to protect a name that duplicated one already covered.
+
+Removed together: the Ingress rule, its per-Ingress `tls:` block, homepage's own
+`*.dowd.ie` Certificate, and the `HOMEPAGE_ALLOWED_HOSTS` entry. The
+`dowd-ie-tls` Secret that cert-manager had created was left orphaned by the
+prune — ArgoCD owns the Certificate, not the Secret it produces — and was
+deleted by hand. `file-parser`'s `secure.dowd.ie` is untouched; it has its own
+certificate in its own namespace.
+
+**Not removed, because they are not in this repo:** the cloudflared
+public-hostname route (token-mode tunnel, dashboard-managed) and the Technitium
+`home.dowd.ie → 192.168.1.200` record. While they exist the name still resolves
+and Traefik answers 404, which leaks nothing.
+
+Consequence, the good one: `dash.henrydowd.dev` and `dash.lan` are now the only
+hostnames on that pod, so gating `dash` finally means what it appeared to mean.
+Phase 9's keyed live-data widgets are unblocked.
+
+## The original reasoning: the `dowd.ie` hosts
 
 The homepage answers on `home.dowd.ie` as well as `dash.henrydowd.dev`, on a
 second Cloudflare zone with its own certificate. A second apex cannot share the
@@ -140,6 +169,10 @@ Access policy, or giving Authelia a second cookie domain is left open.
 answers unauthenticated on `home.dowd.ie`. Phase 9's keyed live-data widgets
 therefore remain unsafe to add, even though the precondition they were written
 against now technically reads as met. That stays blocked until this is settled.
+
+*(Settled 2026-09-03 by removing the host — see the section above. Worth keeping
+as written: the general lesson is that a gate belongs to a **hostname**, not to
+a service, and a pod is only as private as its most open name.)*
 
 ## Two failure modes closed in configuration
 

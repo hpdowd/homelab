@@ -9,26 +9,25 @@ Execution order: this ships **before** revisiting Authelia (phase 8) per the
 household-services roadmap; the phase number is just an identifier here (cf.
 6c/6d landing after phase 7 in the status table), not a timeline.
 
-> ## Status: SHIPPED, links-only. Step 4 (widgets) is blocked.
+> ## Status: SHIPPED and gated. Step 4 (widgets) is UNBLOCKED and not yet done.
 > *Updated 2026-09-03.*
 >
-> Homepage is live on `ghcr.io/gethomepage/homepage:v1.13.2`, serving
-> `dash.lan`, `dash.henrydowd.dev` and `home.dowd.ie`. Both the
-> `home.dowd.ie` name and `dash.henrydowd.dev` shipped, so the "alternative"
-> section below describes work that was done, not a road not taken.
+> Homepage is live on `ghcr.io/gethomepage/homepage:v1.13.2`, now serving
+> exactly two hostnames: `dash.henrydowd.dev` (Authelia `one_factor`) and
+> `dash.lan` (bare, break-glass).
 >
-> Phase 8 landed after this plan was drafted, and `dash.henrydowd.dev` is now
-> gated at `one_factor` — the precondition step 4 was waiting on. **It is not
-> sufficient.** The same pod also answers on `home.dowd.ie`, a second apex that
-> cannot share the `henrydowd.dev` session cookie and is public and ungated.
-> One ungated name is enough to make a keyed widget world-readable, so step 4
-> stays blocked until `home.dowd.ie` is resolved: drop the name, put it behind
-> Cloudflare Access, or give Authelia a second cookie domain (ADR 018, and
-> item 12 in known-risks.md).
+> `home.dowd.ie` shipped as well — so the "alternative" section below describes
+> work that was done, not a road not taken — and was **removed on 2026-09-03**.
+> That removal is what actually satisfied step 4's precondition. Gating
+> `dash.henrydowd.dev` alone had not: the same pod answered on `home.dowd.ie`,
+> a second apex that cannot share the `henrydowd.dev` session cookie, so one
+> ungated name kept the whole page world-readable. Dropping it was the cheapest
+> of ADR 018's three options.
 >
-> Current config is therefore still links-only — no `widget:` blocks with API
-> keys, no SealedSecret. The header carries `greeting` and `datetime` only; the
-> `resources` widget is deliberately still out.
+> **Step 4 can now proceed.** Config is still links-only — no `widget:` blocks
+> with API keys, no SealedSecret; the header carries `greeting` and `datetime`
+> only, and the `resources` widget is still out. Adding them is the remaining
+> work, and it is now safe.
 
 Architecture: [gethomepage/homepage](https://gethomepage.dev) — one stateless
 container, all config in a ConfigMap, no database, no PVC. It renders a link
@@ -46,7 +45,7 @@ decisions below live in this plan.
 | Discovery | **static `services.yaml`**, NOT k8s ingress auto-discovery | ~13 services is trivial to hand-list; auto-discovery needs a cluster-wide RBAC read on ingresses and risks surfacing something you didn't mean to publish |
 | Storage | none (ConfigMap only; `emptyDir` for the Next.js cache) | nothing to persist |
 | Hostname | `dash.lan` + `dash.henrydowd.dev` | `home.henrydowd.dev` is the WireGuard/SSH record (taken); `dash.*` rides the `*.henrydowd.dev` wildcard — **zero** DNS/cert/tunnel work. `home.dowd.ie` alternative costed at the bottom |
-| Auth | **as built:** `dash.henrydowd.dev` ForwardAuth `one_factor`; `home.dowd.ie` public | gating one name of two left the page world-readable — see the status block |
+| Auth | **as built:** `dash.henrydowd.dev` ForwardAuth `one_factor`; `dash.lan` bare; `home.dowd.ie` removed 2026-09-03 | gating one name of two had left the page world-readable — see the status block |
 | `HOMEPAGE_ALLOWED_HOSTS` | `dash.lan,dash.henrydowd.dev` | **load-bearing** since 0.9.x — unset (or wrong) ⇒ every proxied request 400s with `Bad Request: host validation failed` |
 
 Preflight — DNS, cert, and tunnel need **zero work**: `dash.henrydowd.dev`
@@ -73,15 +72,13 @@ So stage it:
 - **Phase 8 (once `dash.henrydowd.dev` is behind Authelia ForwardAuth):** add
   the widgets and the API-key SealedSecret (step 4).
 
-**Revised 2026-09-03:** that precondition is now half-met and the wording above
-was too loose. `dash.henrydowd.dev` is gated at `one_factor`, but gating *a*
-name is not gating *the page* — `home.dowd.ie` reaches the same pod and is
-public. The precondition for step 4 is that **every** hostname serving this pod
+**Revised 2026-09-03, twice in one day.** The wording above was too loose:
+gating *a* name is not gating *the page*, and `home.dowd.ie` reached the same
+pod ungated. The precondition is that **every** hostname serving this pod
 requires auth, not just the `henrydowd.dev` one.
 
-If you want widgets sooner, putting `home.dowd.ie` behind Cloudflare Access
-(the file-parser pattern) is the cheapest of the three ADR-018 options and does
-not need a second Authelia cookie domain.
+That now holds — `home.dowd.ie` was removed, leaving only the gated
+`dash.henrydowd.dev` and the trusted-network `dash.lan`. Step 4 is unblocked.
 
 ---
 
@@ -209,13 +206,18 @@ the `henrydowd.dev` host, leave `dash.lan` bare, cookie-domain gotcha):
 - **Phase 8 hook**: record in the Authelia plan's ACL table that
   `dash.henrydowd.dev` → `one_factor`.
 
-## `home.dowd.ie` — costed as an alternative, then built as well
+## `home.dowd.ie` — costed as an alternative, built, then removed
 
-**This was taken.** Both names ship: `dash.henrydowd.dev` and `home.dowd.ie`
-serve the same pod, and `k8s/apps/homepage/certificate.yaml` is the second
-`Certificate` the first bullet below calls for. The section is kept because the
-costs it lists are what now has to be undone or extended if `home.dowd.ie` is
-dropped or gated (known-risks item 12).
+**Taken, then reversed.** Both names shipped, and `home.dowd.ie` was removed on
+2026-09-03 because it could not be gated without a second Authelia cookie
+domain (ADR 018). Every cost listed below was paid and has now been unwound:
+the Ingress rule, the per-Ingress `tls:` block, the `*.dowd.ie` Certificate in
+the homepage namespace, and the `HOMEPAGE_ALLOWED_HOSTS` entry are all gone,
+and the orphaned `dowd-ie-tls` Secret was deleted by hand.
+
+The cloudflared route and the Technitium record — the two "external, not in
+repo" items below — still exist. The section is kept as the checklist for
+removing them, and as the price list if a second apex is ever wanted again.
 
 `dash.henrydowd.dev` was the default precisely because it's free. `home.dowd.ie`
 is the nicer name but `dowd.ie` is a separate Cloudflare zone and costs the
@@ -231,14 +233,17 @@ full file-parser treatment:
   add an explicit cloudflared public-hostname route for `home.dowd.ie` → the
   same Traefik origin (host-routed by the Ingress), like `secure.dowd.ie`.
 - **DNS**: a Technitium record `home.dowd.ie` → 192.168.1.200 for LAN.
-- **Access**: if you keep it public+ungated, make sure `home.dowd.ie` is **not**
-  added to any Cloudflare Access application. (As built it is public and
-  ungated, which is exactly what blocks step 4.)
+- **Access**: while it existed it was deliberately kept out of every Cloudflare
+  Access application, which is exactly what blocked step 4. Putting it behind
+  Access was ADR 018's middle option; removing the host won instead.
 
-Three extra moving parts for a prettier hostname. Both were built, and the
-fourth cost only became visible after phase 8: a second apex cannot share the
-`henrydowd.dev` session cookie, so `home.dowd.ie` cannot be gated by Authelia
-without its own cookie domain, `auth.dowd.ie`, and everything that name needs.
+Three extra moving parts for a prettier hostname, and a fourth that only became
+visible after phase 8: a second apex cannot share the `henrydowd.dev` session
+cookie, so `home.dowd.ie` could not be gated by Authelia without its own cookie
+domain, `auth.dowd.ie`, and everything that name needs — permanently, to protect
+a duplicate of a hostname already covered. That fourth cost is why the name was
+dropped rather than kept. **If a second apex is ever wanted again, price the
+auth in from the start, not just the cert, tunnel and DNS.**
 
 ## Failure modes
 
@@ -246,8 +251,9 @@ without its own cookie domain, `auth.dowd.ie`, and everything that name needs.
   likely bring-up failure.
 - A YAML typo in `services.yaml` ⇒ homepage renders an error card but the pod
   stays up; check the container logs.
-- `home.dowd.ie` public + ungated ⇒ the link grid is world-readable (accepted;
-  links aren't secrets, and widgets are deferred until gated). Gating
-  `dash.henrydowd.dev` alone did not change this.
+- ~~`home.dowd.ie` public + ungated ⇒ the link grid is world-readable.~~ Closed
+  2026-09-03 by removing the host. Gating `dash.henrydowd.dev` alone had not
+  changed it — the failure mode was a second hostname on the same pod, not a
+  missing middleware.
 - A keyed widget added before gating ⇒ live infra data leaks publicly. Don't
   add `widget:` blocks until step 4's precondition holds.

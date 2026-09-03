@@ -19,7 +19,7 @@ for how a request actually flows see architecture.md.
 | Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) | native (Authelia OIDC pending) |
 | Grafana | grafana.lan | — | k3s pod (`monitoring` ns) — deliberately LAN-only | LAN-only |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) | none by design (public CV, no secrets) |
-| Homepage (dashboard) | dash.lan | dash.henrydowd.dev, home.dowd.ie | k3s pod (`homepage` ns) | **ForwardAuth one_factor on dash.henrydowd.dev only** — `home.dowd.ie` is still public, see below |
+| Homepage (dashboard) | dash.lan | dash.henrydowd.dev | k3s pod (`homepage` ns) | **Authelia ForwardAuth, one_factor** (`home.dowd.ie` removed 2026-09-03) |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 | **Authelia ForwardAuth, two_factor** |
 | Proxmox | proxmox.lan | proxmox.henrydowd.dev | host, 192.168.1.2:8006 (HTTPS, self-signed) | **Cloudflare Access + ForwardAuth two_factor, tunnel path only** (three logins with PVE's own) — LAN HTTPS is ungated by design (ADR 018) |
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 | LAN-only |
@@ -233,18 +233,17 @@ facts live here.
 - `gethomepage/homepage`, pinned `v1.13.2`, namespace `homepage`, pinned to
   the worker. One stateless container, no DB, no PVC — all config is the
   `homepage` ConfigMap in git, so a pod loss just re-renders the page.
-- **Auth state: partially gated, and the widgets are still blocked.**
-  `dash.henrydowd.dev` now sits behind Authelia ForwardAuth (`one_factor`) via
-  its own Ingress object; `dash.lan` and `home.dowd.ie` are served by a second,
-  bare Ingress (`homepage-ungated`).
-  **`home.dowd.ie` is the catch:** it is public, it answers the same pod, and
-  being a second apex it cannot share the `henrydowd.dev` session cookie, so it
-  cannot be ForwardAuth'd without a redirect loop. The dashboard is therefore
-  still world-readable, and the live-data widgets (Grafana/Immich/Proxmox
-  polling their APIs with stored keys) remain **unsafe to add** despite the
-  phase-9 precondition technically reading as met. That stays blocked until the
-  `dowd.ie` decision in ADR 018 is made. See `docs/plans/phase-9-homepage.md`
-  step 4.
+- **Auth state: gated. The widgets are unblocked.** `dash.henrydowd.dev` sits
+  behind Authelia ForwardAuth (`one_factor`) via its own Ingress object, and
+  `dash.lan` is served by a second, bare Ingress (`homepage-ungated`) as the
+  break-glass path. Those are the only two hostnames on this pod.
+  **`home.dowd.ie` was removed on 2026-09-03** and that is what actually made
+  the dashboard private: it answered the same pod on a second apex, could not
+  share the `henrydowd.dev` session cookie, and so could not be ForwardAuth'd
+  without a redirect loop. While it existed, gating `dash` did nothing for the
+  page's privacy. The live-data widgets (Grafana/Immich/Proxmox polling their
+  APIs with stored keys) are now safe to add — phase 9 step 4, which has been
+  blocked on exactly this since July. See `docs/plans/phase-9-homepage.md`.
 - **`HOMEPAGE_ALLOWED_HOSTS` is load-bearing** (`$(MY_POD_IP):3000,dash.lan,dash.henrydowd.dev`).
   The pod-IP entry is required or the kubelet probe — which hits the pod IP,
   not a hostname — 400s on host validation and the pod never goes Ready. The
@@ -270,15 +269,19 @@ facts live here.
 - Nothing to back up (stateless; config in git). The `dash.*` hosts carry no
   `tls:` block (ADR 007) and ride the `*.henrydowd.dev` wildcard for
   cert/DNS/tunnel.
-- **`home.dowd.ie`** is a third hostname on a separate Cloudflare zone, so it's
-  the ADR-007 exception (like file-parser's `secure.dowd.ie`): a per-Ingress
-  `tls:` block loads `dowd-ie-tls`, issued into the `homepage` ns by its own
-  `*.dowd.ie` Certificate (`k8s/apps/homepage/certificate.yaml` — the shared
-  file-parser cert can't cross namespaces, the dowd-ie-cert-wrong-namespace
-  lesson). Its cloudflared public-hostname route (token-mode tunnel =
-  dashboard-managed) and Technitium `home.dowd.ie → 192.168.1.200` record are
-  **not in this repo**; `home.dowd.ie` is also in `HOMEPAGE_ALLOWED_HOSTS` or it
-  would 400. Kept out of any Cloudflare Access app so it stays public.
+- **`home.dowd.ie` is gone (2026-09-03).** It was a third hostname on a separate
+  Cloudflare zone and the ADR-007 exception (like file-parser's
+  `secure.dowd.ie`): a per-Ingress `tls:` block loading `dowd-ie-tls` from its
+  own `*.dowd.ie` Certificate in this namespace, because the file-parser cert
+  can't cross namespaces (the dowd-ie-cert-wrong-namespace lesson). The Ingress
+  rule, the `tls:` block, the Certificate and the `HOMEPAGE_ALLOWED_HOSTS` entry
+  were all removed together, and the orphaned `dowd-ie-tls` Secret was deleted
+  by hand — ArgoCD prunes the Certificate but not the Secret cert-manager
+  created from it. file-parser's `secure.dowd.ie` is unaffected.
+  **Still outside this repo and NOT removed:** the cloudflared public-hostname
+  route (token-mode tunnel = dashboard-managed) and the Technitium
+  `home.dowd.ie → 192.168.1.200` record. Until those go the name resolves and
+  Traefik answers 404 — harmless, but not finished.
 
 ## Backups (summary)
 

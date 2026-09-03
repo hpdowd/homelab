@@ -28,7 +28,7 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 9 | Confirm the first restic prune actually ran (2026-07-27), then set the B2 bucket to keep last-version-only | ~10 min + a console change | Prune must run once first | Low; deletes only snapshots the 7d/4w/3m policy already excludes |
 | 10 | Adopt `k8s/infrastructure/sealed-secrets.yaml` | window | Verify `kubeseal --fetch-cert` against the backup first | Moderate — the controller's key is the trust root for every secret in the repo |
 | 11 | Exercise `bootstrap/bootstrap.sh` end-to-end against a scratch cluster | half a day | Needs a throwaway VM | None to prod; it is the only way to test the rebuild path |
-| 12 | Decide what happens to `home.dowd.ie` (three options in ADR 018) | judgement | — | The dashboard is world-readable and phase 9's keyed widgets stay blocked until this is settled |
+| ~~12~~ | ~~Decide what happens to `home.dowd.ie`~~ — **done 2026-09-03**, host dropped from Traefik | — | — | — |
 
 With items 1, 2, 4 and 5 closed, nothing left here carries ongoing exposure — but item 6 now
 inherits part of it, because it is what makes the item 1 fix survive a rebuild (§1 below).
@@ -49,12 +49,16 @@ is urgent — 10 is adopting a controller that already works, 11 is testing a re
 is already better than it was. They are here because both are the kind of work that only ever
 gets done deliberately.
 
-Item 12 is new on 2026-09-03, from the Authelia rollout. `dash.henrydowd.dev` is gated at
-`one_factor`, but the same pod also answers on `home.dowd.ie`, which is a second apex outside
-the `henrydowd.dev` session cookie and is public and ungated. The link grid is therefore still
-world-readable, and no keyed widget can be added to homepage until the name is dropped, put
-behind Cloudflare Access, or given Authelia a second cookie domain. It is a decision, not a
-defect — but it is the one that blocks phase 9 finishing.
+Item 12 was opened and closed on 2026-09-03. `dash.henrydowd.dev` was gated at `one_factor`,
+but the same pod also answered on `home.dowd.ie` — a second apex outside the `henrydowd.dev`
+session cookie, public and ungated — so the link grid stayed world-readable and no keyed
+widget could be added. Resolved by dropping the host from Traefik rather than paying for a
+second Authelia cookie domain (ADR 018). `dash.henrydowd.dev` and `dash.lan` are now the only
+names on that pod, and phase 9's step 4 is unblocked.
+
+Two loose ends outside this repo: the cloudflared route and the Technitium record for
+`home.dowd.ie` still exist, so the name resolves and Traefik answers 404. Harmless, and worth
+tidying when you are next in those consoles.
 
 ### Already done (2026-07-25 / 26 / 27)
 

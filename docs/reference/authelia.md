@@ -40,7 +40,7 @@ internet: Access, then Authelia `two_factor`, then PVE.
 | Host | Policy | Gated on | Ungated path |
 |---|---|---|---|
 | `wiki.henrydowd.dev` | one_factor | Ingress `kiwix/kiwix` | `wiki.lan` via `kiwix/kiwix-lan` |
-| `dash.henrydowd.dev` | one_factor | Ingress `homepage/homepage` | `dash.lan` + `home.dowd.ie` via `homepage/homepage-ungated` |
+| `dash.henrydowd.dev` | one_factor | Ingress `homepage/homepage` | `dash.lan` via `homepage/homepage-ungated` |
 | `amp.henrydowd.dev` | two_factor | Ingress `amp/amp` | `amp.lan` via `amp/amp-lan` |
 | `proxmox.henrydowd.dev` | two_factor | IngressRoute `proxmox/proxmox`, `web` route only | `proxmox.lan`, and the same host over LAN HTTPS via `proxmox-websecure` |
 | `auth.henrydowd.dev` | — | portal, `forceproto` only | — |
@@ -49,10 +49,12 @@ The ungated names are separate Ingress objects, not extra rules on the gated
 ones. That separation is what makes the break-glass path survive a bad
 annotation on the gated object.
 
-`home.dowd.ie` is a second apex, cannot share the `henrydowd.dev` session
-cookie, and serves the same pod as `dash.henrydowd.dev`. It is public and
-ungated. The dashboard is therefore not private, which blocks phase 9's keyed
-live-data widgets.
+`home.dowd.ie` used to serve the same pod as `dash.henrydowd.dev` on a second
+apex, so it could not share the `henrydowd.dev` session cookie and left the
+dashboard world-readable even after `dash` was gated. **Removed 2026-09-03**
+(ADR 018), so the only hostnames on that pod are now the gated
+`dash.henrydowd.dev` and the trusted-network `dash.lan`. The dashboard is
+private, and phase 9's keyed live-data widgets are unblocked.
 
 Rules live in `access_control.rules` in the ConfigMap, in plain git. A rule is
 inert until the matching Ingress carries the middleware, so rules can ship
