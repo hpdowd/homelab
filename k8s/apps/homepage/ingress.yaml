@@ -1,35 +1,36 @@
 # Split into a gated public Ingress and an ungated one. The ForwardAuth
-# middleware annotation attaches to the Ingress OBJECT, so the three hosts this
-# app answers on cannot live in one object any more.
+# middleware annotation attaches to the Ingress OBJECT, so the hosts this app
+# answers on cannot live in one object.
 #
 # dash.henrydowd.dev  gated, one_factor. This is the host phase 9 named as the
 #                     precondition for the keyed live-data widgets.
 # dash.lan            bare — outside the henrydowd.dev cookie domain (it would
 #                     redirect-loop), trusted network, and the break-glass path
 #                     when Authelia is down.
-# home.dowd.ie        bare, and NOT because it is trusted: dowd.ie is a second
-#                     apex, so the henrydowd.dev session cookie cannot cover it
-#                     and ForwardAuth would loop exactly like .lan does. It is
-#                     public and deliberately outside Cloudflare Access too.
 #
-# >>> CONSEQUENCE, do not miss this: home.dowd.ie serves the SAME pod as
-# >>> dash.henrydowd.dev. Gating only the henrydowd.dev host does NOT make the
-# >>> dashboard private, so phase 9's keyed widgets (Grafana/Immich/Proxmox API
-# >>> keys rendered into the page) are still NOT safe to add. That stays blocked
-# >>> until the dowd.ie decision in ADR 018 is made — drop the host, put it
-# >>> behind Cloudflare Access, or give Authelia a second cookie domain.
+# home.dowd.ie was REMOVED on 2026-09-03, and that is what finally made this
+# pod private. It served the same backend as dash.henrydowd.dev on a second
+# apex, so it could not share the henrydowd.dev session cookie and could not be
+# ForwardAuth'd without giving Authelia a whole second cookie domain
+# (auth.dowd.ie: own cert, tunnel route, DNS record). Gating dash alone left the
+# page world-readable through it, which is why phase 9's keyed widgets stayed
+# blocked for as long as it existed. Dropping the name was the cheapest of the
+# three options in ADR 018.
+#
+# Removing it here only deletes the Traefik router. Two things live OUTSIDE this
+# repo and must be removed separately or the hostname stays resolvable and
+# answers 404 from Traefik:
+#   - the cloudflared public-hostname route for home.dowd.ie (token-mode tunnel,
+#     so it is dashboard-managed)
+#   - the Technitium home.dowd.ie -> 192.168.1.200 record for the LAN
+# The per-Ingress `tls:` block and homepage's own *.dowd.ie Certificate went with
+# it; dowd.ie is a separate Cloudflare zone outside the shared TLSStore wildcard,
+# so nothing in this namespace needs that cert any more. file-parser's
+# secure.dowd.ie is unaffected — it has its own cert in its own namespace.
 #
 # dash.* rides the *.henrydowd.dev wildcard (TLSStore default cert + cloudflared
 # route + Technitium split-horizon) with zero extra DNS/cert/tunnel work, so
-# those hosts carry no tls: block (ADR 007).
-#
-# home.dowd.ie is the exception (like file-parser's secure.dowd.ie): dowd.ie is
-# a separate Cloudflare zone outside the shared TLSStore wildcard, so it needs
-# its own SNI cert via the `tls:` block below (dowd-ie-tls, issued into this ns
-# by certificate.yaml). It ALSO needs two things NOT in this repo — a cloudflared
-# public-hostname route (token-mode tunnel = dashboard-managed) and a Technitium
-# home.dowd.ie -> 192.168.1.200 record for LAN. Keep it out of any Cloudflare
-# Access application so it stays public like the dash.* hosts.
+# these hosts carry no tls: block (ADR 007).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -57,21 +58,8 @@ metadata:
   namespace: homepage
 spec:
   ingressClassName: traefik
-  tls:
-    - hosts:
-        - home.dowd.ie
-      secretName: dowd-ie-tls
   rules:
     - host: dash.lan
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: homepage
-                port: { number: 3000 }
-    - host: home.dowd.ie
       http:
         paths:
           - path: /
