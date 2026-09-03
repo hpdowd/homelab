@@ -327,6 +327,7 @@ Registered clients:
 | `gitea` | `two_factor` | `https://git.henrydowd.dev/user/oauth2/authelia/callback` | **No PKCE** — Gitea cannot send one, see below |
 | `nextcloud` | `two_factor` | `https://nextcloud.henrydowd.dev/apps/user_oidc/code` | PKCE S256 (verified, then enforced); `user_oidc` 8.11 |
 | `immich` | `two_factor` | `/auth/login`, `/user-settings`, `app.immich:///oauth-callback` | PKCE S256; **three** URIs, mobile included |
+| `paperless` | `two_factor` | `/accounts/oidc/authelia/login/callback/` | PKCE S256; **trailing slash** matters |
 
 Two per-client settings that cannot be copied between clients, both of which
 were got wrong first time:
@@ -337,6 +338,7 @@ were got wrong first time:
 | `gitea` | `client_secret_basic` | **none — cannot send one** |
 | `nextcloud` | **`client_secret_post`** | S256 |
 | `immich` | **`client_secret_post`** | S256 |
+| `paperless` | **`client_secret_post`** | S256 (off by default, enabled explicitly) |
 
 Grafana and Gitea both authenticate through `golang.org/x/oauth2`, whose
 `AuthStyleAutoDetect` tries HTTP Basic first, so `client_secret_basic` suits
@@ -513,9 +515,54 @@ A URL back means discovery, client id and PKCE are all good; a 500 means
 discovery failed. Repeat it with `app.immich:///oauth-callback` and
 `/user-settings` to prove the other two registered URIs.
 
+### Paperless: two env vars, and one of them fails silently
+
+Config is entirely declarative here — no database step, unlike Gitea, Nextcloud
+and Immich. It needs **both**:
+
+```yaml
+- { name: PAPERLESS_APPS, value: "allauth.socialaccount.providers.openid_connect" }
+- name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
+  valueFrom:
+    secretKeyRef: { name: paperless-oidc, key: PAPERLESS_SOCIALACCOUNT_PROVIDERS }
+```
+
+**`PAPERLESS_APPS` is the one that is easy to miss, and its absence is silent.**
+django-allauth only registers a provider's URLs when its app is in
+`INSTALLED_APPS`, and paperless builds that list with `*env_apps` from
+`PAPERLESS_APPS` (`settings/__init__.py`, lines 126 and 153). Without it the
+provider JSON parses fine, the env var is present and correct in the pod, the
+pod starts clean, and **nothing appears in the logs** — there is simply no
+`/accounts/oidc/…` route and no SSO button. What found it was enumerating the
+registered URL patterns:
+
+```bash
+kubectl -n paperless exec deploy/paperless -- sh -c "cd /usr/src/paperless/src && python -c \"
+import django, os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','paperless.settings'); django.setup()
+from django.urls import reverse
+print(reverse('openid_connect_callback', kwargs={'provider_id':'authelia'}))\""
+```
+
+That also *is* the authoritative redirect URI — reverse it rather than copying
+one, and note the trailing slash.
+
+The provider blob is a Secret because it carries the client secret inline. Two
+of its `settings` are pinned rather than negotiated, both read out of allauth
+65.16.1: `token_auth_method: client_secret_post` (its OIDC adapter otherwise
+decides by inspecting `token_endpoint_auth_methods_supported`, which Authelia
+answers with *both* basic and post) and `oauth_pkce_enabled: true` (allauth's
+`pkce_enabled_default` is `False`).
+
+**Account linking needs a manual step here**, unlike the others. Paperless's
+`henry` carries the placeholder email `root@localhost`, which does not match
+Authelia's `henry@dowd.ie`, and `PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS` is off
+so SSO cannot mint a second account. Log in with the password once and connect
+the Authelia identity from the Paperless profile page. (Fixing that placeholder
+email would also work, and is worth doing anyway.)
+
 ### Not yet wired
 
-paperless and optionally argocd. Deliberately **not**
+optionally argocd. Deliberately **not**
 pre-registered: a client registration is only useful once its app is wired, and
 minting a secret months early means a plaintext to keep safe with nothing using
 it. `configmap.yaml` carries the intended redirect URIs as a comment; add each

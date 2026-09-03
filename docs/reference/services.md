@@ -16,7 +16,7 @@ for how a request actually flows see architecture.md.
 | Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) | none by design (WOPI backend) |
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) | **Authelia ForwardAuth, one_factor** |
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) | **Authelia OIDC, two_factor** (web + mobile app) + password login kept; `autoRegister` off |
-| Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) | native (Authelia OIDC pending) |
+| Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) | **Authelia OIDC, two_factor** + password login kept (Paperless Mobile hits `/api`, so never ForwardAuth) |
 | Grafana | grafana.lan | grafana.henrydowd.dev (**LAN-only**) | k3s pod (`monitoring` ns) | **Authelia OIDC, one_factor** + local password login kept as break-glass |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) | none by design (public CV, no secrets) |
 | Homepage (dashboard) | dash.lan | dash.henrydowd.dev | k3s pod (`homepage` ns) | **Authelia ForwardAuth, one_factor** (`home.dowd.ie` removed 2026-09-03) |
