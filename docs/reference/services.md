@@ -11,7 +11,7 @@ for how a request actually flows see architecture.md.
 |---|---|---|---|---|
 | Authelia | — (see note) | auth.henrydowd.dev | k3s pod (`authelia` ns) | n/a — it *is* the login |
 | file-parser | — | secure.henrydowd.dev, secure.dowd.ie | k3s pod (`file-parser` ns) | Cloudflare Access (stays there, not Authelia) |
-| Gitea | gitea.lan | git.henrydowd.dev | k3s pod (`gitea` ns) | native (Authelia OIDC pending) |
+| Gitea | gitea.lan | git.henrydowd.dev | k3s pod (`gitea` ns) | **Authelia OIDC, two_factor** + local password login kept; git-over-HTTPS unaffected (tokens) |
 | Nextcloud | nextcloud.lan | nextcloud.henrydowd.dev | k3s pod (`nextcloud` ns) | native (Authelia OIDC pending) |
 | Collabora (CODE) | collabora.lan | collabora.henrydowd.dev | k3s pod (`collabora` ns) | none by design (WOPI backend) |
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) | **Authelia ForwardAuth, one_factor** |

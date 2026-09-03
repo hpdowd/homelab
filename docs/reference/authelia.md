@@ -324,6 +324,7 @@ Registered clients:
 | Client | Policy | Redirect URI | Notes |
 |---|---|---|---|
 | `grafana` | `one_factor` | `https://grafana.henrydowd.dev/login/generic_oauth` | PKCE S256, `client_secret_basic`, `consent_mode: implicit` |
+| `gitea` | `two_factor` | `https://git.henrydowd.dev/user/oauth2/authelia/callback` | **No PKCE** — Gitea cannot send one, see below |
 
 `one_factor` rather than `two_factor` because Grafana is reachable only from
 the LAN, so the network already does the work a second factor would. amp and
@@ -340,9 +341,49 @@ the break-glass path, and Grafana's password login stays enabled: it is where
 you look when the cluster is unwell, so its only door must not be a pod that
 might itself be what is down.
 
+### Gitea: the auth source is not in git
+
+Gitea is the one client whose configuration cannot be fully declarative.
+`[oauth2_client]` in `k8s/apps/gitea/deployment.yaml` controls the *behaviour*
+of an OAuth login (account linking, auto-registration, which claim becomes the
+username), but the auth **source** — client id, secret, discovery URL — lives in
+Gitea's SQLite DB and there is no app.ini equivalent. It is created once:
+
+```bash
+POD=$(kubectl -n gitea get pod -l app=gitea -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitea exec $POD -c gitea -- su git -c "gitea admin auth add-oauth \
+  --name authelia \
+  --provider openidConnect \
+  --key gitea \
+  --secret '<plaintext from new-oidc-client.sh>' \
+  --auto-discover-url https://auth.henrydowd.dev/.well-known/openid-configuration \
+  --scopes openid --scopes profile --scopes email --scopes groups \
+  --group-claim-name groups \
+  --admin-group admins"
+```
+
+`su git` is required: the container runs as root (the capless-root shape of ADR
+011) and Gitea refuses to run its CLI as root. `gitea admin auth list` shows the
+result; `update-oauth --id N` edits it.
+
+**The `--name` is load-bearing.** Gitea builds its callback from the source name,
+`/user/oauth2/<name>/callback`, not from the client id — so renaming the source
+silently breaks the `redirect_uris` registered in Authelia.
+
+Because this lives only in the DB, it is a genuine gap in the repo's
+"git is the source of truth" property: a rebuild from an empty database comes up
+with SSO missing and no sync error to say so. `cluster-rebuild.md` lists it as a
+post-restore step.
+
+**Gitea sends no PKCE.** Its openidConnect source (goth, 1.24) omits
+`code_challenge` entirely and `add-oauth` has no flag to enable it, so this
+client is registered `require_pkce: false`. Grafana keeps PKCE. This surfaced as
+a rejected authorization request, *behind* a more obvious fault — see Operations
+for why a ConfigMap edit alone does nothing.
+
 ### Not yet wired
 
-gitea, nextcloud, immich, paperless and optionally argocd. Deliberately **not**
+nextcloud, immich, paperless and optionally argocd. Deliberately **not**
 pre-registered: a client registration is only useful once its app is wired, and
 minting a secret months early means a plaintext to keep safe with nothing using
 it. `configmap.yaml` carries the intended redirect URIs as a comment; add each

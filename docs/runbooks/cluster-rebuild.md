@@ -356,6 +356,11 @@ data back, follow `docs/runbooks/restore-procedure.md`. The condensed version:
 - Restore the data PVC from restic
 - For Nextcloud, also restore the DB dump and run `occ files:scan --all`
 - For Gitea, run `gitea admin regenerate hooks` after scaling back up
+- **For Gitea, also re-create the Authelia OAuth source** if the DB was rebuilt
+  rather than restored. It lives only in `gitea.db`, not in app.ini, so it comes
+  back missing with no sync error to say so — Gitea simply stops offering "Sign
+  in with authelia". Command and the load-bearing `--name` are in
+  `docs/reference/authelia.md`; check with `gitea admin auth list`.
 
 Authelia needs nothing here. `db.sqlite3` is deliberately not backed up
 (ADR 018) — log in, re-enrol TOTP from the portal, and that is the whole
