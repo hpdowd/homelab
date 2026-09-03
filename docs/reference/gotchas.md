@@ -116,6 +116,37 @@ with `helm template` against the pinned chart version. See
   tolerates a wrong scheme; the endpoint that issues the enrolment code does
   not, and it never gets as far as sending mail. Retrying also trips Authelia's
   rate limiter (`delay≈280s`), which is in-memory — a pod restart clears it.
+- **Authelia's default 4096-byte read buffer is too small once the backend sets
+  its own cookies, and Proxmox is the host that hits it.** Traefik replays the
+  client's entire header set to `/api/authz/forward-auth`, so the Cookie header
+  accumulates: Cloudflare Access's `CF_Authorization` JWT (~800B), then
+  `authelia_session`, then — after a successful PVE login — `PVEAuthCookie` (a
+  ~450B signed ticket) and `CSRFPreventionToken`. Past 4096 total Authelia never
+  parses the request at all and answers **431**, so Traefik gets no auth
+  decision and every PVE API call fails.
+  The symptom lies the same way the forceproto trap does: getting *through*
+  Authelia works, because only the session cookie and the Access JWT exist at
+  that point. It is the Proxmox login immediately afterwards that pushes the
+  headers over the limit, so it presents as "the Proxmox login is broken" and
+  sends you digging into PVE, not Authelia. Nothing appears in the access log —
+  the request is rejected before routing, and it is logged as
+  `path=/ method=GET status_code=431`, *not* the forward-auth path.
+  Fixed with `server.buffers.read`/`write: 16384` in the ConfigMap. Bisect the
+  live limit without a browser:
+  ```bash
+  kubectl -n authelia run bufprobe --rm -i --restart=Never \
+    --image=curlimages/curl -- sh -c 'for n in 3500 4000 8000; do
+      c=$(head -c $n < /dev/zero | tr "\0" a)
+      echo -n "$n -> "; curl -s -o /dev/null -w "%{http_code}\n" \
+        -H "X-Forwarded-Proto: https" -H "X-Forwarded-Host: proxmox.henrydowd.dev" \
+        -H "X-Forwarded-Uri: /" -H "X-Forwarded-Method: GET" -H "Cookie: j=$c" \
+        http://authelia.authelia.svc.cluster.local:9091/api/authz/forward-auth
+    done'
+  ```
+  A ConfigMap change alone does NOT fix it: the deployment carries no config
+  checksum annotation, so ArgoCD updates the ConfigMap without restarting the
+  pod, and Authelia reads buffer sizes only at startup. `kubectl -n authelia
+  rollout restart deploy/authelia` is part of the fix, not an optional extra.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 - **TLS on the LAN path is one default cert, not per-Ingress config.**
