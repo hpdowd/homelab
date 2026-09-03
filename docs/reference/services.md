@@ -17,7 +17,7 @@ for how a request actually flows see architecture.md.
 | Kiwix | wiki.lan | wiki.henrydowd.dev | k3s pod (`kiwix` ns) | **Authelia ForwardAuth, one_factor** |
 | Immich | immich.lan | immich.henrydowd.dev | k3s pod (`immich` ns) | native (Authelia OIDC pending) |
 | Paperless | paperless.lan | paperless.henrydowd.dev | k3s pod (`paperless` ns) | native (Authelia OIDC pending) |
-| Grafana | grafana.lan | — | k3s pod (`monitoring` ns) — deliberately LAN-only | LAN-only |
+| Grafana | grafana.lan | grafana.henrydowd.dev (**LAN-only**) | k3s pod (`monitoring` ns) | **Authelia OIDC, one_factor** + local password login kept as break-glass |
 | Portfolio (CV site) | — | henrydowd.dev, www.henrydowd.dev | k3s pod (`portfolio` ns) | none by design (public CV, no secrets) |
 | Homepage (dashboard) | dash.lan | dash.henrydowd.dev | k3s pod (`homepage` ns) | **Authelia ForwardAuth, one_factor** (`home.dowd.ie` removed 2026-09-03) |
 | AMP | amp.lan | amp.henrydowd.dev | LXC 102, 192.168.1.15:8080 | **Authelia ForwardAuth, two_factor** |
@@ -25,6 +25,18 @@ for how a request actually flows see architecture.md.
 | Technitium (admin UI) | technitium.lan | — | LXC 100, 192.168.1.5:5380 | LAN-only |
 | ArgoCD | argocd.lan | — | k3s pod (`argocd` ns) — deliberately LAN-only | LAN-only |
 | WireGuard/SSH | — | home.henrydowd.dev | LXC 101 (DNS-only A record, not proxied) | network layer, outside Authelia |
+
+Grafana's `henrydowd.dev` name is marked LAN-only for a reason that is not the
+obvious one, and the obvious one is wrong. The tunnel carries a **wildcard**
+public hostname, so any `*.henrydowd.dev` host added to Traefik is reachable
+from the internet immediately — there is no per-name route to omit. What keeps
+Grafana private is that its Ingress is pinned to the `websecure` entrypoint:
+cloudflared delivers plain HTTP to `web`, so the tunnel finds no matching router
+and 404s, while LAN clients resolving straight to Traefik get real HTTPS on the
+wildcard cert. Verified at the Cloudflare edge, 2026-09-03. See the
+wildcard-tunnel entry in gotchas.md before adding any host to this table.
+
+The same treatment is what ArgoCD would need if it ever gets OIDC.
 
 Technitium's row is ingress glue only, the DNS server itself runs on
 the LXC, not in the cluster. Same selectorless-Service + EndpointSlice

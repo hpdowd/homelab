@@ -197,6 +197,50 @@ unreachable time server from fatal to a logged warning. The nodes get their
 time from the Proxmox host; Authelia's probe is a second opinion, not the
 mechanism.
 
+## Resolved 2026-09-03: OIDC provider, and what "LAN-only" actually costs
+
+The OIDC half of the phase went in with Grafana as its single client. Three
+decisions are worth recording.
+
+**The jwks key lives in a second config file, not an env var.** Every other
+Authelia secret here arrives as a file referenced by an `AUTHELIA_*_FILE` env
+var. The jwks private key cannot: it is a structured list entry rather than a
+scalar. So it goes in its own SealedSecret, mounted separately, and passed as a
+second `--config` — which is only safe because Authelia *deep*-merges config
+files, letting the ConfigMap keep the client registrations while the Secret
+keeps the key material. That was verified rather than assumed, because a
+shallow merge would have discarded every client silently and surfaced months
+later as `invalid_client` on an app that looked correctly configured. The check
+is recorded in `seal-oidc.sh` and `docs/reference/authelia.md`.
+
+**Clients are registered when their app is wired, not up front.** The plan
+listed six. Registering the other five now would mean five client secrets whose
+plaintexts have to be kept safe for months with nothing using them, and five
+chances for a malformed `redirect_uris` to hard-fail startup on a pod that gates
+four services. The intended redirect URIs are recorded as a comment in
+`configmap.yaml` so each later commit stays a small one.
+
+**A correction to this ADR's own model of the perimeter.** The plan, and the
+earlier text here, assumed a `*.henrydowd.dev` name with no cloudflared route
+would be LAN-only. It would not. The tunnel is token-managed and carries a
+wildcard public hostname, so a name nobody has ever configured still reaches
+Traefik from the internet — a plain Ingress for `grafana.henrydowd.dev` would
+have published Grafana the moment it synced. This is the third time this phase
+that split-horizon DNS made a LAN test say nothing about the public path, after
+the `forceproto` 400 and the "Proxmox has no CF Access" claim.
+
+What actually separates the two paths is the entrypoint: the tunnel always
+lands on `web`, LAN HTTPS always on `websecure`. Pinning Grafana's Ingress to
+`websecure` makes it LAN-only by construction, using the same mechanism the
+Proxmox IngressRoute already relied on. The general rule now recorded in
+gotchas.md: **a name is public unless something structurally stops it, and
+"nobody configured a route" is not structural.**
+
+Grafana keeps its password login and its un-annotated `grafana.lan` host, under
+the same recoverability rule as the LAN bypass above: Grafana is where you look
+when the cluster is unwell, so its only door must not be a pod that might itself
+be what is down.
+
 ## Backup: the database is regenerable, and is not backed up
 
 `db.sqlite3` holds TOTP enrolments, OIDC consent grants and the brute-force

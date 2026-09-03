@@ -179,6 +179,36 @@ lose it and `db.sqlite3` is unreadable. It belongs in the password manager.
 invalidates every session and orphans the existing TOTP database. It refuses to
 overwrite without `--force`.
 
+`authelia-oidc` is a **second, separate** Secret holding one key, `oidc.yml`,
+mounted at `/secrets/oidc/`. It exists because the OIDC jwks private key cannot
+be delivered the way the four above are: it is a structured list entry
+(`key_id`/`algorithm`/`use`/`key`), not a scalar, so no `AUTHELIA_*_FILE` env
+var can carry it. Instead the deployment passes a second `--config`, and
+Authelia deep-merges the two files — the ConfigMap contributes
+`identity_providers.oidc.clients`, this Secret contributes `hmac_secret` and
+`jwks`, and both are live at once.
+
+That the merge is *deep* rather than a replace is load-bearing and was verified
+against 4.39.20, because a shallow merge would silently discard every client
+and only surface later as `invalid_client` on an app that looks correct. The
+check: put a deliberately invalid client in the ConfigMap half, then run
+`validate-config` with both files. It reports the client error and stops
+reporting "jwks is required", which is only possible if both halves survived.
+`seal-oidc.sh` carries this note.
+
+`seal-oidc.sh` is likewise not idempotent: rotating the jwks key invalidates
+every issued ID token and every consent already granted. It refuses to
+overwrite without `--force`. Losing these is *not* fatal the way
+`storage_encryption_key` is — re-running mints a new provider identity at the
+cost of re-consent — but they belong in the password manager anyway.
+
+Per-client secrets come from `new-oidc-client.sh`, which prints two values that
+must go to two different places: the **digest** into `configmap.yaml` (a PBKDF2
+hash, safe in plain git, same as the argon2 password hashes), and the
+**plaintext** into the client application. Given a namespace and secret name it
+also seals the plaintext, but writes the file into `k8s/apps/authelia/` — move
+it to the consuming app's ArgoCD path or it is never applied.
+
 ## Storage and backup
 
 PVC `authelia-data`, 1Gi Longhorn RWO, holding SQLite: TOTP enrolments, OIDC
@@ -280,15 +310,47 @@ Full detail in `gotchas.md`; these are the ones that recur.
 - Verification that only reaches a backend's login page does not exercise the
   cookie state that follows a successful backend login.
 
-## Not implemented
+## OIDC
 
-OIDC (step 5 of `docs/plans/phase-8-authelia.md`). Nothing of it is written. It
-needs an RSA jwks key and `hmac_secret` in a second config file mounted from its
-own SealedSecret, per-client secrets, and clients for grafana, gitea, nextcloud,
-immich, paperless and optionally argocd.
+The provider is live as of 2026-09-03. Discovery is at
+`https://auth.henrydowd.dev/.well-known/openid-configuration` and resolves from
+the LAN, the internet and **in-cluster** (Technitium -> Traefik -> the wildcard
+cert; verified from a pod, `ssl_verify: 0`). Endpoints sit under `/api/oidc/`,
+which is not the path most `generic_oauth` examples assume — read them out of
+the discovery document rather than copying a blog post.
 
-Constraints already known: grafana and argocd are LAN-only, so their redirect
-URIs sit outside the cert and cookie domain; paperless must be OIDC and never
-ForwardAuth, because Paperless Mobile hits `/api`; Collabora gets neither.
-Several of those backends set substantial session cookies of their own, so
-re-check the read buffer as clients are added.
+Registered clients:
+
+| Client | Policy | Redirect URI | Notes |
+|---|---|---|---|
+| `grafana` | `one_factor` | `https://grafana.henrydowd.dev/login/generic_oauth` | PKCE S256, `client_secret_basic`, `consent_mode: implicit` |
+
+`one_factor` rather than `two_factor` because Grafana is reachable only from
+the LAN, so the network already does the work a second factor would. amp and
+proxmox are `two_factor` because they are reachable from the internet.
+
+**Grafana moved to a new hostname for this.** OIDC needs an HTTPS origin inside
+the `henrydowd.dev` cookie domain, and `grafana.lan` is neither. The new host is
+served by a `websecure`-only Ingress
+(`k8s/apps/monitoring/grafana-ingress.yaml`), which makes it LAN-only *by
+construction* rather than by absence of a tunnel route — see the wildcard-tunnel
+entry in `gotchas.md`, because the obvious reasoning here is wrong and would
+have published Grafana to the internet. `grafana.lan` stays, un-annotated, as
+the break-glass path, and Grafana's password login stays enabled: it is where
+you look when the cluster is unwell, so its only door must not be a pod that
+might itself be what is down.
+
+### Not yet wired
+
+gitea, nextcloud, immich, paperless and optionally argocd. Deliberately **not**
+pre-registered: a client registration is only useful once its app is wired, and
+minting a secret months early means a plaintext to keep safe with nothing using
+it. `configmap.yaml` carries the intended redirect URIs as a comment; add each
+client in the commit that wires its app.
+
+Constraints already known: argocd is LAN-only, so it needs the same
+websecure-only treatment Grafana got, or its redirect URI sits outside the cert
+and cookie domain; paperless must be OIDC and never ForwardAuth, because
+Paperless Mobile hits `/api`; Collabora gets neither. Several of those backends
+set substantial session cookies of their own, so re-check the read buffer as
+clients are added.

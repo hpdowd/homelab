@@ -7,7 +7,36 @@ wrong about manifests that already exist. Every change carries an inline
 holds. Verify Authelia minor version + config keys against the docs for the
 exact pinned image before each step, config schema drifts between 4.x minors.*
 
-> ## Status: COMPLETE and verified end to end, 2026-09-03
+> ## Status: ForwardAuth complete; OIDC provider live with Grafana wired, 2026-09-03
+>
+> **Update, later on 2026-09-03.** Step 5a (the OIDC provider) is done and
+> Grafana is its first client. Discovery answers on
+> `https://auth.henrydowd.dev/.well-known/openid-configuration` from the LAN,
+> the internet and in-cluster; Grafana's login page offers "Sign in with
+> Authelia"; and the authorization request is accepted by Authelia and turned
+> into an `openid_connect` flow rather than an `invalid_client`. The four
+> ForwardAuth'd hosts still gate correctly at the Cloudflare edge and every LAN
+> break-glass path still answers 200. **What is NOT yet verified is a real
+> human login through the flow** — that needs a password and a TOTP code.
+>
+> Two corrections this step forced on the text below.
+>
+> **Step 5's "grafana and argocd are LAN-only, so their redirect URIs sit
+> outside the cert/cookie domain" is answered, but its premise was wrong.** The
+> plan assumed a `*.henrydowd.dev` name with no cloudflared route would be
+> LAN-only. It is not: the tunnel carries a wildcard public hostname, so a name
+> nobody configured still reaches Traefik from the internet, and a plain
+> Ingress for `grafana.henrydowd.dev` would have published Grafana. Pinning the
+> Ingress to the `websecure` entrypoint is what makes it LAN-only, because the
+> tunnel only ever arrives on `web`. Same trap family as the `forceproto` 400
+> and the Proxmox/Access claim: split-horizon DNS hid the public path again.
+> ArgoCD needs the same treatment if it is ever done.
+>
+> **The other five clients are deliberately not pre-registered**, against 5b's
+> "one per commit" framing — see the ADR. Their redirect URIs live as a comment
+> in `configmap.yaml`.
+
+## Superseded status: COMPLETE and verified end to end, 2026-09-03
 >
 > Authelia 4.39.20 is live, `Synced/Healthy`, scraped and alerted on. Four hosts
 > are gated and verified **through the real Cloudflare path**: `wiki`, `amp`,
@@ -495,6 +524,11 @@ Rollback for any service = remove the annotation/middleware ref and sync.
 
 ## Step 5: OIDC provider + clients
 
+**5a. Provider — DONE 2026-09-03.** Implemented as `seal-oidc.sh` (provider
+key material) and `new-oidc-client.sh` (per-client secrets) rather than as the
+loose commands below; the deep-merge assumption in this step was verified, not
+taken on trust. Original notes kept for context:
+
 **5a. Provider.** Generate:
 
 ```bash
@@ -540,7 +574,7 @@ fetch it server-side: confirm resolution from a pod if anything 500s.
 
 | Order | App | Where | Notes |
 |---|---|---|---|
-| 1 | Grafana | vm-stack inline values: `grafana.grafana.ini` `[auth.generic_oauth]` + secret via `grafana.envFromSecret` | confirm exact keys with `helm show values` (silent-drift gotcha); endpoints `/api/oidc/{authorization,token,userinfo}`; map `groups` → role |
+| 1 ✅ | Grafana (**done**, LAN-only on `grafana.henrydowd.dev` via a websecure-pinned Ingress) | vm-stack inline values: `grafana.grafana.ini` `[auth.generic_oauth]` + secret via `grafana.envFromSecret` | confirm exact keys with `helm show values` (silent-drift gotcha); endpoints `/api/oidc/{authorization,token,userinfo}`; map `groups` → role |
 | 2 | Gitea | UI: Site Admin → Authentication Sources → OpenID Connect (or `gitea admin auth add-oauth`) | auto-discovery URL; account linking ON so existing `henry` maps; git-over-https keeps using tokens — unaffected |
 | 3 | Nextcloud | `occ app:install user_oidc` then `occ user_oidc:provider Authelia --clientid … --clientsecret … --discoveryuri …` | keep password login until mapped user verified; DAV clients keep app-passwords |
 | 4 | Immich | Admin → Settings → OAuth | issuer `https://auth.henrydowd.dev`; redirect URIs: `https://immich.henrydowd.dev/auth/login` **and** `app.immich:///oauth-callback` (mobile); keep password login enabled until both web+app proven |

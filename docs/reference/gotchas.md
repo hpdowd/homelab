@@ -156,6 +156,45 @@ with `helm template` against the pinned chart version. See
   add per-Ingress TLS config; one secret covers `*.henrydowd.dev`.
   (`*.lan` names still get the wildcard → mismatch warning; accepted,
   see ADR 007.)
+- **The tunnel carries a WILDCARD public hostname, so "no cloudflared route"
+  does NOT mean "LAN-only".** This is the trap that most looks like safety and
+  is not. `nonsense-xyz.henrydowd.dev` — a name nobody has ever configured
+  anywhere — reaches Traefik from the internet and answers with Traefik's own
+  404 (`404 page not found`, 19 bytes, Go's `http.NotFound`), merely wrapped in
+  Cloudflare headers. Check *who* served a 404 before reading it as "not
+  exposed": `curl -sD- --resolve <host>:443:172.67.134.7 https://<host>/` and
+  look at content-length and content-type, because Cloudflare's own 404 is an
+  HTML page and Traefik's is 19 bytes of text.
+
+  Consequence: **adding any `*.henrydowd.dev` host to a Traefik Ingress
+  publishes it to the internet immediately**, with no tunnel change and no DNS
+  record of its own. The phase-8 plan assumed the opposite for grafana and
+  argocd ("LAN-only via split-horizon, no tunnel route"); it was wrong, in the
+  same way its "Proxmox has no CF Access" claim was wrong, and for the same
+  underlying reason — split-horizon DNS makes a LAN test say nothing about the
+  public path. Verified 2026-09-03.
+
+- **To get a LAN-only host that still has real HTTPS, pin the entrypoint.**
+  cloudflared terminates TLS at the edge and delivers plain HTTP, so every
+  request from the internet lands on `web`; LAN clients resolve the name
+  straight to Traefik (Technitium) and land on `websecure`. A router pinned to
+  `websecure` is therefore unreachable through the tunnel by construction:
+
+  ```yaml
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  ```
+
+  `k8s/apps/monitoring/grafana-ingress.yaml` is the worked example, and
+  `k8s/apps/proxmox/ingress-route.yaml` is the same mechanism in IngressRoute
+  form. **Note this is the exact inverse of the rule two bullets up**: pinning
+  entrypoints is a bug on a host that is *meant* to be public (it 404s the
+  tunnel) and is the mechanism on a host that must not be. The deciding
+  question is never "should I pin?" but "is this host meant to be reachable
+  from the internet?".
+
+  The cert needs no `tls:` block — the default TLSStore supplies the wildcard.
 
 ## TLS / cert-manager
 
