@@ -43,11 +43,11 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 | restic | installed at job runtime (`alpine` + apk in the backup CronJobs) | [restic.readthedocs.io](https://restic.readthedocs.io) · [restic/restic](https://github.com/restic/restic/releases) |
 | Backblaze B2 | S3-compatible endpoint (see backup manifests) | [B2 docs](https://www.backblaze.com/docs) — lifecycle rules live here (open work item) |
 
-## Planned
+## Auth
 
-| Component | Images | Docs |
-|---|---|---|
-| Authelia | `docker.io/authelia/authelia` (also on ghcr) | [authelia.com](https://www.authelia.com) — **versioned**; per-app integration guides under Integration → OpenID Connect → Clients |
+| Component | Where | Images | Docs | Notes |
+|---|---|---|---|---|
+| Authelia | raw manifests (ADR 018) | `docker.io/authelia/authelia` (also on ghcr) | [authelia.com](https://www.authelia.com) — **versioned**; per-app integration guides under Integration → OpenID Connect → Clients | live since 2026-09-03. Read the docs site at the *pinned* minor: the config schema drifts between 4.x minors and an unknown key stops the pod, which 502s every gated host. Validate with `authelia validate-config` before any bump — command in `authelia.md` |
 
 ## Finding and judging images / charts
 

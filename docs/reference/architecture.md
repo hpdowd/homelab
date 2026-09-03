@@ -14,7 +14,7 @@ Proxmox is on the bare metal. Inside Proxmox there are some LXCs (the
 permanent ones: DNS, VPN, AMP) and two full VMs that make up the k3s
 cluster. The split matters because LXCs share memory with the host
 (they only use what they touch) but VMs *reserve* their RAM the
-moment they boot. So the two k3s VMs eat 18GB up front whether
+moment they boot. So the two k3s VMs eat 19GB up front whether
 they're idle or hammered.
 
 ```
@@ -23,8 +23,9 @@ Proxmox host
 ├── LXC 101  WireGuard   (VPN + cloudflare-ddns)
 ├── LXC 102  AMP         (game server)
 ├── VM  201  QBittorrent (PIA-only torrenting)
-├── VM  300  k3s-control   2 vCPU, 4GiB RAM
-└── VM  301  k3s-worker1   8 vCPU, 14GB RAM, has the 500GB Longhorn disk
+├── VM  300  k3s-control   2 vCPU, 5GiB RAM  (raised from 4 on 2026-06-28)
+└── VM  301  k3s-worker1   8 vCPU, 14GiB RAM (12 for a while; back to 14 on
+                           2026-08-20), has the 500GB Longhorn disk
 ```
 
 ## The cluster
@@ -71,6 +72,13 @@ What's in the cluster:
   presents on `websecure` for everything. Exists because of the
   split-horizon path below: LAN clients hit Traefik directly, so
   Cloudflare's edge cert never helps them. See ADR 007.
+- **Authelia:** the SSO layer, in two roles. A Traefik ForwardAuth
+  middleware in front of the browser-only public hosts (kiwix, the
+  dashboard, AMP, Proxmox), and an OIDC provider for the apps that
+  have their own logins and non-browser clients (grafana, gitea,
+  nextcloud, immich, paperless, argocd). The LAN paths stay ungated
+  on purpose — it runs on the cluster hosted by the hypervisor one of
+  its own rules protects. See ADR 018 and `authelia.md`.
 - **VictoriaMetrics + Grafana + Alertmanager:** monitoring. Picked
   VM single-node over kube-prometheus-stack because it's ~60% lighter
   on RAM. See ADR 005.
@@ -92,7 +100,16 @@ The thing to remember about this path: Traefik gets plain HTTP, not
 HTTPS, because Cloudflare already handled TLS. The cloudflared
 config talks to Traefik's `web` entrypoint. If you create an Ingress
 and pin `router.entrypoints: websecure`, it 404s the tunnel because
-the router rejects the unencrypted hit. Don't pin entrypoints.
+the router rejects the unencrypted hit. So don't pin entrypoints on a
+host that is meant to be public — and *do* pin them on one that isn't.
+
+The tunnel carries a **wildcard** public hostname, so any
+`*.henrydowd.dev` name on a Traefik Ingress is reachable from the
+internet the moment it exists; there is no per-name route to leave out.
+A `websecure`-pinned router is what makes a host LAN-only, because the
+tunnel only ever arrives on `web`. `grafana.henrydowd.dev` and
+`argocd.henrydowd.dev` are both built that way (2026-09-03). Details in
+gotchas.md.
 
 ### Someone on the internet hits a gated host (wiki, dash, amp, proxmox)
 
@@ -222,7 +239,7 @@ left. It's why I keep picking the lighter option (VictoriaMetrics
 single-node, Authelia over Authentik), and why Immich waited for the
 headroom report before getting deployed (it's in now, ADR 006).
 
-One nuance, though: that ~6GB host limit only bites things that live
+One nuance, though: that ~5GB host limit only bites things that live
 *outside* the k3s VMs (LXCs, another VM). The worker VM already reserves
 its 14GiB up front, so anything I schedule *inside* the cluster competes
 for the worker's own 13.59GiB, not the host's leftovers, and most of

@@ -93,9 +93,17 @@ the LAN) that I want to proxy through Traefik for routing uniformity.
                  service: { name: <name>, port: { number: <port> } }
    ```
    **Do not** add `traefik.ingress.kubernetes.io/router.entrypoints:
-   websecure`. The cloudflared tunnel hits Traefik over plain HTTP, so
-   a websecure-only router 404s public traffic. Omitting the annotation
-   makes the router serve both entrypoints.
+   websecure` — *unless the service is meant to be LAN-only*. The
+   cloudflared tunnel hits Traefik over plain HTTP, so a websecure-only
+   router 404s public traffic. Omitting the annotation makes the router
+   serve both entrypoints.
+
+   That is also the only thing that keeps a host private. The tunnel
+   carries a wildcard public hostname, so adding any `*.henrydowd.dev`
+   name here publishes it immediately — "no cloudflared route" does not
+   mean LAN-only. For a LAN-only service, pin `websecure` **and** set
+   `router.tls: "true"` (see `grafana-ingress.yaml`), then verify at a
+   Cloudflare edge IP with `--resolve`, not from the LAN.
 
    **No TLS config needed:** Traefik's `default` TLSStore already
    serves the cert-manager wildcard for `*.henrydowd.dev` on
@@ -121,8 +129,11 @@ the LAN) that I want to proxy through Traefik for routing uniformity.
    ConfigMap **first**. A rule with no annotation is inert and harmless;
    an annotation with no rule gives the host a hard 403 from
    `default_policy: deny`. Browser-only apps take ForwardAuth; anything
-   with a mobile or CLI client needs OIDC instead, which is not deployed
-   yet. See `docs/reference/authelia.md`.
+   with a mobile, DAV, git or CLI client needs OIDC instead — the
+   provider is live and has six clients. Registering one is
+   `k8s/apps/authelia/new-oidc-client.sh` plus a client block in the
+   ConfigMap, and that ConfigMap change needs a `rollout restart` to take
+   effect. See `docs/reference/authelia.md`.
 
 8. **The ArgoCD Application:** drop a file at `k8s/apps/<name>.yaml`
    pointing at the directory you just made:

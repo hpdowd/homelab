@@ -24,8 +24,11 @@ runs as a Traefik ForwardAuth middleware, so Traefik asks it about each
 request rather than proxying through it. The LAN paths are deliberately
 left ungated — Authelia runs on the cluster hosted by the hypervisor its
 own rule protects, so a broken Authelia must not be able to lock me out
-of the thing I need to fix it with. OIDC is not deployed yet, so the
-apps with mobile clients still use their own logins. See
+of the thing I need to fix it with. It is also the OIDC provider:
+Grafana, Gitea, Nextcloud, Immich, Paperless and ArgoCD all offer "sign
+in with Authelia" and all keep their own password login as break-glass.
+Anything with a mobile, DAV, git or CLI client gets OIDC rather than
+ForwardAuth, which would break those clients. See
 [docs/reference/authelia.md](docs/reference/authelia.md).
 
 My portfolio site (henrydowd.dev) also runs here as an ordinary app: a

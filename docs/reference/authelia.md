@@ -14,8 +14,10 @@ it about every request to a gated host and either serves the request or
 redirects to the portal. It does not replace the backend's own login — Proxmox
 and AMP still ask for their own credentials afterwards.
 
-OIDC is **not deployed**. Every service listed as "native" in `services.md`
-still uses its own accounts.
+It is also the **OIDC provider** for the six apps that keep their own logins:
+grafana, gitea, nextcloud, immich, paperless and argocd. Anything with a
+non-browser client (mobile, DAV, git, `/api`) gets OIDC and never ForwardAuth.
+See the OIDC section below.
 
 ## Request flow
 
@@ -291,7 +293,7 @@ the regulation ban.
 
 | | |
 |---|---|
-| Memory | ~98Mi resident (request 128Mi, limit 512Mi) |
+| Memory | ~45Mi resident, measured 2026-09-03 (request 128Mi, limit 512Mi) |
 | CPU | ~1m idle |
 | Restarts | 0 |
 | PVC | Bound, Longhorn healthy, 1 replica |

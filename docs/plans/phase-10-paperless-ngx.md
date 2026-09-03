@@ -6,6 +6,19 @@ versions before deploying — Paperless bumps its expected PG major and its env
 keys between minors. Verify `PAPERLESS_*` keys against the pinned version's
 docs.*
 
+> ## Status: EXECUTED — shipped 2026-07-23, OIDC added 2026-09-03
+>
+> Live as `ghcr.io/paperless-ngx/paperless-ngx:3.0.0` with `postgres:18-alpine`
+> and `valkey:9-alpine`, on `paperless.lan` + `paperless.henrydowd.dev`, backed
+> up nightly to B2. Decisions are in `docs/adr/015-paperless-ngx.md`; the
+> as-deployed facts are in `docs/reference/services.md`.
+>
+> Step 4 (OIDC) is done — see the note on it below. One lesson came out of the
+> backup side rather than this plan:
+> `docs/lessons/backup/paperless-backup-unmonitored.md` — the CronJob shipped
+> with no alert watching it, because the alert rules named three namespaces and
+> were never widened.
+
 Architecture: three pods, the Immich shape (web + Postgres + broker):
 
 - **paperless-ngx** — one image runs gunicorn (web), the Celery task workers,
@@ -171,10 +184,14 @@ condition the replica-drift gotcha warns about
 
 ## Step 4: OIDC via Authelia (after phase 8)
 
-*Status 2026-09-03: phase 8's ForwardAuth half is live, but the OIDC provider
-(phase 8 step 5) is not written yet, so nothing here is actionable. Paperless
-stays on native auth. It must remain OIDC and never ForwardAuth — Paperless
-Mobile hits `/api` directly.*
+*Status 2026-09-03: **done.** Phase 8 is complete and paperless is one of its
+six OIDC clients. Password login is kept; it is OIDC and never ForwardAuth,
+because Paperless Mobile hits `/api` directly. Two things the step below did not
+predict: `PAPERLESS_APPS` is required as well and its absence is a silent no-op
+(clean logs, healthy pod, no SSO route), and `henry`'s placeholder
+`root@localhost` email never matches Authelia's, so the account must be linked
+once by hand from the profile page. As-deployed detail in
+`docs/reference/authelia.md`.*
 
 Register a `paperless` client in the Authelia ConfigMap (add it to that plan's
 step-5 client table), redirect URI

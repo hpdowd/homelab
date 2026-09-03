@@ -19,10 +19,10 @@ to log in), and the Bitwarden browser extensions and mobile apps hit
 way ForwardAuth/Access breaks Immich's app and file-parser's clients. So:
 public via the tunnel, native Vaultwarden auth + per-user 2FA only.
 
-A `k8s/apps/vaultwarden.yaml` Application is already scaffolded locally
-(untracked) pointing at an **empty** `k8s/apps/vaultwarden/` — as-is it syncs
-nothing. This plan fills the dir; commit the Application alongside the
-manifests.
+A `k8s/apps/vaultwarden.yaml` Application is **committed** (as is
+`k8s/apps/vaultwarden/namespace.yaml`), so ArgoCD already creates an empty
+`vaultwarden` namespace and syncs nothing else. This plan fills the directory;
+step 2's "commit the Application" is therefore already done.
 
 Decisions to record in ADR 016 before starting (step 0).
 
@@ -78,10 +78,10 @@ unrecoverable, i.e. every household password gone.
 
 ## Step 2: manifests
 
-`k8s/apps/vaultwarden/` **plus** the already-scaffolded
-`k8s/apps/vaultwarden.yaml` (commit it):
+`k8s/apps/vaultwarden/` — the Application and `namespace.yaml` are already
+committed, so this step adds the rest:
 
-- `namespace.yaml`, `sealed-secret.yaml`
+- `sealed-secret.yaml`
 - `pvc.yaml` — `vaultwarden-data` 1Gi Longhorn (verify `healthy`/1 replica
   after).
 - `deployment.yaml` — single replica, **`strategy: Recreate`** (RWO gotcha),

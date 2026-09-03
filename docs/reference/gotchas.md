@@ -77,9 +77,12 @@ with `helm template` against the pinned chart version. See
 - `ingressClassName: traefik` on every Ingress, classless ingresses
   only work via the default-class fallback, and a missing class is
   silently 404.
-- **Never pin `router.entrypoints: websecure`.** cloudflared hits
-  Traefik over plain HTTP on `web`; a websecure-only router 404s every
-  public hit. Applies to every TLS-behind-Cloudflare service.
+- **Never pin `router.entrypoints: websecure` on a host that is meant to
+  be public.** cloudflared hits Traefik over plain HTTP on `web`; a
+  websecure-only router 404s every public hit. Applies to every
+  TLS-behind-Cloudflare service. The inverse is also true and is the only
+  reliable way to keep a `*.henrydowd.dev` host off the internet — see the
+  wildcard-tunnel and LAN-only entries further down this section.
 - **An HTTPS-native backend with a `Secure` auth cookie (Proxmox) needs
   HTTPS on the LAN too, as a *second* IngressRoute.** PVE issues its
   auth cookie `Secure`, so a plain-HTTP browser drops it and login 401s
@@ -93,6 +96,11 @@ with `helm template` against the pinned chart version. See
   `docs/lessons/networking/proxmox-401-secure-cookie-plain-http.md`.
 - A missing or misnamed Middleware reference drops the whole router
   silently → 404.
+- **cloudflared validates upstream TLS, so any self-signed HTTPS backend 502s
+  through the tunnel.** Proxmox's `:8006` was the first case. The current
+  equivalent is a Traefik `ServersTransport` with `insecureSkipVerify: true`
+  scoped to that one backend hop — the public side still gets a real edge cert.
+  See `docs/lessons/networking/proxmox-502-selfsigned-tunnel.md`.
 - **Authelia ForwardAuth needs `X-Forwarded-Proto: https` forced on the
   tunnel path, or every public hit 400s.** Authelia refuses to authorize a
   target with an http scheme (*"has an insecure scheme 'http', only the
@@ -211,6 +219,18 @@ with `helm template` against the pinned chart version. See
 - Corollary: **never hand a pod public resolvers via `dnsConfig`**,
   plain :53 to 1.1.1.1/8.8.8.8 times out from this LAN. That's what
   silently broke Collabora's interim WOPI hairpin.
+- **A core `Ingress`'s `tls.secretName` resolves only in the Ingress's own
+  namespace.** There is no cross-namespace secret ref for standard Ingress TLS;
+  the cross-namespace pattern in `henrydowd-dev-cert.yaml` works only because
+  Traefik's own `TLSStore` CRD resolves in *its* namespace. `dowd-ie-cert.yaml`
+  copied that placement without the reason applying, so the secret landed in
+  `traefik` while `file-parser`'s Ingress looked for it locally, and Traefik
+  silently served the wrong (`henrydowd.dev`) cert for `secure.dowd.ie` — while
+  cert-manager reported `Ready: True` throughout. A healthy Certificate proves
+  cert-manager did its job, nothing more: verify with a real TLS handshake
+  against the right SNI, and read `kubectl logs deploy/traefik`, which logs
+  `secret <ns>/<name> does not exist` on every resync. See
+  `docs/lessons/k8s/dowd-ie-cert-wrong-namespace.md`.
 - The Cloudflare token (Zone:Read + DNS:Edit) is a SealedSecret in the
   cert-manager namespace, same master-key dependency as everything
   else sealed.
@@ -282,7 +302,13 @@ dead backend. See `docs/lessons/k8s/netpol-fresh-pod-race.md`.
 - RWO volumes mean `strategy: Recreate` on every Deployment that mounts
   one, RollingUpdate deadlocks waiting for the PVC to detach.
 - A CronJob sharing a RWO PVC with a live pod needs `podAffinity` to
-  co-schedule on the same node, or it hits Multi-Attach errors.
+  co-schedule on the same node, or it hits Multi-Attach errors. This is
+  written down and was still missed: `nextcloud-cron` failed roughly half
+  its runs for months because the manifest had drifted from the documented
+  intent, and the failures present as `DeadlineExceeded` with **empty pod
+  logs** — check namespace `Warning` events for `FailedAttachVolume` before
+  digging. The three backup CronJobs already had the affinity. See
+  `docs/lessons/k8s/nextcloud-cron-multiattach-rwo.md`.
 - Replica count is **1, worker only** (single usable storage node, see
   ADR 005's RAM/disk reasoning). Two places control it and both have
   bitten: the `default-replica-count` *setting*, and the
@@ -355,6 +381,29 @@ restart. The durable setting is the k3s **server** flag
 is cluster-wide, and it only affects PVs created *after* it changes.
 Restart `local-path-provisioner` afterwards so it re-reads the config.
 
+## Memory limits and OOM
+
+- **A latently-wrong cache bound only shows up when traffic finds it.** kiwix sat
+  inside a 512Mi limit for a month, then OOMKilled on a ~24h sawtooth. libzim
+  caches *decompressed* ZIM clusters bounded by cluster **count per ZIM**
+  (`ZIM_CLUSTERCACHE`, default 16), not by bytes — 12 ZIMs × 16 × ~2MiB ≈ 380MiB
+  — and what changed was a bot starting to walk the public wiki at 1–3 req/s,
+  monotonically filling a cache with no byte bound and no TTL. Fix the bound, not
+  the limit; raising the limit only moves the OOM out a day. Two triage lessons
+  worth more than the fix: a `PodOOMKilled` on a pod that is Running/Ready again
+  reads as self-resolved and is not — **pull the multi-day trend** — and split
+  the cgroup counters (`rss` / `cache` / `mapped_file`) rather than reading
+  `working_set_bytes`, which conflates reclaimable cache with a real heap. See
+  `docs/lessons/k8s/kiwix-cluster-cache-oom.md`.
+- **A size cap is not a cost cap.** file-parser's `MAX_UPLOAD_MB` bounds file
+  size; its memory scaled with *page count*, because the parser materialised the
+  whole document before returning anything. A 200-page PDF OOMKilled the single
+  replica (a full outage, not degraded capacity). The 1Gi→3Gi bump was the
+  mitigation; streaming the parse page-by-page was the fix, and took the peak to
+  ~112Mi even on 200+ pages, after which the limit came back down. Profile
+  parse-heavy paths against a deliberately pathological input — long, not merely
+  large. See `docs/lessons/k8s/file-parser-oom-large-pdf.md`.
+
 ## k3s node operations
 
 **`systemctl stop k3s-agent` does not stop the containers.** The unit is
@@ -390,6 +439,34 @@ has nothing to order and the containers get swept concurrently with
   permanent data loss.
 - The B2 bucket lifecycle must be "keep only the last version", or
   `restic forget --prune` never actually frees space.
+- **`restic forget` groups by `host,paths` by default, and a pod's hostname is
+  its pod name.** Every snapshot therefore lands in a retention group of one, and
+  `--keep-daily 7` dutifully keeps it: retention had deleted nothing in 51 days
+  (55 gitea / 90 immich / 104 nextcloud snapshots) while every job reported
+  success. The policy was never wrong and prune was never broken — the grouping
+  made the whole thing a no-op, silently and in the safe direction, which is why
+  a quarterly restore test and a risk review both read the inflated snapshot
+  count as health. Fix is `--group-by tags`. Two things that hid it: a `|| true`
+  on the forget line, and a six-week-old foreign-hostname lock in the nextcloud
+  repo (restic cannot judge such locks stale, so it blocks prune independently).
+  **Alert on repo growth, not on job exit code** — nothing catches a job that
+  succeeds at doing nothing. See
+  `docs/lessons/backup/restic-retention-never-pruned.md`.
+
+## ZFS snapshots (Proxmox host)
+
+The nightly `tank` prune had never deleted a snapshot since it was written, and
+would have deleted the *wrong* ones if it had worked. Two independent bugs:
+`zfs destroy` takes **one** snapshot argument, so `xargs -r zfs destroy` exits
+with a usage error and removes nothing; and `zfs list -t snapshot` sorts by name
+across *all* datasets, so `head -n -7` keeps the last 7 lines of the whole
+listing — 7 snapshots of whichever dataset sorts last — and marks every daily on
+every other dataset for destruction. Bug 1 masked bug 2, so "just add `-n1`"
+would have destroyed almost the entire history the next night. Prune per dataset,
+newest-first, one destroy per invocation
+(`/usr/local/bin/zfs-daily-snapshot.sh`). **A cleanup job nobody has ever seen
+delete anything is probably broken** — snapshot counts are a one-liner to check.
+See `docs/lessons/storage/zfs-snapshot-retention-noop.md`.
 
 ## Sealed Secrets
 
@@ -408,6 +485,37 @@ imported DB; they're in the `nextcloud-secrets` SealedSecret. Restore
 the SealedSecret before the pod first starts, not after, or sessions and
 encrypted fields break.
 
+## Proxmox host and LXCs
+
+- **Enabling the Proxmox firewall on an LXC defaults to dropping all inbound.**
+  Every port the container serves needs an explicit allow rule; without one the
+  container and the app are both fine and the hypervisor silently black-holes the
+  traffic. Cost a full debugging session on Nextcloud's AIO frontend on port
+  11000. Record each container's required inbound ports alongside its firewall
+  state. See `docs/lessons/infra/nextcloud-lxc-firewall-port11000.md`.
+- **The onboard Intel I219-LM NIC has a known e1000e TX-unit hang** that the
+  driver cannot self-recover from: the interface goes silent and only a reboot
+  brings it back, which on this box means the whole homelab. Three mitigations
+  are in place and load-bearing — offload off (`gso/gro/tso`), EEE off via
+  `ethtool --set-eee` (**`EEE=0` is not a valid module parameter**), and
+  `pcie_aspm=off` — applied together, deliberately not isolated. Note that a
+  module-parameter change does nothing until `update-initramfs -u` runs. If it
+  recurs with all three confirmed active, the answer is a PCIe NIC, not a fourth
+  software layer. The hang also blinds all monitoring, which is the standing
+  argument for an out-of-band watcher. See
+  `docs/lessons/infra/e1000e-nic-hang.md`.
+
+## The home router (Vodafone hub)
+
+Changing DHCP settings silently wiped the port-forward rules **while still
+displaying them as active**. The UI is not evidence; re-verify forwards from an
+external network after any settings change. This is a consumer-router
+limitation, not something config can fix, and it is part of why public HTTP goes
+through the Cloudflare tunnel instead — only WireGuard's UDP port still depends
+on a forward. The same hub also drops *all* outbound port 53, which is the other
+half of the DNS-01 story in the TLS section. See
+`docs/lessons/networking/vodafone-hub-ghost-portforward.md`.
+
 ## WireGuard LXC (101)
 
 Never `pct enter` it (or SSH into it through the tunnel) while the VPN
@@ -415,6 +523,16 @@ is active, network-namespace conflict freezes the container in D-state
 and only a host hard-reboot recovers. Use a LAN session or the host
 console with the VPN disconnected. See
 `docs/lessons/infra/wireguard-lxc-dstate-freeze.md`.
+
+**Do not diagnose the VPN host from a VPN-connected client.** 192.168.1.3
+is excluded from the tunnel's `AllowedIPs` — it *is* the endpoint — so it
+routes out the local Wi-Fi and reads as dead while every other
+192.168.1.x answers fine. `pct status` / `pct exec` from PVE instead. The
+matching trap on the DNS side: `api.ipify.org` from a split-tunnel client
+returns *your* ISP's address, not home's, which makes a perfectly current
+`home.henrydowd.dev` record look stale. Read home's WAN IP from a pod.
+Both cost time on 2026-09-03, when the real fault was simply that LXC 101
+had not autostarted after a manual reboot (known-risks §9).
 
 ## Alpine LXCs: busybox crond doesn't notice appended crontabs
 
@@ -432,7 +550,38 @@ CODE falls back to copying the whole LO tree per kit jail (~6ms → ~48s).
 The capability list feeds *file capabilities* on
 `coolmount`/`coolforkit-caps`; pid 1 showing `CapEff=0` is the healthy
 state, don't "fix" it. See
-`docs/lessons/k8s/collabora-slow-load-wordbook.md`.
+`docs/lessons/k8s/collabora-slow-load-wordbook.md` for the root cause, and
+`docs/lessons/k8s/collabora-slow-load-investigation.md` for the full working —
+every hypothesis H1–H11 with the evidence that killed it, including the two-day
+AppArmor/jail-copy detour that turned out to be coincident rather than causal.
+Worth reading before starting any long "why is this slow" hunt.
+
+## Read-only rootfs and lazy runtime writes
+
+`readOnlyRootFilesystem: true` (ADR 011) needs the app's **full** write set, and
+apps that write lazily will not tell you at startup. Homepage cost two separate
+incidents for one root cause:
+
+- The first crashlooped *after* being verified healthy — homepage copies
+  skeleton/provider files into `/app/config` at runtime, not all at boot, so a
+  read-only ConfigMap mount over that dir failed `EROFS` days later on a file
+  nobody had listed. Hand-listing every file the app might create is fragile;
+  give it a **writable emptyDir seeded by an initContainer** instead. A
+  read-only ConfigMap mount is only safe over a dir the app *only reads*.
+- The second was silent for nine days with pod, probes and ArgoCD all green: the
+  Next.js prerendered `en.html` is regenerated at runtime via `/api/revalidate`,
+  which writes `/app/.next/server/pages` — a dir the first fix did not make
+  writable. It failed `EROFS` once at boot, warned only in
+  `/app/config/logs/homepage.log`, never retried, and client-side hydration
+  patched over the visible half. **`%{http_code}` 200 is not a smoke test for a
+  page** — grep the response for a string only your config produces. And grep the
+  app's *own* log file for `EROFS` after a first deploy, not just `kubectl logs`.
+
+Authelia is the same family from the other direction: its read-only rootfs needs
+`server.disable_healthcheck: true`, or the boot-time write to
+`/app/.healthcheck.env` kills the pod with no useful error. See
+`docs/lessons/k8s/homepage-readonly-config-erofs.md`,
+`docs/lessons/k8s/homepage-prerender-erofs.md` and `homepage.md`.
 
 ## Monitoring
 
@@ -482,6 +631,42 @@ state, don't "fix" it. See
   upstream (`vm`, `gitea`) at startup so the series always exist, then
   `absent()` only fires on a genuinely broken pipeline and
   `PortfolioUpstreamDown` can evaluate from boot.
+- **`failedJobsHistoryLimit` is not a TTL, so an *isolated* failed Job alerts
+  forever.** The CronJob controller trims failed Jobs only when a newer failure
+  arrives and the count exceeds the limit; one failure with nothing behind it is
+  retained indefinitely, and `KubeJobFailed` keys on the *existence* of a failed
+  Job, not on a recent one. A `nextcloud-cron` run that started 6s after a node
+  reboot — before postgres was Ready — emailed every 6h for 25 hours while every
+  later run completed in 4s. Earlier failures had looked self-clearing only
+  because they came in bursts and evicted each other. `ttlSecondsAfterFinished`
+  is the only thing that bounds it; set it on noisy housekeeping jobs and
+  deliberately **not** on the backup CronJobs, which should keep shouting. See
+  `docs/lessons/k8s/kubejobfailed-isolated-failure-never-evicted.md`.
+- **A backup alert scoped to a namespace list stops covering you the day you add
+  a service.** `BackupJobFailed`/`BackupJobMissing` were written
+  `namespace=~"nextcloud|gitea|immich"` and never widened, so paperless shipped
+  with a nightly backup that no rule watched — and stayed silent through the
+  2026-07-26 outage that failed its job alongside two that did alert. Match on
+  the *job name* instead, so a new service is covered from its first run, and
+  keep a `BackupJobsAbsent` guard for the case self-scoping cannot see: backups
+  disappearing entirely. See
+  `docs/lessons/backup/paperless-backup-unmonitored.md`.
+- **A misspelt key in Alertmanager config does not error, it inherits.**
+  `reciever:` silently falls back to the parent receiver, so the Watchdog
+  dead-man's-switch was mailed to the inbox rather than black-holed; a
+  `InforInhibitor` matcher matched nothing; and the drop route was ordered after
+  the critical route, which first-match-wins makes inert. None of the three
+  failed the parse, the operator render, or startup. Test the *behaviour*:
+  Watchdog arriving in the inbox is itself the alert that routing is broken. See
+  `docs/lessons/k8s/alertmanager-null-route-typo.md`.
+- **k3s is not kubeadm, so any monitoring chart ships dead control-plane rules.**
+  scheduler / controller-manager / etcd / kube-proxy are separately scrapable
+  under kubeadm and embedded in one process under k3s, so those scrape jobs are
+  permanently empty and their rules fire or go no-data — ~12 false alerts a night
+  here. Disable that rule family (not the `ScrapePoolHasNoTargets` meta-alerts
+  that would catch a *real* empty pool), and **verify the component is alive
+  before silencing anything**: muting a true alert is how outages get missed. See
+  `docs/lessons/k8s/k3s-control-plane-false-positives.md`.
 
 ## Stuck namespace Terminating (vm-operator pattern)
 

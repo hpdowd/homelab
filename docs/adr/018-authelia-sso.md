@@ -143,10 +143,11 @@ prune — ArgoCD owns the Certificate, not the Secret it produces — and was
 deleted by hand. `file-parser`'s `secure.dowd.ie` is untouched; it has its own
 certificate in its own namespace.
 
-**Not removed, because they are not in this repo:** the cloudflared
+**Removed separately, because they are not in this repo:** the cloudflared
 public-hostname route (token-mode tunnel, dashboard-managed) and the Technitium
-`home.dowd.ie → 192.168.1.200` record. While they exist the name still resolves
-and Traefik answers 404, which leaks nothing.
+`home.dowd.ie → 192.168.1.200` record. Both are gone, so the name no longer
+resolves at all — an Ingress removal alone would have left it resolving and
+404ing from Traefik.
 
 Consequence, the good one: `dash.henrydowd.dev` and `dash.lan` are now the only
 hostnames on that pod, so gating `dash` finally means what it appeared to mean.

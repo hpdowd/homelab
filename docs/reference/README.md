@@ -9,7 +9,7 @@ Cheat-sheets for the tools used day-to-day. Not tutorials; just the commands and
 | authelia.md | The SSO stack as deployed — request flow, gated hosts, middlewares, config, secrets, monitoring, operations |
 | homepage.md | The dashboard as deployed — hostnames and gating, the two EROFS traps that shape it, config, operations |
 | gotchas.md | The sharp edges — collected one-paragraph warnings with links to the full lessons |
-| known-risks.md | Things not yet broken but on a path to breaking — evidence, severity, and the fix for each. Reviewed 2026-07-26 |
+| known-risks.md | Things not yet broken but on a path to breaking — evidence, severity, and the fix for each. Reviewed 2026-07-26, re-read 2026-09-03 |
 | operations.md | ArgoCD · Sealed Secrets · kubectl · Longhorn · ZFS · backup verification · diagnosis flow |
 | kubectl.md | Health/status cheat-sheet · 30-second health sweep · pods, events, logs, ingress, storage, rollouts |
 | cloudflare-warp.md | WARP CLI setup on Arch/Wayland — backup remote-access path when WireGuard is unavailable |

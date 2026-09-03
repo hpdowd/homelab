@@ -16,9 +16,10 @@ copy out of a runbook.
 
 | File | Purpose |
 |---|---|
-| bootstrap.sh | The sequence. Preflight, Sealed Secrets + master key, ArgoCD, the `argocd-cm` patch, repo credentials, `root-app`. Idempotent |
+| bootstrap.sh | The sequence. Preflight, Sealed Secrets + master key, ArgoCD, **both** `argocd-cm` and `argocd-rbac-cm` patches, repo credentials, `root-app`. Idempotent |
 | versions.env | Every pin, plus the chart repo URLs. The one file to edit when bumping |
-| argocd-cm-patch.yaml | The `resource.exclusions` ConfigMap patch that keeps `EndpointSlice` synced. Copied verbatim from the running cluster; re-diff after an ArgoCD upgrade |
+| argocd-cm-patch.yaml | Two things in one patch: the `resource.exclusions` list that keeps `EndpointSlice` synced, and (since 2026-09-03) ArgoCD's SSO config — `url` + `oidc.config`, including the `requestedIDTokenClaims` groups request. Copied verbatim from the running cluster; re-diff after an ArgoCD upgrade |
+| argocd-rbac-cm-patch.yaml | The SSO group policy — `scopes: "[groups]"` plus `admins` → `role:admin`. Added 2026-09-03; until then bootstrap applied only the first patch, which would have rebuilt into an SSO login with no permissions. Both ConfigMaps are patched rather than GitOps-managed so ArgoCD does not take ownership of ConfigMaps its own install creates |
 
 ## Usage
 
@@ -39,8 +40,8 @@ halfway can be re-run rather than unpicked.
    and both secrets supplied. Fails here rather than halfway through.
 2. **Sealed Secrets**, then restores the master key and restarts the
    controller. Before ArgoCD, always — see below.
-3. **ArgoCD** at a pinned tag, then the `argocd-cm` exclusions patch, then a
-   restart.
+3. **ArgoCD** at a pinned tag, then the `argocd-cm` (exclusions + SSO) and
+   `argocd-rbac-cm` (group policy) patches, then a restart.
 4. **Repo credentials** — the one Secret that can never be in git.
 5. **`root-app`**, and the second `argocd-server` restart that everyone
    forgets.
@@ -73,7 +74,10 @@ lands, and most apps have a SealedSecret they cannot start without.
 **The `argocd-cm` patch before `root-app`.** It keeps `EndpointSlice` out of
 ArgoCD's exclusion list. Miss it and the EndpointSlices pointing Traefik at
 the LXC services (AMP, Proxmox, Technitium) are silently not synced — Traefik
-answers "no available server" and nothing says why.
+answers "no available server" and nothing says why. Since 2026-09-03 the same
+patch also carries ArgoCD's OIDC config, and `argocd-rbac-cm-patch.yaml` beside
+it carries the group policy: apply one without the other and SSO logs you in
+with no permissions, which reads as an RBAC bug rather than a missing patch.
 
 **The second `argocd-server` restart, after the sync settles.**
 `argocd-cmd-params-cm` arrives via the `argocd-ingress` app and sets

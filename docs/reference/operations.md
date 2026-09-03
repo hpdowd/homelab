@@ -6,7 +6,12 @@ enough that they're worth writing down.
 
 ## ArgoCD
 
-The UI lives at `http://argocd.lan` (Traefik ingress, LAN-only). CLI
+The UI lives at `http://argocd.lan` (Traefik ingress, LAN-only). Since
+2026-09-03 there is also `https://argocd.henrydowd.dev` — real HTTPS on the
+wildcard cert, with "Log in via Authelia" (`two_factor`, `admins` →
+`role:admin`). It is LAN-only too, by a `websecure` entrypoint pin rather than
+by the absence of a tunnel route. The local `admin` login stays enabled on
+purpose: ArgoCD is what repairs Authelia, so it must not depend on it. CLI
 login:
 
 ```bash

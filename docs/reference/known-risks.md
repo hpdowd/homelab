@@ -4,6 +4,8 @@ Standing list of things that have not broken yet but are on a path to breaking, 
 evidence for each and what would stop it. Reviewed 2026-07-26 after the Longhorn
 auto-salvage incident; §1 and §6 updated 2026-07-27 when the live fixes went in; §3 closed
 and §1 revised 2026-08-10 when containerd and local-path moved off the worker's OS disk.
+Re-read 2026-09-03 during a documentation sweep: §4's figures refreshed (the worker VM
+grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -29,9 +31,11 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 10 | Adopt `k8s/infrastructure/sealed-secrets.yaml` | window | Verify `kubeseal --fetch-cert` against the backup first | Moderate — the controller's key is the trust root for every secret in the repo |
 | 11 | Exercise `bootstrap/bootstrap.sh` end-to-end against a scratch cluster | half a day | Needs a throwaway VM | None to prod; it is the only way to test the rebuild path |
 | ~~12~~ | ~~Decide what happens to `home.dowd.ie`~~ — **done 2026-09-03**, host dropped from Traefik | — | — | — |
+| 13 | Confirm LXC 101 has `onboot: 1` and add *something* that watches the VPN | ~30 min | — | Moderate — it is the remote-access path of last resort and nothing monitors it (§9) |
 
-With items 1, 2, 4 and 5 closed, nothing left here carries ongoing exposure — but item 6 now
-inherits part of it, because it is what makes the item 1 fix survive a rebuild (§1 below).
+With items 1, 2, 4 and 5 closed, item 6 inherits part of that exposure, because it is what
+makes the item 1 fix survive a rebuild (§1 below). **Item 13 is new on 2026-09-03 and is the
+only one carrying live exposure**: the VPN failed silently that day and nothing noticed (§9).
 Item 6 is the one to be slowest about: it is the highest-value structural fix and the easiest
 to do damage with. Item 9 is a verification, not a change, and it is the only one with a date
 attached.
@@ -56,9 +60,9 @@ widget could be added. Resolved by dropping the host from Traefik rather than pa
 second Authelia cookie domain (ADR 018). `dash.henrydowd.dev` and `dash.lan` are now the only
 names on that pod, and phase 9's step 4 is unblocked.
 
-Two loose ends outside this repo: the cloudflared route and the Technitium record for
-`home.dowd.ie` still exist, so the name resolves and Traefik answers 404. Harmless, and worth
-tidying when you are next in those consoles.
+The two loose ends outside this repo — the cloudflared public-hostname route and the
+Technitium record for `home.dowd.ie` — have since been removed as well, so the name no
+longer resolves anywhere. The removal is complete end to end.
 
 ### Already done (2026-07-25 / 26 / 27)
 
@@ -356,8 +360,16 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
 **Severity: medium. Silent until several workloads peak together.**
 
 ```text
-k3s-worker1   memory requests 5979Mi (50%)   limits 22820Mi (191%)
+2026-07-25   k3s-worker1   memory requests 5979Mi (50%)   limits 22820Mi (191%)
+2026-09-03   k3s-worker1   memory requests 6107Mi (43%)   limits 23588Mi (169%)
 ```
+
+The percentages fell without anything being trimmed: the **worker VM was raised
+back 12 → 14GiB on 2026-08-20** (`node_memory_MemTotal_bytes` 11.62 → 13.59GiB,
+allocatable now 14248896Ki), undoing the 2026-06-27 shrink. Nothing in the repo
+records that change or why it was made — `capacity-headroom.md` and `HOMELAB.md`
+both still describe a 12GiB worker below. The overcommit is unchanged in
+absolute terms; only the denominator moved.
 
 Requests are comfortable, so scheduling is honest. Limits are not: if enough workloads
 approach their ceilings at once, the node has no way to satisfy them and the kernel starts
@@ -368,8 +380,8 @@ Immich alone holds a 3Gi limit and has already been OOMKilled once at 2Gi, so th
 are not obviously wrong individually. The sum is the problem.
 
 **Prevention:** this is a capacity decision, not a bug. Either accept it explicitly (single
-worker, workloads rarely peak together, ~4.5 GiB currently available) or bring the sum
-under 100% by trimming the largest limits. Worth recording which, so the alert stops being
+worker, workloads rarely peak together, and the node now has 2GiB more to be wrong
+with) or bring the sum under 100% by trimming the largest limits. Worth recording which, so the alert stops being
 ambient noise. `docs/reference/capacity-headroom.md` has the sizing context.
 
 ---
@@ -482,6 +494,40 @@ The gap is exercise, not coverage. The last recorded test-restore was 2026-06-12
 **Prevention:** keep the quarterly test-restore cadence. A backup verified only by its own
 exit code is a backup with one untested dependency, and the retention bug above is exactly
 that failure mode, a job that succeeded nightly at doing nothing.
+
+---
+
+## 9. The VPN is the remote-access path of last resort, and nothing watches it
+
+**Severity: medium. Silent by construction, and it has already happened once.**
+
+On 2026-09-03 the WireGuard tunnel dropped mid-session. LXC 101 had been rebooted
+manually and **had not come back up on its own**; starting it from the Proxmox web UI
+restored the tunnel. Nothing in the cluster noticed, because nothing is watching: no
+scrape, alert or probe under `k8s/apps/monitoring/` references 192.168.1.3, WireGuard
+or `home.henrydowd.dev`. cloudflare-ddns was never at fault — home's real WAN IP,
+read from inside the cluster, matched the A record exactly.
+
+Two things make this worse than a normal unmonitored service:
+
+- **It is the way back in when everything else is broken.** `home.henrydowd.dev` is a
+  DNS-only, unproxied A record that bypasses the tunnel and Traefik entirely, which is
+  the whole point of it. A silent failure is only discovered when it is needed.
+- **It combines badly with the D-state rule.** The documented recovery for a wedged
+  WireGuard LXC is a full host reboot
+  (`docs/lessons/infra/wireguard-lxc-dstate-freeze.md`). If 101 does not autostart,
+  that recovery leaves the host up and the VPN down.
+
+**Prevention:** confirm `onboot: 1` on LXC 101 (open action 13), and add something that
+alerts on the tunnel being down — a blackbox probe of the WireGuard endpoint or of a
+LAN address reachable only through it.
+
+**Do not diagnose this from a VPN-connected laptop.** 192.168.1.3 is excluded from the
+tunnel's `AllowedIPs` (it *is* the endpoint), so it routes out the local Wi-Fi and reads
+as dead while every other 192.168.1.x answers. Use `pct status` / `pct exec` from the PVE
+host — never `pct enter` while the VPN is up. Likewise `api.ipify.org` from a
+split-tunnel client reports *your* ISP address, not home's, which makes a current DNS
+record look stale; read home's IP from a pod instead.
 
 ---
 

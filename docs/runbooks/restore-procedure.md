@@ -363,7 +363,11 @@ evicted. Restore a bounded `--include` instead.
 
 Notes from the 2026-07-27 Immich run: worker1's root disk was down to
 7.5GiB free, so the bounded `--include` above isn't optional — a full
-22GiB library restore would have evicted the pod. Querying the restored
+22GiB library restore would have evicted the pod. (That specific pressure
+eased on 2026-08-10, when containerd and local-path moved to `vdb` and `vda2`
+went 85% → 6%; known-risks §3. Keep the bounded restore anyway — the
+`ephemeral-storage` limit is what makes the eviction predictable rather than a
+surprise.) Querying the restored
 `smart_search` table fails with `need 1 probes, but 0 probes provided`
 until you `SET vchordrq.probes = 1`; that's a VectorChord session GUC the
 Immich server sets for itself, not a sign of a bad restore. Verifying row

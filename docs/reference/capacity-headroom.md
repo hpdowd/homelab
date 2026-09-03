@@ -5,6 +5,17 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-09-03 (worker back at 14GiB, and Authelia):** the worker VM
+> was raised **12 → 14GiB on 2026-08-20** — `node_memory_MemTotal_bytes` steps
+> 11.62 → 13.59GiB there, and allocatable is now 14248896Ki. That reverses the
+> 2026-06-27 shrink below, so **every "12GiB worker / ~11.6GiB usable" figure in
+> the updates that follow is superseded**, along with the ~3.5–4GiB software-only
+> game-server budget they derive: worker 14 + control 5 = 19GB of ~24 fixed.
+> *Why it was raised is not recorded anywhere in this repo — write it down here.*
+> Live at 2026-09-03: requests 6107Mi (43% of allocatable), limits 23588Mi (169%).
+> Authelia (phase 8, 2026-09-03) is the one new workload since paperless and is
+> negligible: ~45Mi resident, request 128Mi, limit 512Mi.
+>
 > **Status update 2026-07-23 (paperless):** phase 10 (paperless-ngx v3.0.0,
 > ADR 015) authored for the worker — three pods (app + Postgres 18 + Valkey).
 > Live worker figures at authoring time (superseding the pre-shrink snapshot

@@ -36,7 +36,8 @@ and 404s, while LAN clients resolving straight to Traefik get real HTTPS on the
 wildcard cert. Verified at the Cloudflare edge, 2026-09-03. See the
 wildcard-tunnel entry in gotchas.md before adding any host to this table.
 
-The same treatment is what ArgoCD would need if it ever gets OIDC.
+ArgoCD's `argocd.henrydowd.dev` got exactly the same treatment when it was
+wired for OIDC on 2026-09-03.
 
 Technitium's row is ingress glue only, the DNS server itself runs on
 the LXC, not in the cluster. Same selectorless-Service + EndpointSlice
@@ -78,7 +79,7 @@ the config table, the gated-host table, and operations. Only the per-service
 facts live here.
 
 - `docker.io/authelia/authelia`, pinned **4.39.20**, namespace `authelia`,
-  worker-pinned, one replica, `strategy: Recreate` (RWO PVC). ~98Mi resident.
+  worker-pinned, one replica, `strategy: Recreate` (RWO PVC). ~45Mi resident.
   See ADR 018 for why Authelia and not Authentik/Cloudflare Access.
 - **One hostname, `auth.henrydowd.dev`, with no `.lan` alias** — the exception
   to the pattern every other service follows. A host matching no
@@ -118,9 +119,12 @@ facts live here.
   (see gotchas.md).
 - Background jobs: CronJob `nextcloud-cron` every 5 min, shares the data
   PVC via podAffinity.
-- Disabled apps (AIO orphans): `notify_push`, `workflow_ocr`.
+- The AIO orphans `notify_push` and `workflow_ocr` are gone entirely, not
+  merely disabled. Currently disabled: `app_api`, `encryption`,
+  `files_external`, `twofactor_nextcloud_notification`, `user_ldap`.
 - `richdocuments` is enabled against the self-hosted CODE below.
-- TODO: re-enable calendar, contacts, notes, tasks, deck.
+- Calendar, contacts, notes, tasks and deck are all enabled again (verified
+  2026-09-03), as is `user_oidc` for the Authelia login.
 
 ## Collabora (CODE)
 
@@ -188,10 +192,13 @@ facts live here.
 - OCR is capped (`TASK_WORKERS=1`, `THREADS_PER_WORKER=1`, limit 1.5Gi) to
   fit the tight worker; peak scales with the document, so a big scan can
   spike — stagger bulk ingest away from Immich imports.
-- Auth: native login now; Authelia **OIDC** still pending. Paperless Mobile
-  hits `/api` directly, so this must be OIDC and must NOT be ForwardAuth'd —
-  a middleware on this Ingress would break the mobile app. See ADR 018 and
-  step 5 of `docs/plans/phase-8-authelia.md`.
+- Auth: **Authelia OIDC** (django-allauth `openid_connect`) since 2026-09-03,
+  password login kept. Paperless Mobile hits `/api` directly, so this must be
+  OIDC and must NOT be ForwardAuth'd — a middleware on this Ingress would break
+  the mobile app. Two env vars are required and `PAPERLESS_APPS` fails silently
+  if missed; `henry`'s placeholder `root@localhost` email means the account has
+  to be linked once by hand from the profile page. See `authelia.md` and
+  ADR 018.
 - Ingest: drop files into the `consume` PVC (watch folder); they're OCR'd,
   tagged, and indexed automatically.
 - Backup: 04:30 nightly to `hpd.homelab/paperless` (`pg_dump` + media RO

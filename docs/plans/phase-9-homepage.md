@@ -216,8 +216,9 @@ the homepage namespace, and the `HOMEPAGE_ALLOWED_HOSTS` entry are all gone,
 and the orphaned `dowd-ie-tls` Secret was deleted by hand.
 
 The cloudflared route and the Technitium record — the two "external, not in
-repo" items below — still exist. The section is kept as the checklist for
-removing them, and as the price list if a second apex is ever wanted again.
+repo" items below — have been removed too, so nothing of `home.dowd.ie` is
+left anywhere. The section is kept as the price list if a second apex is ever
+wanted again.
 
 `dash.henrydowd.dev` was the default precisely because it's free. `home.dowd.ie`
 is the nicer name but `dowd.ie` is a separate Cloudflare zone and costs the

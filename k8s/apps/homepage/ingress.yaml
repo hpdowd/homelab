@@ -17,9 +17,9 @@
 # blocked for as long as it existed. Dropping the name was the cheapest of the
 # three options in ADR 018.
 #
-# Removing it here only deletes the Traefik router. Two things live OUTSIDE this
-# repo and must be removed separately or the hostname stays resolvable and
-# answers 404 from Traefik:
+# Removing it here only deleted the Traefik router. Two things live OUTSIDE this
+# repo and had to be removed separately, or the hostname would have stayed
+# resolvable and answered 404 from Traefik. Both are done:
 #   - the cloudflared public-hostname route for home.dowd.ie (token-mode tunnel,
 #     so it is dashboard-managed)
 #   - the Technitium home.dowd.ie -> 192.168.1.200 record for the LAN
