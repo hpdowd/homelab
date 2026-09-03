@@ -18,6 +18,24 @@ spec:
       # 280s — under the 5-minute schedule, so a stuck run gets killed before
       # the next one fires instead of stacking up.
       activeDeadlineSeconds: 280
+      # Self-delete finished Jobs after 24h. This exists because of how
+      # failedJobsHistoryLimit interacts with KubeJobFailed: the limit evicts a
+      # failed Job only when a NEWER failure arrives, so an *isolated* failure
+      # is retained forever and KubeJobFailed fires forever with it — emailing
+      # every 6h until someone deletes the Job by hand.
+      #
+      # That is not hypothetical. Both nodes rebooted at 2026-09-02T15:40:35Z
+      # and this CronJob fired 6s later, before postgres and the main pod were
+      # up; the run hung and hit activeDeadlineSeconds above. Four earlier
+      # failures self-cleared within minutes because they came in bursts and
+      # evicted each other — the lone reboot one alerted for 25 hours.
+      #
+      # 24h keeps the Job and its pod logs for a full day of investigation
+      # (the alert itself only fires 15m in), then lets the alert resolve on
+      # its own instead of waiting for a human. Deliberately NOT applied to
+      # the backup CronJobs: a failed backup is high-consequence and rare, and
+      # should keep shouting until someone actually looks at it.
+      ttlSecondsAfterFinished: 86400
       template:
         spec:
           restartPolicy: Never
