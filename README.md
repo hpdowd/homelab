@@ -79,6 +79,7 @@ live status pulled from the cluster.
 - **[docs/reference/architecture.md](docs/reference/architecture.md):** how the pieces fit together. Start here.
 - **[docs/reference/services.md](docs/reference/services.md):** what runs where, and the config facts each service depends on.
 - **[docs/reference/authelia.md](docs/reference/authelia.md):** the SSO stack as deployed — what is gated, the middleware chain, and how to operate it.
+- **[docs/reference/homepage.md](docs/reference/homepage.md):** the dashboard as deployed — hostnames and gating, and the two read-only-filesystem traps that shape the whole deployment.
 - **[docs/reference/gotchas.md](docs/reference/gotchas.md):** the sharp edges, one paragraph each, linked to the full lessons.
 - **[docs/reference/known-risks.md](docs/reference/known-risks.md):** what hasn't broken yet but is on a path to breaking, plus the open-actions checklist. Read this before starting work — it says what state the cluster is actually in.
 - **[docs/reference/operations.md](docs/reference/operations.md):** commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.

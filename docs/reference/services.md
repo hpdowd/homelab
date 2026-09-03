@@ -230,6 +230,9 @@ facts live here.
 
 ## Homepage (dashboard)
 
+Full stack reference: **`homepage.md`** — hostnames and gating, the two EROFS
+traps, the ConfigMap layout, probes and operations. Per-service facts here.
+
 - `gethomepage/homepage`, pinned `v1.13.2`, namespace `homepage`, pinned to
   the worker. One stateless container, no DB, no PVC — all config is the
   `homepage` ConfigMap in git, so a pod loss just re-renders the page.

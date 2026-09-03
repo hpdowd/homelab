@@ -7,6 +7,7 @@ Cheat-sheets for the tools used day-to-day. Not tutorials; just the commands and
 | architecture.md | How requests flow from browser to pod · storage layers · what lives outside k3s and why |
 | services.md | What runs where · hostnames and backends · per-service config facts (images, DBs, secrets, schedules) |
 | authelia.md | The SSO stack as deployed — request flow, gated hosts, middlewares, config, secrets, monitoring, operations |
+| homepage.md | The dashboard as deployed — hostnames and gating, the two EROFS traps that shape it, config, operations |
 | gotchas.md | The sharp edges — collected one-paragraph warnings with links to the full lessons |
 | known-risks.md | Things not yet broken but on a path to breaking — evidence, severity, and the fix for each. Reviewed 2026-07-26 |
 | operations.md | ArgoCD · Sealed Secrets · kubectl · Longhorn · ZFS · backup verification · diagnosis flow |
