@@ -63,6 +63,16 @@ data:
     totp:
       issuer: 'auth.henrydowd.dev'
 
+    # Skip the "choose your second factor" screen and go straight to the TOTP
+    # prompt. With one enrolled method that screen is a click that asks a
+    # question with only one answer. Enrolling WebAuthn later does not break
+    # this — the chooser is still reachable from the TOTP screen, it just stops
+    # being the default landing point.
+    #
+    # Combined with consent_mode: 'implicit' on every OIDC client, a login is
+    # now: password -> TOTP -> back to the app.
+    default_2fa_method: 'totp'
+
     identity_validation:
       reset_password:
         # jwt_secret arrives via
