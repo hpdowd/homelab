@@ -62,71 +62,34 @@ root). See ADR 009.
 ## Authelia (SSO)
 
 Full stack reference: **`authelia.md`** — request flow, every Kubernetes object,
-the config table, operations. The entries below are the per-service facts that
-belong alongside the other services here.
+the config table, the gated-host table, and operations. Only the per-service
+facts live here.
 
-- **The portal's own Ingress carries `forceproto`** (but never `forwardauth`).
-  Without it, 2FA enrolment fails with "Failed to generate One-Time Code" — the
-  session-elevation endpoint rejects the `http` scheme the tunnel arrives with.
-  See the gotchas entry; the symptom points at mail and the cause is not mail.
-- **One hostname, `auth.henrydowd.dev`, with no `.lan` alias** — the exception
-  to the pattern every other service follows. A host that matches no
-  `session.cookies` domain serves the portal HTML but 403s every API call, so
-  an `auth.lan` would render a login page that refuses every submission.
-  Split-horizon already resolves `auth.henrydowd.dev` on the LAN, and the
-  session cookie plus every OIDC `redirect_uri` are pinned to that one name.
 - `docker.io/authelia/authelia`, pinned **4.39.20**, namespace `authelia`,
-  worker-pinned, one replica, `strategy: Recreate` (RWO PVC). ~100Mi resident.
+  worker-pinned, one replica, `strategy: Recreate` (RWO PVC). ~98Mi resident.
   See ADR 018 for why Authelia and not Authentik/Cloudflare Access.
-- **The image tag is not a detail.** Authelia's config schema drifts between
-  4.x minors and it refuses to start on an unknown key rather than ignoring it,
-  so a floating tag turns an unattended autosync into a cluster-wide auth
-  outage. Before any bump, re-run the validator named in `configmap.yaml`:
-  `docker run --rm -v "$PWD:/c" authelia/authelia:<tag> authelia validate-config
-  --config /c/configuration.yml`.
-- Runs as **uid 1000, all capabilities dropped, read-only root filesystem**.
-  That last one only works because `server.disable_healthcheck: true` stops it
-  writing `/app/.healthcheck.env` on boot; the pod is probed with httpGet on
-  `/api/health` and never uses the image's own healthcheck script.
-- **Two startup checks are deliberately declawed** (ADR 018): the SMTP notifier
-  check is disabled outright, because a relay that refuses the connection is
-  otherwise *fatal* and would let a Brevo outage 502 every gated service; and
-  NTP runs with `disable_failure: true`, so an unreachable time server logs a
-  warning instead of blocking startup.
+- **One hostname, `auth.henrydowd.dev`, with no `.lan` alias** — the exception
+  to the pattern every other service follows. A host matching no
+  `session.cookies` domain serves the portal HTML but 403s every API call.
+- **The image tag is not a detail.** The config schema drifts between 4.x
+  minors and Authelia refuses to start on an unknown key, so a floating tag
+  turns an unattended autosync into a cluster-wide auth outage. Validate before
+  any bump — command in `authelia.md`.
 - SealedSecrets: `authelia-secrets` (jwt_secret, session_secret,
   storage_encryption_key, smtp_password) and `authelia-users` (`users.yml`,
-  argon2 hashes). Mounted as **files** and read via `AUTHELIA_*_FILE` env vars,
-  never as literal env values. `storage_encryption_key` is under the same loss
-  policy as `RESTIC_PASSWORD` — lose it and `db.sqlite3` is unreadable.
+  argon2 hashes). Mounted as **files**, read via `AUTHELIA_*_FILE` env vars.
+  `storage_encryption_key` is under the same loss policy as `RESTIC_PASSWORD` —
+  lose it and `db.sqlite3` is unreadable.
 - PVC `authelia-data` 1Gi (SQLite: TOTP enrolments, OIDC consents, the
   brute-force ledger). **Not backed up and deliberately not `Prune=false`** —
   it is regenerable, see ADR 018.
-- ACLs live in the ConfigMap in plain git (`access_control.rules`). A rule is
-  **inert** until the matching Ingress/IngressRoute carries the
-  `authelia-forwardauth@kubernetescrd` middleware, so rules can ship ahead of
-  enforcement. The inverse is not safe: annotate a host that has no rule and
-  `default_policy: deny` gives it a hard 403.
-- **Two** Middlewares in the `authelia` namespace, referenced cross-namespace
-  and always chained in this order:
-  `authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd`.
-  `forceproto` is not optional — Authelia 400s any target with an http scheme,
-  and the tunnel reaches Traefik as plain HTTP, so without it every gated host
-  works on the LAN and fails from the internet. Cross-namespace referencing
-  needs
-  `providers.kubernetesCRD.allowCrossNamespace=true` on Traefik. It sets
-  `trustForwardHeader: true` so the client IP reaches Authelia for the `lan`
-  network rule — safe only because Traefik's `forwardedHeaders.trustedIPs` is
-  empty and it therefore overwrites any spoofed `X-Forwarded-For`. **Never add
-  the pod CIDR (10.42.0.0/16) to trustedIPs or to the `lan` network**: tunnel
-  traffic arrives from it, so either would make the whole internet count as LAN.
-  Note that Authelia's own Traefik guide lists `maxResponseBodySize`, which is
-  not a field in the Middleware CRD and is rejected by the API server.
-- **Every gated service keeps an ungated path** — `wiki.lan`, `dash.lan`,
-  `amp.lan` as separate bare Ingress objects, and Proxmox's LAN HTTPS route.
-  That is the break-glass route when Authelia is down, and the reason the LAN
-  bypass exists at all (ADR 018).
+- Gates four hosts: `wiki` and `dash` at one_factor, `amp` and `proxmox` at
+  two_factor, all on `henrydowd.dev`. Every one keeps an ungated `.lan` path as
+  the break-glass route. Table in `authelia.md`.
 - Metrics on `:9959`, scraped by `k8s/apps/monitoring/authelia-scrape.yaml`,
   alerted by `AutheliaDown` / `AutheliaMetricsAbsent` in `homelab-rules.yaml`.
+  Its failure 502s every gated host, so this is the one scrape that is about
+  other services as much as itself.
 
 ## Nextcloud
 

@@ -102,6 +102,28 @@ the LAN) that I want to proxy through Traefik for routing uniformity.
    `websecure`, so LAN HTTPS is valid with zero per-service ceremony.
    Don't add `tls:` sections or cert annotations (ADR 007).
 
+   **If the service should sit behind Authelia**, split the above into
+   *two* Ingress objects rather than annotating the single one: a public
+   object carrying
+
+   ```yaml
+   annotations:
+     traefik.ingress.kubernetes.io/router.middlewares: >-
+       authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd
+   ```
+
+   and a separate bare object for `<name>.lan`. The `.lan` object is the
+   break-glass path when Authelia is down, and keeping it a distinct
+   object is what stops a bad annotation taking both paths out at once.
+   Order matters — `forceproto` before `forwardauth`.
+
+   Add the matching rule to `access_control.rules` in the Authelia
+   ConfigMap **first**. A rule with no annotation is inert and harmless;
+   an annotation with no rule gives the host a hard 403 from
+   `default_policy: deny`. Browser-only apps take ForwardAuth; anything
+   with a mobile or CLI client needs OIDC instead, which is not deployed
+   yet. See `docs/reference/authelia.md`.
+
 8. **The ArgoCD Application:** drop a file at `k8s/apps/<name>.yaml`
    pointing at the directory you just made:
    ```yaml

@@ -330,7 +330,7 @@ In order of "should come up first":
    is expected during a rebuild, not a new fault, and it clears on its own once
    the pod is up. Two things gate Authelia itself: the Sealed Secrets master
    key (both `authelia-secrets` and `authelia-users` must decrypt) and the
-   `authelia-data` PVC.
+   `authelia-data` PVC. Stack detail in `docs/reference/authelia.md`.
 6. App namespaces, Postgres / Redis, then the apps themselves
 
 If something's stuck, the usual suspects: Sealed Secrets master key

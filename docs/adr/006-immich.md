@@ -75,3 +75,9 @@ per-node memory alert is the backstop.
 - When Authelia lands (phase 8), Immich goes behind it like everything
   else; its mobile app supports OAuth, so that migration is planned,
   not speculative.
+
+*(Update 2026-09-03: Authelia is deployed and phase 8's ForwardAuth half is
+live, but Immich is not behind it and should not be — ForwardAuth would break
+the mobile app, which is why Immich is on the OIDC list. The OIDC provider
+itself, phase 8 step 5, is still unwritten, so Immich remains on its own login.
+`docs/reference/authelia.md`.)*

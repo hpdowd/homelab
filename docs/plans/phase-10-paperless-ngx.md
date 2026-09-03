@@ -171,6 +171,11 @@ condition the replica-drift gotcha warns about
 
 ## Step 4: OIDC via Authelia (after phase 8)
 
+*Status 2026-09-03: phase 8's ForwardAuth half is live, but the OIDC provider
+(phase 8 step 5) is not written yet, so nothing here is actionable. Paperless
+stays on native auth. It must remain OIDC and never ForwardAuth — Paperless
+Mobile hits `/api` directly.*
+
 Register a `paperless` client in the Authelia ConfigMap (add it to that plan's
 step-5 client table), redirect URI
 `https://paperless.henrydowd.dev/accounts/oidc/authelia/login/callback`. Add

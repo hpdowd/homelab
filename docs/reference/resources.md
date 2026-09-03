@@ -47,7 +47,7 @@ grep -rn 'targetRevision\|image:' k8s/ | grep -v henrydowd   # what's pinned rig
 
 | Component | Images | Docs |
 |---|---|---|
-| Authelia (Phase 8) | `docker.io/authelia/authelia` (also on ghcr) | [authelia.com](https://www.authelia.com) — **versioned**; per-app integration guides under Integration → OpenID Connect → Clients |
+| Authelia | `docker.io/authelia/authelia` (also on ghcr) | [authelia.com](https://www.authelia.com) — **versioned**; per-app integration guides under Integration → OpenID Connect → Clients |
 
 ## Finding and judging images / charts
 

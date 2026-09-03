@@ -94,6 +94,32 @@ config talks to Traefik's `web` entrypoint. If you create an Ingress
 and pin `router.entrypoints: websecure`, it 404s the tunnel because
 the router rejects the unencrypted hit. Don't pin entrypoints.
 
+### Someone on the internet hits a gated host (wiki, dash, amp, proxmox)
+
+```
+their browser
+  → Cloudflare edge (TLS terminates here)
+  → my cloudflared pod
+  → Traefik `web`
+  → forceproto middleware    sets X-Forwarded-Proto: https
+  → forwardauth middleware   asks Authelia /api/authz/forward-auth
+       200 → the request continues
+       302 → redirect to auth.henrydowd.dev
+  → the backend Service
+```
+
+Authelia is in the middleware chain, not in the data path. Traefik asks it
+about each request and then serves the request itself, so Authelia is not a
+proxy hop and never sees the response.
+
+`forceproto` has to come first. Authelia returns 400 for any target with an
+`http` scheme, and by the time this path reaches Traefik it *is* plain HTTP —
+Cloudflare terminated the TLS several hops ago.
+
+Only the tunnel path is gated. The LAN flow below reaches the same hostnames
+with no middleware at all, which is the break-glass route when Authelia is
+down (ADR 018). Full detail in `authelia.md`.
+
 ### Someone on the LAN hits nextcloud.lan (or nextcloud.henrydowd.dev)
 
 ```

@@ -10,12 +10,23 @@ that's a bug.
 ## What runs here
 
 Things I host for me: Gitea (this repo), Nextcloud (files, calendar,
-contacts), Immich (photos), Collabora (in-browser docs for Nextcloud),
-Kiwix (offline Wikipedia), an AMP game server, the Proxmox web UI, and
-Technitium for LAN DNS. The first five live in k3s. AMP, Proxmox and
-Technitium stay on LXCs and get proxied through the cluster's Traefik
-so the routing is uniform. VictoriaMetrics + Grafana + Alertmanager
-runs in-cluster for metrics, dashboards, and email alerts.
+contacts), Immich (photos), Paperless (document archive), Collabora
+(in-browser docs for Nextcloud), Kiwix (offline Wikipedia), a homepage
+dashboard, an AMP game server, the Proxmox web UI, and Technitium for
+LAN DNS. Most of those live in k3s. AMP, Proxmox and Technitium stay on
+LXCs and get proxied through the cluster's Traefik so the routing is
+uniform. VictoriaMetrics + Grafana + Alertmanager runs in-cluster for
+metrics, dashboards, and email alerts.
+
+Authelia is the SSO layer in front of the public hostnames that need
+one: Kiwix and the dashboard at one factor, AMP and Proxmox at two. It
+runs as a Traefik ForwardAuth middleware, so Traefik asks it about each
+request rather than proxying through it. The LAN paths are deliberately
+left ungated — Authelia runs on the cluster hosted by the hypervisor its
+own rule protects, so a broken Authelia must not be able to lock me out
+of the thing I need to fix it with. OIDC is not deployed yet, so the
+apps with mobile clients still use their own logins. See
+[docs/reference/authelia.md](docs/reference/authelia.md).
 
 My portfolio site (henrydowd.dev) also runs here as an ordinary app: a
 single Go binary that reads the cluster's own metrics and this repo's
@@ -52,6 +63,7 @@ Proxmox host (Optiplex, ZFS mirror)
          ├── Longhorn        block storage
          ├── SealedSecrets   git-committable secrets
          ├── cert-manager    Let's Encrypt wildcard
+         ├── Authelia        SSO, ForwardAuth on the gated hosts
          ├── VictoriaMetrics + Grafana + Alertmanager
          └── apps            Nextcloud, Immich, Gitea, portfolio, …
 ```
@@ -66,6 +78,7 @@ live status pulled from the cluster.
 **Reference**
 - **[docs/reference/architecture.md](docs/reference/architecture.md):** how the pieces fit together. Start here.
 - **[docs/reference/services.md](docs/reference/services.md):** what runs where, and the config facts each service depends on.
+- **[docs/reference/authelia.md](docs/reference/authelia.md):** the SSO stack as deployed — what is gated, the middleware chain, and how to operate it.
 - **[docs/reference/gotchas.md](docs/reference/gotchas.md):** the sharp edges, one paragraph each, linked to the full lessons.
 - **[docs/reference/known-risks.md](docs/reference/known-risks.md):** what hasn't broken yet but is on a path to breaking, plus the open-actions checklist. Read this before starting work — it says what state the cluster is actually in.
 - **[docs/reference/operations.md](docs/reference/operations.md):** commands for day-to-day ops: ArgoCD, Sealed Secrets, ZFS, backup verification, diagnosis flow.

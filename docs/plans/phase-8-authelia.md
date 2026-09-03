@@ -46,6 +46,27 @@ exact pinned image before each step, config schema drifts between 4.x minors.*
 > It also disproved a claim this plan repeated throughout — that Proxmox was
 > "public with no CF Access". It was not; Access was already in front of it, and
 > split-horizon DNS had hidden that from every test anyone had run.
+>
+> ### Found after this block was first written (2026-09-03)
+>
+> A third trap of the same family. Authelia's default 4096-byte
+> `server.buffers.read` is too small for the forward-auth check on
+> `proxmox.henrydowd.dev` once PVE has issued its own cookies: Traefik replays
+> the whole client header set, so `CF_Authorization` + `authelia_session` +
+> `PVEAuthCookie` + `CSRFPreventionToken` together cross the limit and Authelia
+> answers **431** without parsing the request. Raised to 16384.
+>
+> The symptom lied the same way the other two did — Authelia was passed
+> cleanly, and the *Proxmox* login appeared to be broken. It also means the
+> verification recorded above was real but incomplete: it confirmed *reaching*
+> Proxmox, not *logging into* it, so the four-cookie state was never exercised.
+> Re-verified by a human after the fix.
+>
+> Two things generalise to step 5. A ConfigMap change needs an explicit
+> `kubectl -n authelia rollout restart deploy/authelia` (no checksum annotation
+> on the deployment), and several OIDC clients — Nextcloud and Gitea in
+> particular — set substantial session cookies of their own, so the buffer is
+> worth re-checking as they are added.
 
 Architecture: Authelia is the identity provider. Two integration modes, and a
 standing list of what stays out of both:

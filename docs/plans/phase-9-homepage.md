@@ -9,6 +9,27 @@ Execution order: this ships **before** revisiting Authelia (phase 8) per the
 household-services roadmap; the phase number is just an identifier here (cf.
 6c/6d landing after phase 7 in the status table), not a timeline.
 
+> ## Status: SHIPPED, links-only. Step 4 (widgets) is blocked.
+> *Updated 2026-09-03.*
+>
+> Homepage is live on `ghcr.io/gethomepage/homepage:v1.13.2`, serving
+> `dash.lan`, `dash.henrydowd.dev` and `home.dowd.ie`. Both the
+> `home.dowd.ie` name and `dash.henrydowd.dev` shipped, so the "alternative"
+> section below describes work that was done, not a road not taken.
+>
+> Phase 8 landed after this plan was drafted, and `dash.henrydowd.dev` is now
+> gated at `one_factor` — the precondition step 4 was waiting on. **It is not
+> sufficient.** The same pod also answers on `home.dowd.ie`, a second apex that
+> cannot share the `henrydowd.dev` session cookie and is public and ungated.
+> One ungated name is enough to make a keyed widget world-readable, so step 4
+> stays blocked until `home.dowd.ie` is resolved: drop the name, put it behind
+> Cloudflare Access, or give Authelia a second cookie domain (ADR 018, and
+> item 12 in known-risks.md).
+>
+> Current config is therefore still links-only — no `widget:` blocks with API
+> keys, no SealedSecret. The header carries `greeting` and `datetime` only; the
+> `resources` widget is deliberately still out.
+
 Architecture: [gethomepage/homepage](https://gethomepage.dev) — one stateless
 container, all config in a ConfigMap, no database, no PVC. It renders a link
 grid plus optional live widgets that poll each service's API (those need keys,
@@ -25,7 +46,7 @@ decisions below live in this plan.
 | Discovery | **static `services.yaml`**, NOT k8s ingress auto-discovery | ~13 services is trivial to hand-list; auto-discovery needs a cluster-wide RBAC read on ingresses and risks surfacing something you didn't mean to publish |
 | Storage | none (ConfigMap only; `emptyDir` for the Next.js cache) | nothing to persist |
 | Hostname | `dash.lan` + `dash.henrydowd.dev` | `home.henrydowd.dev` is the WireGuard/SSH record (taken); `dash.*` rides the `*.henrydowd.dev` wildcard — **zero** DNS/cert/tunnel work. `home.dowd.ie` alternative costed at the bottom |
-| Auth | public now, Authelia ForwardAuth in phase 8 | your call; the mitigation (links-only until gated) is in step 1 |
+| Auth | **as built:** `dash.henrydowd.dev` ForwardAuth `one_factor`; `home.dowd.ie` public | gating one name of two left the page world-readable — see the status block |
 | `HOMEPAGE_ALLOWED_HOSTS` | `dash.lan,dash.henrydowd.dev` | **load-bearing** since 0.9.x — unset (or wrong) ⇒ every proxied request 400s with `Bad Request: host validation failed` |
 
 Preflight — DNS, cert, and tunnel need **zero work**: `dash.henrydowd.dev`
@@ -52,9 +73,15 @@ So stage it:
 - **Phase 8 (once `dash.henrydowd.dev` is behind Authelia ForwardAuth):** add
   the widgets and the API-key SealedSecret (step 4).
 
-If you want widgets before phase 8, gate the dashboard with Cloudflare Access
-in the interim (the file-parser pattern) rather than leaving keyed widgets
-open — but the clean path is links-now / widgets-with-Authelia.
+**Revised 2026-09-03:** that precondition is now half-met and the wording above
+was too loose. `dash.henrydowd.dev` is gated at `one_factor`, but gating *a*
+name is not gating *the page* — `home.dowd.ie` reaches the same pod and is
+public. The precondition for step 4 is that **every** hostname serving this pod
+requires auth, not just the `henrydowd.dev` one.
+
+If you want widgets sooner, putting `home.dowd.ie` behind Cloudflare Access
+(the file-parser pattern) is the cheapest of the three ADR-018 options and does
+not need a second Authelia cookie domain.
 
 ---
 
@@ -182,9 +209,15 @@ the `henrydowd.dev` host, leave `dash.lan` bare, cookie-domain gotcha):
 - **Phase 8 hook**: record in the Authelia plan's ACL table that
   `dash.henrydowd.dev` → `one_factor`.
 
-## `home.dowd.ie` alternative (if you prefer the name)
+## `home.dowd.ie` — costed as an alternative, then built as well
 
-`dash.henrydowd.dev` is the default precisely because it's free. `home.dowd.ie`
+**This was taken.** Both names ship: `dash.henrydowd.dev` and `home.dowd.ie`
+serve the same pod, and `k8s/apps/homepage/certificate.yaml` is the second
+`Certificate` the first bullet below calls for. The section is kept because the
+costs it lists are what now has to be undone or extended if `home.dowd.ie` is
+dropped or gated (known-risks item 12).
+
+`dash.henrydowd.dev` was the default precisely because it's free. `home.dowd.ie`
 is the nicer name but `dowd.ie` is a separate Cloudflare zone and costs the
 full file-parser treatment:
 
@@ -199,10 +232,13 @@ full file-parser treatment:
   same Traefik origin (host-routed by the Ingress), like `secure.dowd.ie`.
 - **DNS**: a Technitium record `home.dowd.ie` → 192.168.1.200 for LAN.
 - **Access**: if you keep it public+ungated, make sure `home.dowd.ie` is **not**
-  added to any Cloudflare Access application.
+  added to any Cloudflare Access application. (As built it is public and
+  ungated, which is exactly what blocks step 4.)
 
-Three extra moving parts for a prettier hostname — hence `dash.henrydowd.dev`
-is the recommended path.
+Three extra moving parts for a prettier hostname. Both were built, and the
+fourth cost only became visible after phase 8: a second apex cannot share the
+`henrydowd.dev` session cookie, so `home.dowd.ie` cannot be gated by Authelia
+without its own cookie domain, `auth.dowd.ie`, and everything that name needs.
 
 ## Failure modes
 
@@ -210,7 +246,8 @@ is the recommended path.
   likely bring-up failure.
 - A YAML typo in `services.yaml` ⇒ homepage renders an error card but the pod
   stays up; check the container logs.
-- Public + ungated until phase 8 ⇒ the link grid is world-readable (accepted;
-  links aren't secrets, and widgets are deferred until gated).
+- `home.dowd.ie` public + ungated ⇒ the link grid is world-readable (accepted;
+  links aren't secrets, and widgets are deferred until gated). Gating
+  `dash.henrydowd.dev` alone did not change this.
 - A keyed widget added before gating ⇒ live infra data leaks publicly. Don't
   add `widget:` blocks until step 4's precondition holds.
