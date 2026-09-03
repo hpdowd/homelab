@@ -198,14 +198,36 @@ data:
               - 'https://grafana.henrydowd.dev/login/generic_oauth'
             scopes: ['openid', 'profile', 'email', 'groups']
 
-        # The remaining five clients from the phase-8 plan are NOT registered
+          - client_id: 'gitea'
+            client_name: 'Gitea'
+            client_secret: '$pbkdf2-sha512$310000$EaF7ROrw4OEkmbqo4mIQFQ$VuJAnQqeWTrtbKBpwRJask.qpOJJcCU./M8ead4mZqZJEh7IZ56k6D/YIJJzbC6vQFpf7gn6IN2YDn.ZateXbA'
+            public: false
+            # two_factor, unlike grafana: git.henrydowd.dev is genuinely
+            # internet-facing and this Gitea holds the cluster's own source of
+            # truth, including every SealedSecret. The friction is small — one
+            # TOTP prompt per Authelia session, shared across the cookie domain
+            # — and it costs nothing operationally, because git over HTTPS
+            # authenticates with tokens and never touches this flow.
+            authorization_policy: 'two_factor'
+            token_endpoint_auth_method: 'client_secret_basic'
+            require_pkce: true
+            pkce_challenge_method: 'S256'
+            consent_mode: 'implicit'
+            # Gitea derives its callback from the auth SOURCE NAME, not from
+            # the client id: /user/oauth2/<source name>/callback. The source is
+            # created as `authelia` (see docs/reference/authelia.md), so
+            # renaming it in Gitea's admin UI silently breaks this.
+            redirect_uris:
+              - 'https://git.henrydowd.dev/user/oauth2/authelia/callback'
+            scopes: ['openid', 'profile', 'email', 'groups']
+
+        # The remaining four clients from the phase-8 plan are NOT registered
         # yet, on purpose. A client registration is only useful once its app is
         # actually wired, and minting a secret months early means a plaintext
         # that has to be kept safe with nothing using it. Add each one in the
         # commit that wires its app. The shape is the block above; the
         # per-app redirect URIs the plan settled on are:
         #
-        #   gitea      https://git.henrydowd.dev/user/oauth2/authelia/callback
         #   nextcloud  https://nextcloud.henrydowd.dev/apps/user_oidc/code
         #   immich     https://immich.henrydowd.dev/auth/login
         #              app.immich:///oauth-callback        (mobile app)

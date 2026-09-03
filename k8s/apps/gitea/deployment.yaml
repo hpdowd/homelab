@@ -99,6 +99,30 @@ spec:
               ENABLE_OPENID_SIGNIN = false
               ENABLE_OPENID_SIGNUP = false
 
+              # Authelia SSO. NOTE the split: these are the *behaviours* of an
+              # OAuth2 login and are config, but the auth SOURCE itself
+              # (client id, secret, discovery URL) lives in Gitea's SQLite DB,
+              # not in app.ini — there is no way to declare it here. It is
+              # created once with `gitea admin auth add-oauth`; the exact
+              # command is in docs/reference/authelia.md, and cluster-rebuild.md
+              # lists it among the post-restore steps, because a rebuild from
+              # an empty DB would come up with SSO silently missing.
+              #
+              # ACCOUNT_LINKING = auto matches on email, so Authelia's
+              # henry@dowd.ie adopts the existing `henry` account rather than
+              # creating a second one. With registration disabled above, a
+              # login with no matching account is refused rather than
+              # provisioning anyone new.
+              #
+              # Local password login stays enabled on purpose: this Gitea
+              # serves the repo ArgoCD syncs from, so an Authelia outage must
+              # not also be a "cannot reach my infrastructure code" outage.
+              [oauth2_client]
+              ACCOUNT_LINKING = auto
+              ENABLE_AUTO_REGISTRATION = false
+              USERNAME = preferred_username
+              UPDATE_AVATAR = false
+
               [cron.update_checker]
               ENABLED = false
 
