@@ -236,11 +236,12 @@ data:
             # authenticate with app passwords and never enter this flow.
             authorization_policy: 'two_factor'
             token_endpoint_auth_method: 'client_secret_basic'
-            # Left false until it is confirmed what user_oidc 8.11 actually
-            # sends. Gitea taught the lesson: require_pkce: true against a
-            # client that omits code_challenge rejects the request before any
-            # login form appears. Tighten to true once verified.
-            require_pkce: false
+            # Confirmed against the live authorization request: user_oidc 8.11
+            # sends code_challenge with S256, so this is enforced rather than
+            # merely accepted. (Gitea cannot, and is registered false — check
+            # each client rather than copying either setting.)
+            require_pkce: true
+            pkce_challenge_method: 'S256'
             consent_mode: 'implicit'
             redirect_uris:
               - 'https://nextcloud.henrydowd.dev/apps/user_oidc/code'
