@@ -299,7 +299,32 @@ data:
               - 'app.immich:///oauth-callback'
             scopes: ['openid', 'profile', 'email']
 
-        # The remaining two clients from the phase-8 plan are NOT registered
+          - client_id: 'paperless'
+            client_name: 'Paperless-ngx'
+            client_secret: '$pbkdf2-sha512$310000$hc5Yzj1mqQaKkt/prA.MjA$NC96PvoP5WyNs8.r2KIyHTCG9YLgMYaPL7bgtmXr3Z8cpn1j8C67sUY1kHp7GAQkfUOiWsD9MkLcbkD.55S3PQ'
+            public: false
+            authorization_policy: 'two_factor'
+            # Pinned to match `token_auth_method` in the provider JSON. Left to
+            # itself allauth chooses by inspecting
+            # token_endpoint_auth_methods_supported, which Authelia answers with
+            # BOTH basic and post — so the pair would work today and could drift
+            # apart later without anyone touching paperless.
+            token_endpoint_auth_method: 'client_secret_post'
+            # allauth's pkce_enabled_default is False; the provider JSON turns
+            # it on explicitly with oauth_pkce_enabled, so enforce it here.
+            require_pkce: true
+            pkce_challenge_method: 'S256'
+            consent_mode: 'implicit'
+            # Reversed out of the running app
+            # (`reverse('openid_connect_callback', provider_id='authelia')`)
+            # rather than copied from docs. The 'authelia' segment is the
+            # provider_id in the provider JSON — change one and this breaks.
+            # Note the TRAILING SLASH: Django's route has it.
+            redirect_uris:
+              - 'https://paperless.henrydowd.dev/accounts/oidc/authelia/login/callback/'
+            scopes: ['openid', 'profile', 'email']
+
+        # The remaining client from the phase-8 plan is NOT registered
         # yet, on purpose. A client registration is only useful once its app is
         # actually wired, and minting a secret months early means a plaintext
         # that has to be kept safe with nothing using it. Add each one in the
@@ -308,7 +333,6 @@ data:
         #
         #   immich     https://immich.henrydowd.dev/auth/login
         #              app.immich:///oauth-callback        (mobile app)
-        #   paperless  https://paperless.henrydowd.dev/accounts/oidc/authelia/login/callback/
         #   argocd     https://argocd.lan/auth/callback     (LAN-only, see plan)
         #
         # Verify each against its own app's docs before committing: a wrong
