@@ -15,7 +15,7 @@ spec:
         # No config checksum here would mean a ConfigMap edit syncs without
         # restarting nginx, which reads config only at startup. Same trap as
         # the Authelia buffer sizes — see gotchas.
-        checksum/config: "cookie-domain-rewrite-v1"
+        checksum/config: "cookie-domain-rewrite-v2-healthz"
     spec:
       nodeSelector:
         kubernetes.io/hostname: k3s-worker1
@@ -47,10 +47,11 @@ spec:
             requests: { cpu: "10m", memory: "16Mi" }
             limits: { memory: "64Mi" }
           readinessProbe:
-            # Probes the hub through the proxy, so a 200 means the whole path
-            # works, not just that nginx is alive.
-            httpGet: { path: /, port: http }
+            # /healthz is answered by nginx locally — deliberately NOT a proxied
+            # request. See configmap.yaml.
+            httpGet: { path: /healthz, port: http }
             periodSeconds: 20
+            timeoutSeconds: 3
           livenessProbe:
             tcpSocket: { port: http }
             periodSeconds: 30

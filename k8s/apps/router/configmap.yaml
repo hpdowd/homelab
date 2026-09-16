@@ -41,7 +41,26 @@ data:
       # and avoids nginx needing large temp files on a read-only rootfs.
       proxy_buffering off;
 
+      # Local health endpoint, answered by nginx without touching the hub.
+      # The readiness probe used to proxy `/` instead, which looked like a
+      # better test — a 200 meant the whole path worked — and was wrong: the
+      # hub takes ~1.05s to render its index (measured; AMP on the same LAN
+      # answers in 1.8ms), and the default probe timeout is 1s. The pod never
+      # went Ready. Worse, tying readiness to a consumer router means any slow
+      # spell there pulls the proxy out of service and breaks router.lan
+      # entirely, when nginx was fine the whole time. Probe nginx; let the hub
+      # be slow.
+      location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+      }
+
       location / {
         proxy_pass http://192.168.1.1;
+        # The hub is slow but not broken. Give it room rather than 504ing a
+        # page that was always going to take a second.
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
       }
     }
