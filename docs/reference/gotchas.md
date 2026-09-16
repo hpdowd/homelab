@@ -195,6 +195,14 @@ with `helm template` against the pinned chart version. See
   Broken from 2026-09-03 (phase 8 gating amp) to 2026-09-16; AMP itself never
   changed, and `amp.lan` was unaffected throughout, which is why it went
   unnoticed for two weeks. See `docs/lessons/k8s/amp-authelia-bearer-401.md`.
+- **Traefik's `service.*` annotations go on the Service, `router.*` on the
+  Ingress — and the wrong one is silently ignored.**
+  `traefik.ingress.kubernetes.io/service.passhostheader` on an *Ingress*
+  produces no warning, no log line and no effect; the behaviour you were trying
+  to change simply stays as it was, which reads as "the annotation does not
+  work". Same for the other `service.*` keys. Cost a deploy cycle on
+  `router.lan` (2026-09-16). If an annotation appears to do nothing, check which
+  object it belongs on before assuming the feature is broken.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 - **TLS on the LAN path is one default cert, not per-Ingress config.**
@@ -587,6 +595,22 @@ through the Cloudflare tunnel instead — only WireGuard's UDP port still depend
 on a forward. The same hub also drops *all* outbound port 53, which is the other
 half of the DNS-01 story in the TLS section. See
 `docs/lessons/networking/vodafone-hub-ghost-portforward.md`.
+
+**Its web UI 403s any request whose `Host` is not its own IP**, which is why
+`router.lan` cannot be a plain A record in Technitium. Rebinding protection with
+no setting to turn it off:
+
+```text
+curl http://192.168.1.1/                        -> 200
+curl -H 'Host: 192.168.1.1:80' http://…         -> 200
+curl -H 'Host: router.lan'     http://…         -> 403
+```
+
+X-Forwarded-* headers are fine; it only checks `Host`. So `router.lan` stays on
+the `*.lan` wildcard and is proxied by Traefik (`k8s/apps/router/`) with
+`service.passhostheader: "false"`, which sends `192.168.1.1` upstream. An A
+record pointing straight at the hub resolves perfectly and then 403s in the
+browser, which reads as the router being broken.
 
 ## WireGuard LXC (101)
 

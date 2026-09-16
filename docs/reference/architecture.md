@@ -176,7 +176,16 @@ through Traefik. Traefik doesn't care that the backend is an LXC; as
 far as it's concerned it's just an endpoint. Same shape works for
 Proxmox (with the wrinkle that the backend wants HTTPS with a
 self-signed cert, so it's an IngressRoute + ServersTransport with
-`insecureSkipVerify: true`).
+`insecureSkipVerify: true`), and for the home router at `router.lan`
+(wrinkle there: the hub 403s any `Host` that isn't its own IP, so the
+Service carries `service.passhostheader: "false"`).
+
+Worth noting what this pattern is *for*. None of these boxes are in the
+cluster and none of them need to be; the Service + EndpointSlice is
+purely a way to put a name and a reverse proxy in front of something
+that already exists. That is also why `router.lan` goes through Traefik
+at all rather than being a one-line A record — it is the only place that
+can rewrite the Host header the hub insists on.
 
 ## Storage
 
