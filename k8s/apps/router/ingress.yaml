@@ -10,8 +10,9 @@
 #
 # So `router.lan A 192.168.1.1` resolves perfectly and then 403s in the
 # browser, because the browser sends `Host: router.lan`. DNS cannot fix that;
-# only something that rewrites the Host on the way through can, which is what
-# passhostheader below does.
+# only something that rewrites the Host on the way through can — that is
+# `service.passhostheader`, and it lives on the SERVICE, not here. See
+# service.yaml.
 #
 # LAN-only by design. There is deliberately no henrydowd.dev name here and the
 # router must never get one — this is the box that owns the network, and the
@@ -22,11 +23,6 @@ kind: Ingress
 metadata:
   name: router
   namespace: router
-  annotations:
-    # Send the backend's own host (192.168.1.1) upstream instead of the
-    # client's `router.lan`. Without this every request is a 403 and it reads
-    # as the router being broken rather than as a Host-header check.
-    traefik.ingress.kubernetes.io/service.passhostheader: "false"
 spec:
   ingressClassName: traefik
   rules:
