@@ -10,7 +10,10 @@ metadata:
   name: amp
   namespace: amp
   annotations:
-    traefik.ingress.kubernetes.io/router.middlewares: authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd
+    # forwardauth-noauthz, not the shared forwardauth: AMP's JS sends a
+    # scheme-only `Authorization: Bearer` that makes Authelia 401 the request
+    # and ignore the session cookie. See middleware.yaml for the measurements.
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-forceproto@kubernetescrd,authelia-forwardauth-noauthz@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:

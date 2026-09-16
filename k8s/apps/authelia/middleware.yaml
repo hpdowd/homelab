@@ -48,3 +48,81 @@ spec:
       - Remote-Groups
       - Remote-Email
       - Remote-Name
+---
+# Same ForwardAuth, minus the client's Authorization header.
+#
+# WHY THIS EXISTS. Traefik replays the client's entire header set to
+# /api/authz/forward-auth. AMP's own JS calls its API with a *scheme-only*
+# `Authorization: Bearer` (no token) before it has an AMP session of its own.
+# Authelia treats the presence of an Authorization header as "this is a
+# non-browser API client", so it stops doing cookie/session auth, tries to
+# parse the credential, fails with `invalid scheme: the scheme is missing`
+# and answers 401 — WITHOUT ever looking at the perfectly valid
+# authelia_session cookie on the same request.
+#
+# Measured against the live forward-auth endpoint on 2026-09-16, no session:
+#
+#   no Authorization                         -> 302 (portal)
+#   Authorization: Bearer <token>            -> 302
+#   Authorization: Bearer            (empty) -> 401
+#   Authorization: sometoken   (no scheme)   -> 401
+#
+# Note those probes cannot demonstrate the FIX, and it is worth knowing why
+# before re-running them and drawing the wrong conclusion: with no session and
+# `Accept: application/json`, Authelia answers 401 whether the Authorization
+# header is present or not, because it content-negotiates 401-vs-302 on Accept.
+# The difference only appears once a valid session exists — and the evidence
+# for that is the real failure, not a probe. Authelia's authentication_logs
+# recorded 1FA and TOTP both succeeding at 20:32:56 / 20:32:58, so the browser
+# held a good authelia_session, and its very next XHR to
+# POST /API/Core/GetAPISpec still came back 401 with
+# `www-authenticate: Basic realm="Authorization Required"` (Authelia's
+# API-client response, not AMP's). A valid session plus a malformed
+# Authorization header is a 401. That is the lockout.
+#
+# The symptom is "AMP won't log in": Authelia's own 1FA and TOTP both
+# succeed (its authentication_logs say so), the user lands back on AMP, and
+# then every XHR 401s so AMP's login form never initialises. Same shape as
+# the Proxmox read-buffer trap in gotchas.md — a header introduced by the
+# *backend* conversation breaking the *gate*, which reads as a backend fault.
+#
+# authRequestHeaders is a WHITELIST of headers copied to the auth server, so
+# every header Authelia actually needs has to be named here. Authorization is
+# deliberately absent. It is filtered only on the way to Authelia — the
+# backend still receives it, which matters because AMP does use a real Bearer
+# token once it has one.
+#
+# Scoped to AMP rather than applied to the shared `forwardauth` middleware:
+# the same trap is reachable on any gated host whose client sends an
+# Authorization header (a PVE API token over the tunnel would do it), but a
+# whitelist that silently drops a header Authelia needs would break every
+# gated service at once. One host, one blast radius.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: forwardauth-noauthz
+  namespace: authelia
+spec:
+  forwardAuth:
+    address: http://authelia.authelia.svc.cluster.local:9091/api/authz/forward-auth
+    trustForwardHeader: true
+    authRequestHeaders:
+      # The session. Without this the gate fails permanently closed.
+      - Cookie
+      # The ACL's `lan` network rule and the redirect target are built from
+      # these; drop any one and Authelia cannot tell who is calling or where
+      # to send them back to.
+      - X-Forwarded-Proto
+      - X-Forwarded-Host
+      - X-Forwarded-Uri
+      - X-Forwarded-Method
+      - X-Forwarded-For
+      # Authelia content-negotiates 302-vs-401 on Accept, and records the
+      # client on the session.
+      - Accept
+      - User-Agent
+    authResponseHeaders:
+      - Remote-User
+      - Remote-Groups
+      - Remote-Email
+      - Remote-Name
