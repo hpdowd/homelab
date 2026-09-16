@@ -201,8 +201,10 @@ with `helm template` against the pinned chart version. See
   produces no warning, no log line and no effect; the behaviour you were trying
   to change simply stays as it was, which reads as "the annotation does not
   work". Same for the other `service.*` keys. Cost a deploy cycle on
-  `router.lan` (2026-09-16). If an annotation appears to do nothing, check which
-  object it belongs on before assuming the feature is broken.
+  `router.lan` (2026-09-16), which in the end did not use `passhostheader`
+  anyway — an nginx proxy replaced it, see the home-router section. If an
+  annotation appears to do nothing, check which object it belongs on before
+  assuming the feature is broken.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 - **TLS on the LAN path is one default cert, not per-Ingress config.**
@@ -606,11 +608,38 @@ curl -H 'Host: 192.168.1.1:80' http://…         -> 200
 curl -H 'Host: router.lan'     http://…         -> 403
 ```
 
-X-Forwarded-* headers are fine; it only checks `Host`. So `router.lan` stays on
-the `*.lan` wildcard and is proxied by Traefik (`k8s/apps/router/`) with
-`service.passhostheader: "false"`, which sends `192.168.1.1` upstream. An A
-record pointing straight at the hub resolves perfectly and then 403s in the
-browser, which reads as the router being broken.
+X-Forwarded-* headers are fine; it only checks `Host`, and it answers to no
+hostname at all — `vodafone.hub`, `hub`, `router` and `fritz.box` all 403 too.
+An A record pointing straight at the hub therefore resolves perfectly and then
+403s in the browser, which reads as the router being broken.
+
+**And fixing the Host exposes a second layer: the session cookie is scoped to
+the IP.**
+
+```text
+Set-Cookie: DUKSID=jst_sess…; httponly;path=/;SameSite=Lax;Domain=192.168.1.1;
+```
+
+A browser on `router.lan` silently discards a cookie whose `Domain` is an
+unrelated host, so the login POST succeeds, the cookie is dropped, the next
+request is anonymous and the UI resets to the login page. That reads as a
+broken login, not as a cookie-scope problem — and it is the shape to remember,
+because forging the Host with Traefik's `service.passhostheader` fixes the 403
+and lands you here, looking like progress.
+
+Both layers need rewriting on the way through, so `router.lan` stays on the
+`*.lan` wildcard and Traefik routes it to a small nginx (`k8s/apps/router/`)
+that sets `Host: 192.168.1.1` and `proxy_cookie_domain 192.168.1.1 router.lan`.
+Traefik has no native `Set-Cookie` rewrite, and the only other options were a
+third-party plugin — an external dependency at startup, for the cluster's
+ingress — or giving up the hostname.
+
+Two smaller things from the same build. The hub takes **~1.05s** to render its
+index where AMP on the same LAN answers in 1.8ms, so a readiness probe proxied
+through it times out against the 1s default and the pod never goes Ready; probe
+nginx locally instead, and do not couple a pod's readiness to a consumer
+router's mood. And its HTML is entirely relative URLs, so no body rewriting is
+needed — only the header.
 
 ## WireGuard LXC (101)
 

@@ -176,9 +176,11 @@ through Traefik. Traefik doesn't care that the backend is an LXC; as
 far as it's concerned it's just an endpoint. Same shape works for
 Proxmox (with the wrinkle that the backend wants HTTPS with a
 self-signed cert, so it's an IngressRoute + ServersTransport with
-`insecureSkipVerify: true`), and for the home router at `router.lan`
-(wrinkle there: the hub 403s any `Host` that isn't its own IP, so the
-Service carries `service.passhostheader: "false"`).
+`insecureSkipVerify: true`), The home router at `router.lan` is
+the exception that proves the rule: the hub 403s any `Host` that isn't
+its own IP *and* scopes its session cookie to that IP, so a selectorless
+Service is not enough — there is a small nginx in front of it rewriting
+both. See `k8s/apps/router/`.
 
 Worth noting what this pattern is *for*. None of these boxes are in the
 cluster and none of them need to be; the Service + EndpointSlice is
