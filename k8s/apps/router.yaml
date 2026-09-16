@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: router
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.henrydowd.dev/henry/homelab.git
+    targetRevision: HEAD
+    path: k8s/apps/router
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: router
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

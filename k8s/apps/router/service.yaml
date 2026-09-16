@@ -1,0 +1,13 @@
+# Selectorless on purpose — the backend is the home router, not a pod. Same
+# pattern as technitium/ and amp/: this Service exists only to be pointed at
+# the hand-written EndpointSlice in endpoints.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: router
+  namespace: router
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
