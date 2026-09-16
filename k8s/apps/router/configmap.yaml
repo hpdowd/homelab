@@ -1,0 +1,47 @@
+# nginx sits between Traefik and the hub for exactly one reason: to rewrite the
+# Set-Cookie domain. Traefik cannot do this — it has no native response-header
+# rewrite, and the only alternatives are a third-party plugin (a startup
+# dependency on an external plugin registry, for the cluster's ingress) or
+# giving up on the hostname.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: router-proxy
+  namespace: router
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      server_name _;
+
+      # The hub 403s any Host that is not its own IP. Measured 2026-09-16:
+      # `Host: 192.168.1.1` and `Host: 192.168.1.1:80` both 200, everything
+      # else — router.lan, vodafone.hub, hub, router — 403. There is no
+      # hostname it will answer to, so the Host must be forged here.
+      proxy_set_header Host 192.168.1.1;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_http_version 1.1;
+
+      # THE POINT OF THIS POD. The hub issues its session cookie as
+      #   Set-Cookie: DUKSID=jst_sess…; httponly;path=/;SameSite=Lax;Domain=192.168.1.1;
+      # and a browser on http://router.lan/ silently DISCARDS a cookie whose
+      # Domain is an unrelated host. The login POST succeeds, the cookie is
+      # dropped, the next request is anonymous and the UI bounces straight back
+      # to the login page — which reads as "the login is broken" rather than as
+      # a cookie-scope problem. Rewriting the domain is what makes the session
+      # stick.
+      proxy_cookie_domain 192.168.1.1 router.lan;
+
+      # Same class of problem for redirects, if the hub ever emits an absolute
+      # Location. Its HTML is entirely relative URLs (checked), so this is
+      # belt-and-braces rather than load-bearing.
+      proxy_redirect http://192.168.1.1/ /;
+
+      # The admin UI is small and interactive; buffering off keeps it snappy
+      # and avoids nginx needing large temp files on a read-only rootfs.
+      proxy_buffering off;
+
+      location / {
+        proxy_pass http://192.168.1.1;
+      }
+    }

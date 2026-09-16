@@ -1,26 +1,12 @@
-# Selectorless on purpose — the backend is the home router, not a pod. Same
-# pattern as technitium/ and amp/: this Service exists only to be pointed at
-# the hand-written EndpointSlice in endpoints.yaml.
 apiVersion: v1
 kind: Service
 metadata:
   name: router
   namespace: router
-  annotations:
-    # Send the backend's own host (192.168.1.1) upstream instead of the
-    # client's `router.lan`, which the hub 403s. Without this every request is
-    # a 403 and it reads as the router being broken rather than as a
-    # Host-header check.
-    #
-    # This annotation MUST be on the Service. Traefik's Kubernetes Ingress
-    # provider reads `traefik.ingress.kubernetes.io/service.*` from the Service
-    # and `...router.*` from the Ingress; putting a service.* key on the
-    # Ingress is silently ignored — no warning, no log line, just the
-    # unchanged behaviour you were trying to fix. Cost a round of "the
-    # annotation is not working" on 2026-09-16.
-    traefik.ingress.kubernetes.io/service.passhostheader: "false"
 spec:
+  selector:
+    app: router-proxy
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 8080
       protocol: TCP

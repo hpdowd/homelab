@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: router-proxy
+  namespace: router
+spec:
+  replicas: 1
+  strategy: { type: RollingUpdate }
+  selector:
+    matchLabels: { app: router-proxy }
+  template:
+    metadata:
+      labels: { app: router-proxy }
+      annotations:
+        # No config checksum here would mean a ConfigMap edit syncs without
+        # restarting nginx, which reads config only at startup. Same trap as
+        # the Authelia buffer sizes — see gotchas.
+        checksum/config: "cookie-domain-rewrite-v1"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          # -unprivileged: listens on 8080 as UID 101 rather than 80 as root,
+          # which is what makes runAsNonRoot possible without capabilities.
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - { name: http, containerPort: 8080 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/nginx/conf.d }
+            # nginx writes its pid and temp bodies even when only proxying, so
+            # a read-only rootfs needs these three or it dies at startup.
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /var/run }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: "10m", memory: "16Mi" }
+            limits: { memory: "64Mi" }
+          readinessProbe:
+            # Probes the hub through the proxy, so a 200 means the whole path
+            # works, not just that nginx is alive.
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap: { name: router-proxy }
+        - { name: cache, emptyDir: {} }
+        - { name: run, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
