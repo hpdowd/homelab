@@ -453,6 +453,38 @@ has nothing to order and the containers get swept concurrently with
   succeeds at doing nothing. See
   `docs/lessons/backup/restic-retention-never-pruned.md`.
 
+## LVM thin pool (`local-lvm`)
+
+**`fstrim` inside a VM does nothing unless that disk has `discard=on`.** QEMU
+accepts the discards and silently drops them. There is no error: `lsblk -D` in the
+guest advertises `DISC-GRAN 512B`, `fstrim -v /` reports gigabytes trimmed, and the
+thin volume does not move a single block. Measured directly on 2026-09-16 — the
+worker reported 38 GiB trimmed while `lvs` held at 93.81% before and after. Set it
+at disk creation; it only takes effect at VM start, never live. LXCs are the
+exception and need no flag, `pct fstrim <id>` runs against the host-side mount and
+reaches LVM directly, on a running container.
+
+**A guest's `df` says nothing about the pool.** They answer different questions and
+the gap between them is unreclaimed blocks. The 2026-08-10 containerd move recorded
+the worker OS disk going 85% → 6% and that was correct and irrelevant: ~30 GiB came
+free inside the guest and the pool went on holding every block of it, which is most
+of why it later filled. Read `lvs` on the host, or the number is decoration.
+
+**A full thin pool fails writes and passes reads, which reads as a hang, not a disk
+error.** At 100% the pool goes `out_of_data_space` with `error_if_no_space` and every
+write to every volume on it returns `EIO`. A VM in that state boots far enough for
+fsck to pass, then freezes on its first write, consuming **zero** CPU — a wedged
+guest at 0% is the signature. Only volumes the *host* mounts (LXC rootfs) surface in
+host `dmesg`; VM disks fail one layer down in silence. Check `lvs -a` — attr
+`twi-aotzD-`, that trailing `D`, is the pool telling you it has failed.
+
+**Nothing watches pool usage.** `DiskFillingUp` reads guest filesystems and was
+correctly quiet throughout; the pool went from healthy to total cluster outage with
+no alert of any kind. `thin_pool_autoextend_threshold` is also unset. Provisioning is
+163 GiB on a 155 GiB pool, which is legitimate thin provisioning and exactly why it
+has to be monitored rather than assumed. See
+`docs/lessons/storage/lvm-thin-pool-full-no-discard.md`.
+
 ## ZFS snapshots (Proxmox host)
 
 The nightly `tank` prune had never deleted a snapshot since it was written, and

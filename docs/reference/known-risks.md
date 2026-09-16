@@ -5,7 +5,9 @@ evidence for each and what would stop it. Reviewed 2026-07-26 after the Longhorn
 auto-salvage incident; §1 and §6 updated 2026-07-27 when the live fixes went in; §3 closed
 and §1 revised 2026-08-10 when containerd and local-path moved off the worker's OS disk.
 Re-read 2026-09-03 during a documentation sweep: §4's figures refreshed (the worker VM
-grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened.
+grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened. Updated 2026-09-16
+after the `pve/data` thin pool filled and froze the control plane: §10 opened, §3's
+"resolved" corrected, §7 reframed as the same failure one layer up.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -32,10 +34,22 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 11 | Exercise `bootstrap/bootstrap.sh` end-to-end against a scratch cluster | half a day | Needs a throwaway VM | None to prod; it is the only way to test the rebuild path |
 | ~~12~~ | ~~Decide what happens to `home.dowd.ie`~~ — **done 2026-09-03**, host dropped from Traefik | — | — | — |
 | 13 | Confirm LXC 101 has `onboot: 1` and add *something* that watches the VPN | ~30 min | — | Moderate — it is the remote-access path of last resort and nothing monitors it (§9) |
+| 14 | Alert on `pve/data` `Data%` from the PVE host | ~1h | — | **Highest live exposure.** The pool filled with no warning and took the cluster down (§10) |
+| 15 | Reboot VMs 300 and 301 to activate `discard=on` and bank ~44.5 GiB | a window | Cluster downtime | Low — flags already set, pool is at 71% meanwhile |
+| 16 | Set `thin_pool_autoextend_threshold` | ~5 min | — | Low, and weak — only 2 GiB of VG left to grow into |
+| 17 | `fsck` `vm-102-disk-0` next time LXC 102 is stopped | ~15 min | AMP downtime | Low — it took real write errors on 2026-09-16 |
 
 With items 1, 2, 4 and 5 closed, item 6 inherits part of that exposure, because it is what
-makes the item 1 fix survive a rebuild (§1 below). **Item 13 is new on 2026-09-03 and is the
-only one carrying live exposure**: the VPN failed silently that day and nothing noticed (§9).
+makes the item 1 fix survive a rebuild (§1 below). Item 13 is new on 2026-09-03: the VPN
+failed silently that day and nothing noticed (§9).
+
+**Items 14–17 are new on 2026-09-16, and 14 is now the one carrying the most live
+exposure** — it is the only item on this list whose absence has already caused an outage
+rather than threatened one. The `pve/data` thin pool filled to 100% with no alert at any
+threshold and froze the control plane mid-boot (§10). Item 15 is the deferred half of that
+fix and is waiting on a reboot window, not on a decision. Note that items 14 and 13 share a
+shape worth noticing: both are things that fail silently and are only discovered by their
+consequences, and this list now contains two of them.
 Item 6 is the one to be slowest about: it is the highest-value structural fix and the easiest
 to do damage with. Item 9 is a verification, not a change, and it is the only one with a date
 attached.
@@ -175,6 +189,15 @@ new rule.
 ## 3. Worker OS disk cannot absorb its own local-path claims
 
 **Resolved 2026-08-10. `/dev/vda2` went 85% → 6% by moving both consumers onto `vdb`.**
+
+> **Correction (2026-09-16).** That 85% → 6% is a guest-side figure and it did not mean
+> what this entry took it to mean. The ~30 GiB freed inside the worker never returned to
+> the `pve/data` thin pool, because no `local-lvm` disk had `discard=on` — the pool went
+> on holding 41.3 GiB for a volume with 2.6 GiB live on it. The disk pressure was not
+> removed on 2026-08-10, it was moved one layer down to a place nothing was watching,
+> and on 2026-09-16 the pool hit 100% and froze the control plane mid-boot. The move
+> itself was still right; the measurement was taken in the wrong layer.
+> See `docs/lessons/storage/lvm-thin-pool-full-no-discard.md` and §10.
 
 `vda2` is 41 GiB and reached 85% for the third time. The first two rounds treated it as a
 cleanup problem — grow the disk 32→44 GiB in June, vacuum the journal and prune images in
@@ -471,6 +494,16 @@ This does not affect scheduling, which uses provisioned size, and `/mnt/longhorn
 
 **Prevention:** add a `trim` recurring job alongside the snapshot job.
 
+**Reframed 2026-09-16.** "Hygiene, not a threat" was the correct reading of *this* layer
+and the wrong lesson to draw from it. The identical failure — space freed by a
+filesystem never reaching the allocator underneath it — sat undetected one layer lower in
+the `pve/data` thin pool and took the cluster down for 2.5 hours (§10). Untrimmed blocks
+are harmless right up until the pool they are stranded in has no free ones, and nothing
+here distinguishes the two cases in advance. Severity of this item is unchanged;
+`/mnt/longhorn` is 30% used with 328 GiB free and has real room. What changes is that
+"untrimmed blocks somewhere" is now a thing to go looking for at every layer, not a
+cosmetic note.
+
 ---
 
 ## 8. Restore has been tested once
@@ -528,6 +561,42 @@ as dead while every other 192.168.1.x answers. Use `pct status` / `pct exec` fro
 host — never `pct enter` while the VPN is up. Likewise `api.ipify.org` from a
 split-tunnel client reports *your* ISP address, not home's, which makes a current DNS
 record look stale; read home's IP from a pod instead.
+
+---
+
+## 10. Nothing watches the `pve/data` thin pool, and its provisioning exceeds the disk
+
+**Severity: proven. This took the cluster down for ~2.5h on 2026-09-16.**
+
+The thin pool backing every `local-lvm` guest disk reached 100%, went
+`out_of_data_space` with `error_if_no_space`, and started returning `EIO` on every write
+to every volume on it. VM 300 froze 2.2 seconds into boot — reads pass, so fsck completed,
+then the first write blocked forever at 0% CPU — and with no API server the worker's
+`k3s-agent` sat failing to fetch CA certs for 30 minutes while 52 pods went `Unknown`.
+Full account in `docs/lessons/storage/lvm-thin-pool-full-no-discard.md`.
+
+Three separate gaps let it get there, all still partly open:
+
+**No alerting.** There is none, at any threshold. `DiskFillingUp` reads guest filesystems
+and was correctly quiet the whole time, because the guests had space — the blocks were
+stranded at the host layer. The pool went from healthy to total write failure with no
+signal, and the first symptom was a dead cluster. A `Data%` scrape off the PVE host is
+the missing check, and it is the single highest-value item here.
+
+**`discard=on` is set but not yet in effect on VMs 300 and 301.** Applied 2026-09-16;
+QEMU only reads it at VM start, so ~44.5 GiB is still held and will be returned the next
+time those VMs are booted. Until then the pool sits at 71.10% carrying mostly garbage.
+Any new `local-lvm` disk needs the flag at creation — see the gotchas entry for why
+`fstrim` "succeeding" proves nothing without it.
+
+**Provisioning is 163 GiB on a 155 GiB pool.** That is legitimate thin provisioning and
+not itself a bug, but it is the reason the pool must be monitored rather than assumed.
+The VG has 2 GiB left, so there is no second `lvextend` available — the 16 GiB that
+bought room to work on 2026-09-16 is spent. The next occurrence has no cheap escape.
+
+**Prevention:** alert on `Data%`, reboot 300 and 301 to bank the 44.5 GiB, set
+`thin_pool_autoextend_threshold` (unset; LVM warns on every `lvextend`), and treat §7
+below as the same failure in a different layer rather than an unrelated hygiene item.
 
 ---
 

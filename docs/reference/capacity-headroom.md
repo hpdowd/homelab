@@ -5,6 +5,26 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-09-16 (worker 14 → 12GiB, and RAM is not the only gate):** the
+> worker was taken **14 → 12GiB** to free host memory for an AMP game server —
+> `qm config 301` now reads `memory: 12288`, 11898MiB seen inside the guest. This is the
+> same trade as the 2026-06-27 shrink and for the same reason, so the software-only
+> game-server budget returns to roughly **~4-5GiB** (worker 12 + control 5 = 17GB of ~24).
+> Recording it here answers the question the 2026-09-03 note below leaves open about the
+> 2026-08-20 raise: **write the reason down at the time, because it is not recoverable
+> afterwards.** The 2026-08-20 raise remains unexplained and probably now always will be.
+>
+> The larger correction is to this document's opening line. RAM was not the gate that
+> bound on 2026-09-16 — **disk was**, and specifically the `pve/data` thin pool, which
+> filled to 100% and froze the control plane for ~2.5h. The memory change did not cause
+> it; the reboot it required merely exposed a pool that had already filled. But "should I
+> add service X" now has a second question attached, and the disk half has no monitoring
+> at all where the RAM half has a Grafana dashboard and two alerts. See
+> `docs/lessons/storage/lvm-thin-pool-full-no-discard.md` and §10 of `known-risks.md`.
+> Note the coupling this creates: AMP is the workload this RAM was freed *for*, AMP's
+> rootfs is on that pool, and AMP's growth is what consumed the last of it. Freeing RAM
+> for a game server and filling the pool with it are the same act.
+
 > **Status update 2026-09-03 (worker back at 14GiB, and Authelia):** the worker VM
 > was raised **12 → 14GiB on 2026-08-20** — `node_memory_MemTotal_bytes` steps
 > 11.62 → 13.59GiB there, and allocatable is now 14248896Ki. That reverses the
