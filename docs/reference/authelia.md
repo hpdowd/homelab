@@ -5,7 +5,7 @@ in `docs/adr/018-authelia-sso.md`; the traps are in `gotchas.md`. This file is
 what exists.
 
 Version **4.39.20**, namespace `authelia`, one replica on `k3s-worker1`.
-Last verified 2026-09-03.
+Last verified 2026-09-16.
 
 ## Role
 
@@ -43,13 +43,16 @@ internet: Access, then Authelia `two_factor`, then PVE.
 |---|---|---|---|
 | `wiki.henrydowd.dev` | one_factor | Ingress `kiwix/kiwix` | `wiki.lan` via `kiwix/kiwix-lan` |
 | `dash.henrydowd.dev` | one_factor | Ingress `homepage/homepage` | `dash.lan` via `homepage/homepage-ungated` |
-| `amp.henrydowd.dev` | two_factor | Ingress `amp/amp` | `amp.lan` via `amp/amp-lan` |
+| `amp.henrydowd.dev` | two_factor | Ingress `amp/amp`, **`forwardauth-noauthz`** | `amp.lan` via `amp/amp-lan` |
 | `proxmox.henrydowd.dev` | two_factor | IngressRoute `proxmox/proxmox`, `web` route only | `proxmox.lan`, and the same host over LAN HTTPS via `proxmox-websecure` |
 | `auth.henrydowd.dev` | — | portal, `forceproto` only | — |
 
 The ungated names are separate Ingress objects, not extra rules on the gated
 ones. That separation is what makes the break-glass path survive a bad
-annotation on the gated object.
+annotation on the gated object. It cuts the other way too: `amp.lan` kept
+working for the 13 days `amp.henrydowd.dev` was broken (2026-09-03 to
+2026-09-16), which is why nobody noticed. Check the gated hostname after
+gating something, not the service.
 
 `home.dowd.ie` used to serve the same pod as `dash.henrydowd.dev` on a second
 apex, so it could not share the `henrydowd.dev` session cookie and left the
@@ -78,7 +81,7 @@ All in `k8s/apps/authelia/`, synced by the `authelia` ArgoCD Application with
 | `pvc.yaml` | PVC `authelia-data` | 1Gi Longhorn RWO |
 | `service.yaml` | Service | Ports **named** `http` (9091) and `metrics` (9959) |
 | `ingress.yaml` | Ingress | `auth.henrydowd.dev`, `forceproto` only |
-| `middleware.yaml` | Middleware `forwardauth` | |
+| `middleware.yaml` | Middlewares `forwardauth`, `forwardauth-noauthz` | the second is amp-only |
 | `middleware-proto.yaml` | Middleware `forceproto` | |
 | `networkpolicy.yaml` | NetworkPolicy | Default-deny ingress, 9091 + 9959 allowed |
 | `seal-secrets.sh` | script | One-time bring-up / rotation |
@@ -89,10 +92,16 @@ All in `k8s/apps/authelia/`, synced by the `authelia` ArgoCD Application with
 
 ## Middlewares
 
-Two, in the `authelia` namespace, referenced cross-namespace. Order is fixed:
+Three, in the `authelia` namespace, referenced cross-namespace. Order is fixed:
 
 ```
 authelia-forceproto@kubernetescrd,authelia-forwardauth@kubernetescrd
+```
+
+and on amp, the same order with the variant in the second slot:
+
+```
+authelia-forceproto@kubernetescrd,authelia-forwardauth-noauthz@kubernetescrd
 ```
 
 **`forceproto`** sets `X-Forwarded-Proto: https`. Required on every host reached
@@ -104,6 +113,18 @@ plain HTTP.
 `http://authelia.authelia.svc.cluster.local:9091/api/authz/forward-auth` with
 `trustForwardHeader: true` and passes down `Remote-User`, `Remote-Groups`,
 `Remote-Email`, `Remote-Name`. Nothing consumes those headers today.
+
+**`forwardauth-noauthz`** is the same thing plus `authRequestHeaders`, and is
+what `amp.henrydowd.dev` uses instead (added 2026-09-16). `authRequestHeaders`
+whitelists the headers copied to Authelia — `Cookie`, the `X-Forwarded-*` set,
+`Accept`, `User-Agent` — and omits `Authorization`. AMP's JS calls its own API
+with a scheme-only `Authorization: Bearer` before it has an AMP session, and any
+Authorization header makes Authelia try that credential *instead of* the session
+cookie; an unparseable one then 401s a request whose session is perfectly valid.
+The backend still receives the header, so AMP's real Bearer token is unaffected.
+Only amp uses this middleware — a whitelist missing something Authelia needs
+would break every gated host at once, so the blast radius is kept to one.
+Full account: `docs/lessons/k8s/amp-authelia-bearer-401.md`.
 
 Cross-namespace references need `providers.kubernetesCRD.allowCrossNamespace=true`
 on Traefik (`k8s/infrastructure/traefik.yaml:34`). Without it the router 404s

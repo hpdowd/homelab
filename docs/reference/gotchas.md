@@ -155,6 +155,46 @@ with `helm template` against the pinned chart version. See
   checksum annotation, so ArgoCD updates the ConfigMap without restarting the
   pod, and Authelia reads buffer sizes only at startup. `kubectl -n authelia
   rollout restart deploy/authelia` is part of the fix, not an optional extra.
+- **Any `Authorization` header on a gated request makes Authelia stop doing
+  cookie auth, and a malformed one then 401s a perfectly valid session.**
+  Authelia treats the presence of that header as "non-browser API client": it
+  tries the credential instead of the session, and if it cannot parse it the
+  request errors rather than falling through to `authelia_session`. AMP is the
+  host that hits this — `AMP.js` calls its own API with a scheme-only
+  `Authorization: Bearer` (no token) before it has an AMP session, so Traefik
+  replays that to `/api/authz/forward-auth`, Authelia logs `failed to parse
+  content of Authorization header: invalid scheme: the scheme is missing`, and
+  answers 401 with `www-authenticate: Basic realm="Authorization Required"`.
+  That `www-authenticate` is Authelia's, not the backend's — worth knowing,
+  because it looks like the backend demanding credentials.
+  The symptom lies the same way the read-buffer trap above does: 1FA and TOTP
+  both succeed (`authentication_logs` proves it), the user lands back on the
+  app, and only then does every XHR 401 — so it presents as "AMP's login is
+  broken" and sends you into AMP, not Authelia. It also survives re-login
+  forever, because the session it ignores is the one you keep creating.
+  Fixed with a **separate** middleware carrying `authRequestHeaders`, which
+  whitelists what reaches Authelia and omits `Authorization`; the backend still
+  gets the header, so AMP's real Bearer token keeps working. Scoped to the amp
+  Ingress deliberately — a whitelist missing something Authelia needs breaks
+  every gated host at once. `authRequestHeaders` *is* in this cluster's
+  Middleware CRD, unlike `maxResponseBodySize`.
+  Careful bisecting this without a session: with `Accept: application/json`
+  Authelia answers 401 whether the header is there or not, because it
+  content-negotiates 401-vs-302 on `Accept`. Send `Accept: text/html` (or none)
+  and watch for **401 vs 302** instead — that difference is the bug:
+  ```bash
+  kubectl -n authelia run authzprobe --rm -i --restart=Never \
+    --image=curlimages/curl -- sh -c 'T=http://traefik.traefik.svc.cluster.local
+    for a in "" "Bearer" "Bearer realtoken"; do
+      echo -n "[$a] -> "; curl -s -o /dev/null -w "%{http_code}\n" \
+        -H "Host: amp.henrydowd.dev" -H "X-Forwarded-Proto: https" \
+        ${a:+-H "Authorization: $a"} $T/
+    done'
+  # broken: "" -> 302, "Bearer" -> 401.  fixed: both 302.
+  ```
+  Broken from 2026-09-03 (phase 8 gating amp) to 2026-09-16; AMP itself never
+  changed, and `amp.lan` was unaffected throughout, which is why it went
+  unnoticed for two weeks. See `docs/lessons/k8s/amp-authelia-bearer-401.md`.
 - Diagnose Traefik vs tunnel:
   `curl -H "Host: <hostname>" http://192.168.1.200/ -I`
 - **TLS on the LAN path is one default cert, not per-Ingress config.**
