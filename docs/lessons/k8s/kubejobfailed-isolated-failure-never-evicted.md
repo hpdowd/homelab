@@ -1,14 +1,15 @@
 # Incident: an isolated CronJob failure alerted for 25 hours because nothing ever deleted it
 
 ## Date
-2026-09-02 → 2026-09-03
+2026-09-02 → 2026-09-03 (recurrence 2026-09-19)
 
 ## Time lost
 ~1h, all of it after the fact — the alert itself was benign, the cost was
 re-triaging the same email every 6h and then working out why it would not stop.
 
 ## Status
-Resolved.
+Resolved. Recurred 2026-09-19 for a different reason — see the Recurrence
+section; the manifest fix was correct but did not cover pre-existing Jobs.
 
 ## Context
 - **System / component:** `nextcloud-cron` CronJob, `nextcloud` namespace
@@ -100,6 +101,85 @@ kubectl -n nextcloud get jobs -l app=nextcloud-cron
   as here.
 - When an alert will not clear after the underlying fault is gone, check
   whether it is asserting on a *state object* rather than an event.
+
+## Recurrence: 2026-09-19 — the TTL fix is not retroactive
+
+Same alert, twice over, from two `nextcloud-cron` Jobs that failed during the
+**2026-09-16** control-plane outage and were still firing three days later.
+
+The `ttlSecondsAfterFinished: 86400` fix above works. It just does not apply to
+Jobs that already existed when it landed. `ttlSecondsAfterFinished` is copied
+from the CronJob's `jobTemplate` into each Job **at creation time**; it is not
+read back from the CronJob afterwards. So Jobs created before the field was
+added carry no TTL for the rest of their lives:
+
+```
+$ kubectl -n nextcloud get jobs -o json | jq '.items[] | {name:.metadata.name, ttl:.spec.ttlSecondsAfterFinished}'
+nextcloud-cron-29826310   ttl: null     <-- created pre-fix, never GC'd
+nextcloud-cron-29826475   ttl: null     <-- created pre-fix, never GC'd
+nextcloud-cron-29829665   ttl: 86400    <-- created post-fix, self-deletes
+```
+
+And `failedJobsHistoryLimit: 3` did not save it either, for the reason this
+lesson already documents: two failures is under the limit of three, so the
+count-triggered GC never fired. Both mechanisms declined for different reasons.
+
+### Why the Jobs failed in the first place
+
+Not a Nextcloud fault. The control-plane VM died uncleanly at
+`2026-09-16 18:12:22 BST` — the k3s journal stops mid-line with no shutdown
+sequence — and took **2h44m** to come back across five manual `qm` stop/start
+attempts and a full PVE host reboot:
+
+```text
+18:12:22  k3s-control journal ends mid-stream (unclean stop)
+18:27:45  qmstop 300 / 18:29:14 qmstart 300   } manual recovery attempts
+18:30:39  qmstop 300 / 18:30:46 qmstart 300   }
+19:18:34  stopall  →  19:22:34 startall        (PVE host reboot)
+19:56:08  qmstart 300  →  control plane finally up at 19:56:20 UTC
+```
+
+The in-flight Job (`29826310`, started 17:10 UTC) was only reaped at 19:56:30 —
+**2h46m after its 280s deadline**, because nothing was running to enforce the
+deadline. It was marked `DeadlineExceeded` the instant the controller returned.
+The next scheduled Job failed at exactly 280s while things settled, and
+everything since has completed in ~5s.
+
+This is worth recognising on sight: **a Job whose active time wildly exceeds its
+`activeDeadlineSeconds` did not hang for that long — the control plane was
+absent.** The failure timestamp marks the recovery, not the fault.
+
+### Fix
+
+```bash
+kubectl -n nextcloud delete job nextcloud-cron-29826310 nextcloud-cron-29826475
+```
+
+No manifest change. `k8s/apps/nextcloud/cronjob.yaml` is already correct, and
+every Job created since carries the TTL.
+
+### Verification
+
+```bash
+# metric drops first, alert follows within an eval cycle
+curl -s 'localhost:8428/prometheus/api/v1/query' \
+  --data-urlencode 'query=kube_job_failed{namespace="nextcloud"}>0'   # series: 0
+curl -s localhost:8080/api/v1/alerts | jq '[.data.alerts[]|select(.state=="firing").name]'
+# ["KubeMemoryOvercommit","KubeCPUOvercommit","Watchdog"]  — both KubeJobFailed gone
+```
+
+### Prevention
+
+- **Adding `ttlSecondsAfterFinished` does not clean up the backlog.** When you
+  add a TTL to fix a retention bug, sweep the existing objects in the same
+  change — the fix only covers objects created after it.
+- **Check `.spec.ttlSecondsAfterFinished` on the Job, not the CronJob.** The
+  CronJob showing the right value tells you nothing about Jobs already on the
+  cluster.
+- The two `Kube*Overcommit` warnings firing alongside this are expected on a
+  2-node cluster and are already null-routed in
+  `k8s/infrastructure/victoria-metrics.yaml` — they are visible in vmalert by
+  design and are not part of this incident.
 
 ## Related
 - Other lessons: `docs/lessons/k8s/nextcloud-cron-multiattach-rwo.md` (the

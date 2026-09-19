@@ -767,6 +767,21 @@ Authelia is the same family from the other direction: its read-only rootfs needs
   is the only thing that bounds it; set it on noisy housekeeping jobs and
   deliberately **not** on the backup CronJobs, which should keep shouting. See
   `docs/lessons/k8s/kubejobfailed-isolated-failure-never-evicted.md`.
+- **`ttlSecondsAfterFinished` is stamped onto a Job when it is created, so adding
+  it to a CronJob does nothing for Jobs that already exist.** Those keep
+  `.spec.ttlSecondsAfterFinished: null` for life and are never garbage-collected;
+  the CronJob showing the right value tells you nothing. Two `nextcloud-cron`
+  Jobs that predated the TTL fix above alerted for three days in 2026-09-19 until
+  deleted by hand. Check the Job, not the CronJob:
+  `kubectl -n <ns> get jobs -o json | jq '.items[]|{name:.metadata.name, ttl:.spec.ttlSecondsAfterFinished}'`,
+  and sweep the backlog in the same change that adds the TTL.
+- **A Job whose active time far exceeds its `activeDeadlineSeconds` did not hang
+  — the control plane was gone.** Nothing enforces the deadline while the
+  apiserver/controller is down, so the Job is reaped the instant it returns and
+  the `Failed` condition timestamp marks the *recovery*, not the fault. A Job
+  started 17:10 with a 280s deadline that reads `DeadlineExceeded` at 19:56 is
+  reporting a 2h46m control-plane outage. Cross-check against
+  `journalctl --list-boots` on the node before investigating the workload.
 - **A backup alert scoped to a namespace list stops covering you the day you add
   a service.** `BackupJobFailed`/`BackupJobMissing` were written
   `namespace=~"nextcloud|gitea|immich"` and never widened, so paperless shipped
