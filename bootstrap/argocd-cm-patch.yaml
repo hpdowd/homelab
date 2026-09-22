@@ -36,6 +36,21 @@ data:
   # henrydowd.dev cookie domain, which is what OIDC needs and argocd.lan
   # cannot give. argocd.lan still serves the UI and still takes the local
   # admin login; it just stops being the name in generated links.
+  #
+  # It also decides where SSO can be STARTED, which is less obvious. ArgoCD
+  # validates the login's return_url against this value, so "Log in via
+  # Authelia" on argocd.lan fails here, before anything reaches Authelia:
+  #
+  #   Invalid redirect URL: the protocol and host (including port) must match
+  #   and the path must be within allowed URLs if provided
+  #
+  # The message names neither argocd.lan nor this setting, and Authelia logs
+  # nothing. `additionalUrls` for http://argocd.lan looks like the fix but does
+  # not work: the argocd.oauthstate cookie is set Secure, so no browser stores
+  # it over plain HTTP, and the callback lands on this origin anyway; the flow
+  # then fails one step later with "http: named cookie not present". SSO on
+  # argocd.lan would require giving it TLS, which is the break-glass property
+  # it exists to provide. Use this host for SSO, argocd.lan for admin login.
   url: https://argocd.henrydowd.dev
 
   # Authelia SSO, talking to Authelia's OIDC provider directly — no Dex.
@@ -45,13 +60,18 @@ data:
   # label app.kubernetes.io/part-of: argocd. That label is set in
   # k8s/apps/argocd/oidc-sealed-secret.yaml and is easy to lose when resealing.
   #
-  # requestedIDTokenClaims is load-bearing for RBAC below. ArgoCD reads groups
-  # from the ID TOKEN, and Authelia does not put them there just because the
-  # `groups` scope was requested — the scope populates userinfo. Asking for the
-  # claim explicitly is what makes group RBAC work; Authelia advertises
-  # claims_parameter_supported: true and lists `groups` in claims_supported.
-  # Without it, login succeeds and the user lands with no permissions, which
-  # reads as an RBAC bug rather than a claims one.
+  # Groups are read from USERINFO, not the ID token, and that is what makes the
+  # RBAC in argocd-rbac-cm-patch.yaml work at all.
+  #
+  # This previously used `requestedIDTokenClaims: {groups: {essential: true}}`,
+  # reasoning that Authelia advertises claims_parameter_supported: true and
+  # lists `groups` in claims_supported, so requesting the claim would place it
+  # in the ID token. That flag only means the parameter is accepted. What puts
+  # a claim in an ID token on 4.39 is a `claims_policies` block assigned via
+  # `claims_policy`, and there is none in k8s/apps/authelia/configmap.yaml, so
+  # the request was accepted and silently under-fulfilled. The form below is
+  # what Authelia's own ArgoCD guide specifies. Do not reintroduce
+  # requestedIDTokenClaims without adding the matching claims_policies first.
   oidc.config: |
     name: Authelia
     issuer: https://auth.henrydowd.dev
@@ -62,9 +82,8 @@ data:
       - profile
       - email
       - groups
-    requestedIDTokenClaims:
-      groups:
-        essential: true
+    enableUserInfoGroups: true
+    userInfoPath: /api/oidc/userinfo
 
   resource.exclusions: |
     ### Network resources created by the Kubernetes control plane and excluded to reduce the number of watched events and UI clutter

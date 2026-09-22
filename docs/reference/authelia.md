@@ -603,23 +603,74 @@ than as GitOps-managed manifests, so ArgoCD does not take ownership of
 ConfigMaps its own install creates. `bootstrap.sh` applies both; they can be
 re-applied by hand with `kubectl patch --type merge --patch-file`.
 
+**SSO can only be started from `argocd.henrydowd.dev`.** ArgoCD validates the
+login's `return_url` against `url:` in `argocd-cm`. Starting from `argocd.lan`
+fails there, before anything reaches Authelia:
+
+```
+Invalid redirect URL: the protocol and host (including port) must match
+and the path must be within allowed URLs if provided
+```
+
+The message names neither the hostname nor the setting that rejected it, and
+Authelia logs nothing, so it reads as a broken OIDC client. Both sides, without
+a browser:
+
+```bash
+curl -s 'http://argocd.lan/auth/login?return_url=http%3A%2F%2Fargocd.lan%2Fapplications'   # the error
+curl -s -o /dev/null -w '%{http_code}\n' 'https://argocd.henrydowd.dev/auth/login'          # 303
+```
+
+`additionalUrls: [http://argocd.lan]` looks like the fix but does not work: the
+`argocd.oauthstate` cookie is set `Secure`, so no browser stores it over plain
+HTTP, and the callback lands on the HTTPS origin anyway. The flow then fails one
+step later with `http: named cookie not present`. SSO on `argocd.lan` would
+require giving it TLS, which is the break-glass property it exists to provide.
+
 Three things that each look like a different bug when missing:
 
-- **`requestedIDTokenClaims`** in `oidc.config`. ArgoCD reads groups from the
-  **ID token**, and Authelia does not put them there just because the `groups`
-  scope was requested — the scope populates *userinfo*. Without the explicit
-  claim request the login succeeds and the user lands with no permissions,
-  which reads as an RBAC problem rather than a claims one. Authelia advertises
-  `claims_parameter_supported: true` and lists `groups` in `claims_supported`.
+- **`enableUserInfoGroups: true` and `userInfoPath: /api/oidc/userinfo`** in
+  `oidc.config`, which is what Authelia's own ArgoCD guide specifies. Groups
+  come from the userinfo endpoint, which the `groups` scope already populates.
+  This file previously used `requestedIDTokenClaims: {groups: {essential:
+  true}}` instead, reasoning that Authelia advertises
+  `claims_parameter_supported: true`. That flag only means the parameter is
+  accepted; what puts a claim in an ID token on 4.39 is a `claims_policies`
+  block assigned via `claims_policy`, and there is none in `configmap.yaml`. The
+  request was accepted and silently under-fulfilled. Do not reintroduce
+  `requestedIDTokenClaims` without adding the matching `claims_policies` first.
 - **`scopes: "[groups]"`** in `argocd-rbac-cm`. The default subject for policy
   matching is `sub`, and Authelia's `sub` is a UUID that matches no policy line.
 - **The `app.kubernetes.io/part-of: argocd` label** on the `argocd-oidc` Secret.
   ArgoCD resolves `clientSecret: $argocd-oidc:clientSecret` only from Secrets
   carrying that label, and it is easy to drop when resealing.
 
+### AMP is gated, not single-signed-on
+
+AMP is **not an OIDC client**. There is no `amp` entry in `configmap.yaml` and
+there never was; it gets ForwardAuth only. ForwardAuth gates the host, it does
+not hand an identity to the application, so a successful Authelia login lands on
+AMP's own login form and you still enter AMP's own credentials. That is the
+designed behaviour.
+
+Two things that make it look broken:
+
+- **`amp.lan` is deliberately ungated**, so it shows AMP's login with no
+  Authelia step. If the portal never prompts, check the hostname first.
+- The `two_factor` policy covers `amp.henrydowd.dev` only, so whether a TOTP
+  prompt appears depends on the hostname, not on AMP.
+
+Real SSO is possible upstream: CubeCoders added OIDC in 2025
+(`Login.UseOIDC`, `Login.OIDCClientID`, `Login.OIDCClientSecret`, and the
+authorize/token/userinfo endpoints) and deprecated LDAP in favour of it. It
+would need an `amp` client here plus those settings on LXC 102. Untested against
+Authelia, and AMP's OIDC has a history of `state`-parameter bugs
+(CubeCoders/AMP#1323), so verify with the bogus-code probe above.
+
 ### Not yet wired
 
-Nothing. Every client the phase-8 plan called for is registered.
+Every client the phase-8 plan called for is registered. AMP is the only
+remaining candidate; see above.
 
 When adding another, do **not** copy the settings of whichever client sits
 nearest in `configmap.yaml`. Two of them differ per client and both fail only at
