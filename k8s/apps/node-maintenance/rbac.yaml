@@ -1,0 +1,29 @@
+# Cluster-wide because the leftovers land in every namespace. Read and delete
+# pods, nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shutdown-pod-cleanup
+  namespace: node-maintenance
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: shutdown-pod-cleanup
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: shutdown-pod-cleanup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-cleanup
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-cleanup
+    namespace: node-maintenance

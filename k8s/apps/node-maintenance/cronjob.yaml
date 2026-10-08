@@ -1,0 +1,76 @@
+# Deletes the pods the kubelet's graceful node shutdown leaves behind.
+#
+# On shutdown the kubelet terminates pods but does not delete them: they stay
+# as phase Failed, reason Terminated, "Pod was terminated in response to
+# imminent node shutdown", next to the replacements their ReplicaSets have
+# already started. Pod GC only acts past --terminated-pod-gc-threshold (12500),
+# so on this cluster they would sit there showing as Error indefinitely.
+# 15 of them after the 2026-10-08 test reboot (see the lesson
+# storage/planned-reboot-longhorn-killed-under-writes.md).
+#
+# Matches on the reason AND the message, not just phase=Failed. A plain
+# `--field-selector=status.phase=Failed` delete would also take failed Job
+# pods, and a failed backup's pod logs are exactly what you want to keep.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: shutdown-pod-cleanup
+  namespace: node-maintenance
+spec:
+  # Leftovers only appear after a restart, and they are clutter, not harm,
+  # so there is no hurry. A run with nothing to do is a list call.
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      backoffLimit: 1
+      # Same reasoning as nextcloud-cron: a lone failure must not keep
+      # KubeJobFailed firing forever.
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: shutdown-pod-cleanup
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cleanup
+              # kubectl + jq + a shell. Tag tracks the cluster's k3s minor.
+              image: alpine/k8s:1.35.5
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  kubectl get pods -A --field-selector=status.phase=Failed -o json \
+                    | jq -r '.items[]
+                        | select(.status.reason == "Terminated"
+                                 and ((.status.message // "") | test("imminent node shutdown")))
+                        | "\(.metadata.namespace) \(.metadata.name)"' \
+                    > /tmp/leftovers
+                  echo "$(wc -l < /tmp/leftovers) pod(s) left over from node shutdown"
+                  while read -r ns name; do
+                    kubectl -n "$ns" delete pod "$name" --wait=false
+                  done < /tmp/leftovers
+              env:
+                # kubectl writes its discovery cache under $HOME.
+                - { name: HOME, value: /tmp }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { memory: 128Mi }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir: {}

@@ -1,0 +1,6 @@
+# Housekeeping for what node restarts leave behind. Cluster-wide by nature,
+# so it gets its own namespace rather than borrowing kube-system.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: node-maintenance

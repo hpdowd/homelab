@@ -1,0 +1,10 @@
+# Nothing here serves anything, so deny all ingress. Egress stays open: the
+# job's only traffic is to the API server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: node-maintenance
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
