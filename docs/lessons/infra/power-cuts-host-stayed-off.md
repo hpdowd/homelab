@@ -30,12 +30,11 @@ The cuts themselves are outside the homelab's control.
   all active, the VM metrics were flat going into every stop, and no
   throttling was ever logged. That made a silent freeze look plausible,
   and the shrinking gaps between events looked like degrading hardware.
-  Wrong. Henry confirmed the 10-08 stop was a power cut, and the evidence
-  below covers the rest.
+  Wrong: 10-08 was a known power cut, and the WAN IP below shows the other
+  three were too.
 - **Firmware event logs:** no help. `dmidecode -t 15` is empty, and Dell's
   BIOS power log is only readable from the setup screen (sysfs exposes a
   `PowerLogClear` attribute and nothing to read).
-- **This laptop's journal:** no help. It was hibernated through every event.
 - **The WAN IP, via the ddns log in the WireGuard LXC: conclusive.** The ISP
   rotates the address once a night, between about 01:00 and 06:00 UTC. A
   router reboot also gets a new one, and the router only reboots on a cut:

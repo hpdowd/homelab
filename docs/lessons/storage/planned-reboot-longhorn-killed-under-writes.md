@@ -8,8 +8,8 @@
 loss beyond whatever paperless had in flight.
 
 ## Status
-Resolved on both nodes. Proven on the worker by a test reboot the same night (`qm reboot 301`,
-23:24); control loaded the same config via a k3s restart at 23:42.
+Resolved on both nodes. Proven by a test reboot of the worker the same
+night; control loaded the same config via a k3s restart.
 
 ## Context
 - **System / component:** k3s-worker1 (VM 301), Longhorn, and the
@@ -57,7 +57,7 @@ Resolved on both nodes. Proven on the worker by a test reboot the same night (`q
   at once. Longhorn's instance-manager is one of those scopes.
 
 ## Root cause
-Nothing told anything to stop the pods in order. k3s ships the kubelet with
+Nothing stopped the pods in order. k3s ships the kubelet with
 `shutdownGracePeriod: 0s`, which disables graceful node shutdown entirely. So
 the only thing stopping pods was systemd tearing down every container scope in
 parallel. The engines serving the volumes died alongside the apps writing to
@@ -113,7 +113,7 @@ Test reboot, `qm reboot 301 --timeout 300`, 2026-10-08 23:24:
 | volumes `attached/healthy` after boot | ~5 min | ~3 min |
 
 The kubelet unmounted every Longhorn volume (14 `UnmountDevice succeeded`)
-before systemd touched iSCSI, which was the whole point.
+before systemd touched iSCSI.
 
 Two things still happen, and both are expected:
 - **Longhorn still reports volumes `faulted` with "Engine dead unexpectedly".**
@@ -131,14 +131,10 @@ Two things still happen, and both are expected:
   It matches on reason *and* message, so failed Job pods (and their logs)
   are left alone.
 
-Also seen, unrelated to the fix: immich-ml's startup probe gives it ~10 min,
-and that is not enough when the whole node cold-starts at once (6 restarts
-on 10-07, 24 on 10-08, none on the five days before).
-
 ## Prevention
 - **A unit's ordering does not cover processes it does not own.** Before
   trusting an `After=` on a service, check its `KillMode`. If the real
-  workload is in sibling scopes, the ordering is decoration.
+  workload is in sibling scopes, the ordering does nothing for it.
 - **"Graceful" host reboots were never safe.** July's outage was blamed on the
   shutdown's ordering, and the fix was never exercised by a real shutdown
   before this one. A shutdown-path fix is not done until a shutdown has run
@@ -147,8 +143,8 @@ on 10-07, 24 on 10-08, none on the five days before).
   visible, planned or not.
 
 ## Related
-- `storage/longhorn-autosalvage-blocked-diskpressure.md`: the 2026-07-25 outage
-  this repeats the trigger of
+- `storage/longhorn-autosalvage-blocked-diskpressure.md`: the 2026-07-25 outage,
+  same trigger
 - `k8s/worker-reboot-alert-storm.md`
 - `ansible/roles/longhorn_node/tasks/main.yml`: now notes the ordering is
   necessary but not sufficient

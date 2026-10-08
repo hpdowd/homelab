@@ -120,7 +120,7 @@ spec:
             severity: warning
           annotations:
             summary: "Proxmox host restarted (both k3s VMs booted within the last hour)"
-            description: "Power cut or host freeze; the logs cannot tell them apart, a freeze just ends the journal too. Check `ssh pve 'last -x reboot | head'` and `journalctl --list-boots`, then whether the power went."
+            description: "Power cut or host freeze; the journal looks the same either way. A new WAN IP logged right after boot in `ssh pve 'pct exec 101 -- tail /var/log/cloudflare-ddns.log'` means the router lost power too."
 
         # One VM rebooted on its own, host untouched.
         - alert: NodeRebooted

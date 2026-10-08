@@ -56,6 +56,17 @@
 # file sets shutdownGracePeriod: 0s, which must stay 0: the kubelet rejects
 # it combined with the by-priority list. Same rule as config.yaml above,
 # nothing applies until k3s restarts.
+#
+# On a rebuild this runs before k3s is installed, so the directory does not
+# exist yet. k3s reuses it.
+- name: Ensure kubelet config drop-in directory exists
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"   # what k3s creates it with
+
 - name: Write kubelet graceful-shutdown config
   ansible.builtin.copy:
     dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf

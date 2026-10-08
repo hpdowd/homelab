@@ -56,8 +56,7 @@ spec:
             # lock, the worker deadlocks on its first log line and never
             # boots. Symptom: the log stops at "Control socket listening",
             # "Booting worker" never appears, and /ping times out until the
-            # probe kills it. Seen 30 times on 2026-10-07/08, every one during
-            # a node cold start, where the timing race is likeliest.
+            # probe kills it. Hit on node cold starts, 2026-10-07/08.
             # immich_ml launches `python -m gunicorn`, which reads this env var,
             # so the image's own command is left alone. Drop once the image
             # ships a fixed gunicorn.
@@ -75,9 +74,8 @@ spec:
             limits: { memory: "3Gi" }
           # A healthy start answers /ping in ~11s. Models are fetched on the
           # first inference request, not at startup, so nothing here needs a
-          # long window. This was 10 min, which turned out to be 10 min of
-          # waiting on a worker deadlocked for good (see GUNICORN_CMD_ARGS).
-          # 3 min still covers a slow cold start with the whole node booting.
+          # long window. It was 10 min, which only delayed restarting a worker
+          # stuck in the deadlock above. 3 min still covers a slow cold start.
           startupProbe:
             httpGet: { path: /ping, port: 3003 }
             periodSeconds: 10

@@ -427,8 +427,11 @@ single-node event happens.
 
 ## 6. Shutdown ordering tears iSCSI out from under live volumes
 
-**Resolved on the live cluster 2026-07-27.** Severity was medium; this is the event class
-§1's auto-salvage exists to absorb.
+**Resolved 2026-10-08.** The 2026-07-27 ordering below was not enough: a planned host
+reboot on 2026-10-08 hit the same failure, because the containers are not in `k3s-agent`'s
+cgroup and systemd stopped them all at once, Longhorn's engines included. What fixed it is
+the kubelet's graceful shutdown by pod priority (`ansible/roles/k3s_node`), proven by a test
+reboot. See `docs/lessons/storage/planned-reboot-longhorn-killed-under-writes.md`.
 
 A hypervisor-initiated shutdown stopped `open-iscsi` while containerd was still working
 through its stop timeout, dropping 12 iSCSI sessions under mounted, actively-written
@@ -469,8 +472,9 @@ today is somebody choosing to run the playbook. That is the case for the schedul
 `--check` run in §3b, and it is stronger than "drift between runs is invisible" made it
 sound: the drift here was total, and it sat behind confident documentation.
 
-**Still outstanding:** drain the node before `qm shutdown` rather than issuing it cold. That
-is an operator habit, not a config, and nothing enforces it.
+**Still outstanding:** Longhorn still marks volumes `faulted` on every shutdown and salvages
+them at boot, because nothing detaches them first. That is bookkeeping now, not data at
+risk; a drain before `qm shutdown` would avoid it, but nothing does one.
 
 ---
 

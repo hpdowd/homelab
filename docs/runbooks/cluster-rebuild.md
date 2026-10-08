@@ -63,8 +63,9 @@ ansible-playbook -i inventory.ini site.yml --check --diff   # read the diff
 ansible-playbook -i inventory.ini site.yml
 ```
 
-That applies the journald cap, `/etc/rancher/k3s/config.yaml`, the
-`k3s-agent` ↔ iSCSI shutdown ordering, and the `vdb` directories and bind
+That applies the journald cap, inotify limits, `/etc/rancher/k3s/config.yaml`,
+the kubelet's graceful-shutdown config, the `k3s-agent` ↔ iSCSI shutdown
+ordering, and the `vdb` directories and bind
 mount that keep containerd and local-path off the OS disk. It is
 idempotent, it restarts
 nothing but journald, and it is the only mechanism that reapplies any of
@@ -79,6 +80,18 @@ Verify rather than assume — this is the check that would have caught it:
 ssh k3s-worker1 systemctl show k3s-agent -p After -p TimeoutStopUSec
 # After= must list open-iscsi.service and iscsid.service
 # TimeoutStopUSec=5min
+
+# once k3s is installed (below):
+ssh k3s-worker1 systemd-inhibit --list
+# must show kubelet holding a "shutdown" "delay" lock
+```
+
+The kubelet holds a shutdown for up to 170s, so Proxmox must wait longer
+than that before killing the VMs. That is VM config, outside Ansible:
+
+```bash
+ssh pve 'qm set 300 --startup order=2,up=30,down=300'
+ssh pve 'qm set 301 --startup order=3,up=30,down=300'
 ```
 
 Why these two settings exist, both learned the hard way (see
@@ -100,6 +113,13 @@ reverse: a unit that starts *after* B is stopped *before* B. So
 `After=open-iscsi` on `k3s-agent` is what makes k3s-agent stop first.
 `After=k3s-agent` on `open-iscsi` does the exact opposite and makes the bug
 worse.
+
+**The ordering alone is not enough.** The containers are not in
+`k3s-agent`'s cgroup (`KillMode=process`), so on shutdown systemd stops them
+all at once, Longhorn's engines included, whatever the ordering says. The
+kubelet's graceful shutdown is what stops apps first and Longhorn last. It
+cost a second outage on 2026-10-08 to find this out, see
+`docs/lessons/storage/planned-reboot-longhorn-killed-under-writes.md`.
 
 Grab the join token from `/var/lib/rancher/k3s/server/node-token`, then
 on the worker:
