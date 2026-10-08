@@ -8,10 +8,8 @@
 loss beyond whatever paperless had in flight.
 
 ## Status
-Mitigated (fix applied 2026-10-08, not yet proven by a reboot). The kubelet's
-graceful shutdown is armed on the worker. The worker test reboot that would
-prove it is still to do, and control picks the config up on its next k3s
-restart.
+Resolved on the worker, proven by a test reboot the same night (`qm reboot 301`,
+23:24). Control has the config file but only loads it on its next k3s restart.
 
 ## Context
 - **System / component:** k3s-worker1 (VM 301), Longhorn, and the
@@ -103,14 +101,42 @@ kubectl get --raw /api/v1/nodes/k3s-worker1/proxy/configz \
   | jq .kubeletconfig.shutdownGracePeriodByPodPriority
 # restart counts identical before/after the k3s-agent restart; 12/12 volumes attached/healthy
 ```
-Still to do, the one that actually proves it:
-```bash
-ssh pve 'qm reboot 301 --timeout 300'
-# then, on the worker's previous boot:
-journalctl -b -1 | grep -E "Shutdown manager|critical medium error|Aborting journal|invalid state for logout"
-# expect: kubelet shutdown-manager lines, none of the errors, and the VM powering
-# off well inside 300s with no "got timeout" on the Proxmox side
-```
+Test reboot, `qm reboot 301 --timeout 300`, 2026-10-08 23:24:
+
+| | Before (22:56, host reboot) | After (23:24, test) |
+|---|---|---|
+| guest-shutdown to power-off | 180s, then force-killed | 63s, clean |
+| `critical medium error` / `Aborting journal` | yes, under paperless | 0 |
+| `invalid state for logout` retries | 246 | 0 |
+| open-iscsi stop | sessions still up under mounts | `No matching sessions found` |
+| ext4 recovery on next mount | salvaged after write errors | none |
+| volumes `attached/healthy` after boot | ~5 min | ~3 min |
+
+The kubelet unmounted every Longhorn volume (14 `UnmountDevice succeeded`)
+before systemd touched iSCSI, which was the whole point.
+
+Two things still happen, and both are expected:
+- **Longhorn still reports volumes `faulted` with "Engine dead unexpectedly".**
+  The kubelet *terminates* pods on shutdown but does not delete them, so no
+  VolumeAttachment is ever released and Longhorn is never asked to detach.
+  When instance-manager stops, the engine dies with the volume still
+  nominally attached. The filesystem underneath was already unmounted, so the
+  salvage is bookkeeping, not recovery. Avoiding even that would mean a
+  `kubectl drain` before shutdown, which needs something to orchestrate it.
+- **Terminated pods stay behind as `Failed`** ("Pod was terminated in response
+  to imminent node shutdown") next to their running replacements, and pod GC
+  does not remove them. They show as `Error` in `kubectl get pods` and confuse
+  triage. Cleared by hand:
+  ```bash
+  kubectl get pods -A -o json | jq -r '.items[] | select(.status.phase=="Failed"
+    and ((.status.message // "") | test("imminent node shutdown")))
+    | "\(.metadata.namespace) \(.metadata.name)"' \
+    | while read ns p; do kubectl -n $ns delete pod $p; done
+  ```
+
+Also seen, unrelated to the fix: immich-ml's startup probe gives it ~10 min,
+and that is not enough when the whole node cold-starts at once (6 restarts
+on 10-07, 24 on 10-08, none on the five days before).
 
 ## Prevention
 - **A unit's ordering does not cover processes it does not own.** Before
