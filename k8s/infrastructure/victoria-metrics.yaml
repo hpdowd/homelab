@@ -73,8 +73,10 @@ spec:
               limits:
                 memory: 128Mi
 
-        # Alertmanager: dedupes and routes alerts to email. SMTP password is
-        # pulled from the `alertmanager-smtp` SealedSecret at runtime.
+        # Alertmanager: dedupes and routes alerts. Criticals go to Pushover
+        # and email, everything else to email only (ADR 019). Each secret
+        # listed under spec.secrets is a SealedSecret, mounted at
+        # /etc/vm/secrets/<name>/ and read from file, never inlined.
         alertmanager:
           enabled: true
           spec:
@@ -82,6 +84,7 @@ spec:
               kubernetes.io/hostname: k3s-worker1
             secrets:
               - alertmanager-smtp
+              - alertmanager-pushover
             resources:
               requests:
                 cpu: 10m
@@ -113,6 +116,19 @@ spec:
                   matchers:
                     - alertname =~ "Watchdog|InfoInhibitor|KubeCPUOvercommit|KubeMemoryOvercommit"
 
+                # Criticals also go to the phone. A route of its own with
+                # `continue` so the email route below still matches, and so it
+                # can repeat less often: something like BackupJobMissing after
+                # a power cut stays up until I fix it, and the phone doesn't
+                # need telling every hour. Email stays the fallback if
+                # Pushover breaks; AlertmanagerFailedToSendAlerts is a warning,
+                # so it reaches me there.
+                - receiver: "pushover"
+                  matchers:
+                    - severity = "critical"
+                  repeat_interval: 4h
+                  continue: true
+
                 # Criticals nag every hour until acknowledged or resolved.
                 - receiver: "email"
                   matchers:
@@ -123,6 +139,24 @@ spec:
               - name: "email"
                 email_configs:
                   - to: "henry@dowd.ie"
+                    send_resolved: true
+              - name: "pushover"
+                pushover_configs:
+                  - user_key_file: /etc/vm/secrets/alertmanager-pushover/user_key
+                    token_file: /etc/vm/secrets/alertmanager-pushover/token
+                    # Upstream defaults to emergency (2) on firing, which
+                    # repeats until acknowledged. 0 respects the app's quiet
+                    # hours, so a critical at 3am waits for the morning, and
+                    # -1 delivers the resolve with no sound at all.
+                    priority: '{{ if eq .Status "firing" }}0{{ else }}-1{{ end }}'
+                    # One line per alert. The default is every annotation run
+                    # together, which is unreadable on a lock screen.
+                    message: '{{ range .Alerts }}{{ or .Annotations.summary .Labels.alertname }}{{ "\n" }}{{ end }}'
+                    # The default links to Alertmanager's in-cluster address,
+                    # which the phone can't open. Grafana answers on the LAN
+                    # and over the VPN.
+                    url: "https://grafana.henrydowd.dev"
+                    url_title: "Grafana"
                     send_resolved: true
             # If a critical is firing for the same alertname+namespace, don't
             # also send the warning version of it. Cuts noise during incidents.
