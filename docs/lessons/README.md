@@ -17,6 +17,7 @@ Use `TEMPLATE.md` for new entries. Each entry covers: date · context · symptom
 | infra/e1000e-nic-hang.md | infra | Intel onboard NIC TX ring stall — host unreachable, required hard reboot |
 | infra/nextcloud-lxc-firewall-port11000.md | infra | Proxmox LXC firewall silently blocked port 11000 (AIO frontend) |
 | infra/wireguard-lxc-dstate-freeze.md | infra | `pct enter` into WireGuard LXC while VPN active → D-state freeze, host reboot required |
+| infra/power-cuts-host-stayed-off.md | infra | Four unclean host stops (09-02 to 10-08) looked like silent freezes. The journal just ends either way, and logs cannot tell a freeze from a power cut. The ddns log can: each stop got a new WAN IP at the first run after boot (the router had rebooted too), while both host-only reboots kept theirs. Hours of downtime per cut because BIOS AC Recovery was Off; set On via `dell-wmi-sysman` sysfs |
 | k8s/grafana-pvc-corruption.md | k8s | Reused Grafana PVC with corrupt SQLite across reinstalls → CrashLoopBackOff |
 | k8s/grafana-monitoring-sync-cascade.md | k8s | Six-bug cascade: orphaned ArgoCD app → kiwix syncOptions → PrometheusRule vs VMRule → plugin 404 → datasource isDefault collision → Grafana OOMKill |
 | k8s/k3s-control-plane-false-positives.md | k8s | ~12 false-positive alert emails/night — chart's control-plane rules (scheduler/CM/etcd/proxy Down) assume kubeadm; k3s runs them in-process. Verified alive before silencing |
