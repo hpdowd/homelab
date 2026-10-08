@@ -100,6 +100,40 @@ spec:
             summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} degraded"
             description: "Desired != available replicas for 10m."
 
+    - name: homelab.reboots
+      rules:
+        # Nothing watches the Proxmox host directly, and the alerting stack
+        # lives on the worker, so a host going down is invisible while it is
+        # down. These fire once it comes back instead.
+        #
+        # Uptime, not changes(node_boot_time_seconds[...]): vmalert is down for
+        # the whole outage, and after a long one (6h on 2026-10-07) there is
+        # no pre-reboot sample left inside any sane window to compare against.
+        # Uptime under 1h needs no history at all. The hour is slack for the
+        # monitoring stack's own startup, and the alert resolves on its own.
+        #
+        # Both VMs freshly booted means the host restarted under them.
+        - alert: ProxmoxHostRestarted
+          expr: |
+            count((node_time_seconds{job="node-exporter"} - node_boot_time_seconds{job="node-exporter"}) < 3600) >= 2
+          labels:
+            severity: warning
+          annotations:
+            summary: "Proxmox host restarted (both k3s VMs booted within the last hour)"
+            description: "Power cut or host freeze; the logs cannot tell them apart, a freeze just ends the journal too. Check `ssh pve 'last -x reboot | head'` and `journalctl --list-boots`, then whether the power went."
+
+        # One VM rebooted on its own, host untouched.
+        - alert: NodeRebooted
+          expr: |
+            (node_time_seconds{job="node-exporter"} - node_boot_time_seconds{job="node-exporter"}) < 3600
+            unless on()
+            count((node_time_seconds{job="node-exporter"} - node_boot_time_seconds{job="node-exporter"}) < 3600) >= 2
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} rebooted {{ $value | humanizeDuration }} ago"
+            description: "A single k3s VM restarted without the host. Expect a burst of reboot-fallout alerts (see the worker-reboot-alert-storm lesson)."
+
     - name: homelab.storage
       rules:
         # 85% is high enough to ignore daily noise, low enough to act on. Both
