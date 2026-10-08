@@ -8,8 +8,8 @@
 loss beyond whatever paperless had in flight.
 
 ## Status
-Resolved on the worker, proven by a test reboot the same night (`qm reboot 301`,
-23:24). Control has the config file but only loads it on its next k3s restart.
+Resolved on both nodes. Proven on the worker by a test reboot the same night (`qm reboot 301`,
+23:24); control loaded the same config via a k3s restart at 23:42.
 
 ## Context
 - **System / component:** k3s-worker1 (VM 301), Longhorn, and the
