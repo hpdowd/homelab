@@ -7,7 +7,9 @@ and §1 revised 2026-08-10 when containerd and local-path moved off the worker's
 Re-read 2026-09-03 during a documentation sweep: §4's figures refreshed (the worker VM
 grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened. Updated 2026-09-16
 after the `pve/data` thin pool filled and froze the control plane: §10 opened, §3's
-"resolved" corrected, §7 reframed as the same failure one layer up.
+"resolved" corrected, §7 reframed as the same failure one layer up. §2 and item 3 closed
+2026-10-09 when criticals started going to Pushover (ADR 019), and item 18 opened for the
+case that does not cover.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -23,7 +25,7 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 |---|---|---|---|---|
 | ~~1~~ | ~~Drop `storageReserved` on `/mnt/longhorn` to 10%~~ — **done 2026-07-27**, see §1 | — | — | — |
 | ~~2~~ | ~~`site.yml --check --diff` and apply~~ — **done 2026-07-27**, see §6 | — | — | — |
-| 3 | Route `severity: critical` to a channel that interrupts | ~1h | Needs you to pick ntfy/Gotify/Pushover | Low |
+| ~~3~~ | ~~Route `severity: critical` to a channel that interrupts~~ — **done 2026-10-09**, Pushover, see §2 | — | — | — |
 | ~~4~~ | ~~Remove the hand-added `[Journal]` block from the worker's `journald.conf`~~ — **done 2026-07-27**, now a role task | — | — | — |
 | ~~5~~ | ~~Repoint local-path onto `vdb`~~ — **done 2026-08-10**, together with containerd, see §3 | — | — | — |
 | 6 | Adopt `k8s/infrastructure/longhorn.yaml` | window | Volumes must be healthy | **Highest here.** Never mid-incident |
@@ -38,10 +40,15 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 15 | Reboot VMs 300 and 301 to activate `discard=on` and bank ~44.5 GiB | a window | Cluster downtime | Low — flags already set, pool is at 71% meanwhile |
 | 16 | Set `thin_pool_autoextend_threshold` | ~5 min | — | Low, and weak — only 2 GiB of VG left to grow into |
 | 17 | `fsck` `vm-102-disk-0` next time LXC 102 is stopped | ~15 min | AMP downtime | Low — it took real write errors on 2026-09-16 |
+| 18 | Route `Watchdog` to an external dead-man's switch (healthchecks.io → Pushover) | ~30 min | A healthchecks.io account | Moderate — the alerting stack runs on the worker, so the host going dark is reported only once it is back |
 
 With items 1, 2, 4 and 5 closed, item 6 inherits part of that exposure, because it is what
 makes the item 1 fix survive a rebuild (§1 below). Item 13 is new on 2026-09-03: the VPN
-failed silently that day and nothing noticed (§9).
+failed silently that day and nothing noticed (§9). Item 18 is new on 2026-10-09: closing
+item 3 put criticals on the phone, but a phone alert still needs the cluster up to send it.
+Through each of the four power cuts between 2026-09-02 and 10-08, nothing could report the
+outage until the host was back. `Watchdog` exists to feed exactly this kind of check and is
+still null-routed.
 
 **Items 14–17 are new on 2026-09-16, and 14 is now the one carrying the most live
 exposure** — it is the only item on this list whose absence has already caused an outage
@@ -170,6 +177,12 @@ Full detail: `docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`
 ---
 
 ## 2. Critical alerts fire into email and nothing escalates
+
+**Resolved 2026-10-09.** Criticals now go to Pushover as well as email, on a route of
+their own, so the email still arrives if Pushover breaks. Warnings stay on email only.
+Pushover's priority is normal, which respects the app's quiet hours: a critical at night
+waits for the morning rather than waking anyone, which is a deliberate choice, not a gap.
+See ADR 019.
 
 **Severity: high. Already cost 16 hours.**
 

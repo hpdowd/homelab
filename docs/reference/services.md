@@ -60,7 +60,7 @@ root). See ADR 009.
 | MetalLB | metallb-system | Pool 192.168.1.200–210, L2 mode |
 | Traefik | traefik | Chart pinned · LB 192.168.1.200 · `web` :8000 / `websecure` :8443 |
 | cloudflared | cloudflared | `*.henrydowd.dev` wildcard tunnel → Traefik over plain HTTP |
-| VictoriaMetrics stack | monitoring | vmsingle + vmalert + Alertmanager + Grafana · 30d TSDB on local-path · pinned to worker · email alerts via Brevo SMTP relay — see ADR 005 and the comments in `k8s/infrastructure/victoria-metrics.yaml` |
+| VictoriaMetrics stack | monitoring | vmsingle + vmalert + Alertmanager + Grafana · 30d TSDB on local-path · pinned to worker · criticals to Pushover and email, everything else to email via the Brevo SMTP relay — see ADRs 005 and 019 and the comments in `k8s/infrastructure/victoria-metrics.yaml` |
 
 ## DNS
 

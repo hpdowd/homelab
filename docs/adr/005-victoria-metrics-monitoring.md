@@ -1,8 +1,9 @@
 # ADR 005: VictoriaMetrics monitoring, single-node, off Longhorn, pinned to the worker
 
-**Status:** Accepted
+**Status:** Accepted — alert channel (decision 4) superseded by ADR 019
 **Date:** 2026-06
-**Superseded By:** None
+**Superseded By:** ADR 019 (decision 4 only: criticals now go to Pushover as
+well as email; the rest of this ADR still stands)
 
 ## What problem this solves
 
@@ -108,4 +109,5 @@ file-based with `smtp_auth_password_file` (password never inlined). `smtp_from`
 Once delivery worked, a backlog of always-firing chart alerts (k3s control-plane false positives)
 flushed into the inbox and had to be triaged separately, see
 `docs/lessons/k8s/k3s-control-plane-false-positives.md`. ntfy-for-phone (decision 4) is still the
-likely later swap; the receiver block remains a one-line change.
+likely later swap; the receiver block remains a one-line change. *(2026-10-09: it went to
+Pushover instead, not ntfy. See ADR 019.)*

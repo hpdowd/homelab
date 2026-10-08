@@ -16,7 +16,8 @@ dashboard, an AMP game server, the Proxmox web UI, and Technitium for
 LAN DNS. Most of those live in k3s. AMP, Proxmox and Technitium stay on
 LXCs and get proxied through the cluster's Traefik so the routing is
 uniform. VictoriaMetrics + Grafana + Alertmanager runs in-cluster for
-metrics, dashboards, and email alerts.
+metrics, dashboards, and alerts: criticals to Pushover and email,
+everything else to email.
 
 Authelia is the SSO layer in front of the public hostnames that need
 one: Kiwix and the dashboard at one factor, AMP and Proxmox at two. It
