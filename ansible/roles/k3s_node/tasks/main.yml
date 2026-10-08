@@ -51,6 +51,29 @@
       node-ip: {{ ansible_host }}
   when: inventory_hostname in groups['k3s_agents']
 
+# k3s passes the kubelet --config-dir pointing here and writes only its own
+# 00-k3s-defaults.conf, so a later file overrides it field by field. That
+# file sets shutdownGracePeriod: 0s, which must stay 0: the kubelet rejects
+# it combined with the by-priority list. Same rule as config.yaml above,
+# nothing applies until k3s restarts.
+- name: Write kubelet graceful-shutdown config
+  ansible.builtin.copy:
+    dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-graceful-shutdown.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/k3s_node). Do not edit by hand.
+      # Why the priorities and the numbers: k3s_shutdown_grace_by_priority
+      # in group_vars/all.yml.
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      shutdownGracePeriodByPodPriority:
+      {% for g in k3s_shutdown_grace_by_priority %}
+        - priority: {{ g.priority }}
+          shutdownGracePeriodSeconds: {{ g.seconds }}
+      {% endfor %}
+
 # Cheap guard against the class of drift that started all this: a setting
 # that is right in the repo and wrong on the box, with nothing comparing
 # them. Reports only, never changes anything.

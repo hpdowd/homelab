@@ -16,6 +16,14 @@
 # stopped before B. So `After=open-iscsi` on k3s-agent is what makes
 # k3s-agent stop FIRST, releasing the volumes while their transport is still
 # up. The same line on open-iscsi would do the exact opposite.
+#
+# NECESSARY BUT NOT SUFFICIENT (found 2026-10-08). k3s-agent runs with
+# KillMode=process, so the containers are not in its cgroup: they live in
+# their own cri-containerd-*.scope units, which this ordering does not touch
+# and which systemd stops all at once. Longhorn's instance-manager died in
+# the same second as the apps writing through it, and a planned reboot got
+# the July failure again. What actually orders pods is the kubelet's
+# graceful node shutdown, configured in roles/k3s_node.
 
 - name: Ensure k3s-agent drop-in directory exists
   ansible.builtin.file:

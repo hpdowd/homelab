@@ -9,6 +9,32 @@ journald_max_use: 200M
 # containerd's shutdown was still incomplete at that point.
 k3s_agent_stop_timeout: 300
 
+# Kubelet graceful node shutdown, lowest priority first. k3s ships it off
+# (shutdownGracePeriod: 0s), so on shutdown systemd stopped every container
+# scope in the same second, Longhorn's instance-manager included, while apps
+# were still writing to the volumes it serves. 2026-10-08: I/O errors and an
+# aborted ext4 journal under paperless, on a *planned* host reboot.
+#
+# Each entry covers pods from its priority up to the next one's:
+#   0           every app (nothing here sets a priorityClass)
+#   1000000000  longhorn-critical, so the engines go only once apps are gone
+#   2000000000  system-cluster/node-critical
+# The sum (170s) is how long the kubelet's logind delay lock holds the
+# shutdown, and it has to fit inside Proxmox's shutdown timeout for the VM
+# with room left for unmount and iSCSI logout: that is `startup: down=300`
+# on VMs 300/301, set by hand on the host (VM definitions are a non-goal).
+k3s_shutdown_grace_by_priority:
+  - { priority: 0, seconds: 90 }
+  - { priority: 1000000000, seconds: 60 }
+  - { priority: 2000000000, seconds: 20 }
+
+# The default 128 inotify instances per user ran out on the worker, systemd
+# itself logged "Failed to create inotify object: Too many open files" on
+# every container scope it stopped. ~76 of them in use three minutes after a
+# boot. 8192 / 524288 are the usual values for a Kubernetes node.
+inotify_max_user_instances: 8192
+inotify_max_user_watches: 524288
+
 # Both paths below moved off the worker's OS disk on 2026-08-10. vda2 is
 # 41GiB and had crept back to 85% with nothing reclaimable: 54 images all in
 # use, journal already capped, kubelet failing image GC every 90s at the

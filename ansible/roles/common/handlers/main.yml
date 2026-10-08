@@ -1,7 +1,14 @@
 ---
-# Safe to bounce at any time: journald restarts in place and nothing depends
-# on it staying up. This is the only handler in the playbook that fires
-# automatically.
+# Both handlers here are safe at any time, and they are the only ones in the
+# playbook that change running state.
+
+# Raises kernel limits in place. Nothing currently holding inotify instances
+# is affected.
+- name: Apply inotify limits
+  ansible.builtin.command: sysctl --load /etc/sysctl.d/60-inotify.conf
+  changed_when: true
+
+# journald restarts in place and nothing depends on it staying up.
 - name: Restart systemd-journald
   ansible.builtin.systemd:
     name: systemd-journald

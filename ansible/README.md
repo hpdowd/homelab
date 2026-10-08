@@ -16,8 +16,8 @@ Helm cannot reach:
 
 | Role | What it owns | Why it can't live in GitOps |
 |---|---|---|
-| `common` | journald size cap | OS-level; journald predates the cluster |
-| `k3s_node` | `/etc/rancher/k3s/config.yaml` | k3s reads it at process start, before any workload exists |
+| `common` | journald size cap, inotify limits | OS-level; both predate the cluster |
+| `k3s_node` | `/etc/rancher/k3s/config.yaml`, kubelet graceful shutdown drop-in | k3s and the kubelet read them at process start, before any workload exists |
 | `longhorn_node` | `k3s-agent` ↔ iSCSI shutdown ordering | systemd unit ordering on the host |
 | `data_disk` | containerd + local-path directories on `vdb`, the bind mount and its ordering | a mount unit on the host; the kubelet is downstream of it |
 

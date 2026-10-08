@@ -37,3 +37,17 @@
     regexp: '\n+\[Journal\]\nSystemMaxUse={{ journald_max_use }}\s*\Z'
     replace: "\n"
   notify: Restart systemd-journald
+
+# Raising a limit is safe to apply live, so unlike k3s config this one does
+# not wait for a reboot.
+- name: Raise inotify limits
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/60-inotify.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/common). Do not edit by hand.
+      fs.inotify.max_user_instances = {{ inotify_max_user_instances }}
+      fs.inotify.max_user_watches = {{ inotify_max_user_watches }}
+  notify: Apply inotify limits
