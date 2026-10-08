@@ -126,13 +126,10 @@ Two things still happen, and both are expected:
 - **Terminated pods stay behind as `Failed`** ("Pod was terminated in response
   to imminent node shutdown") next to their running replacements, and pod GC
   does not remove them. They show as `Error` in `kubectl get pods` and confuse
-  triage. Cleared by hand:
-  ```bash
-  kubectl get pods -A -o json | jq -r '.items[] | select(.status.phase=="Failed"
-    and ((.status.message // "") | test("imminent node shutdown")))
-    | "\(.metadata.namespace) \(.metadata.name)"' \
-    | while read ns p; do kubectl -n $ns delete pod $p; done
-  ```
+  triage. Tonight's 15 were deleted by hand; since then the
+  `node-maintenance/shutdown-pod-cleanup` CronJob does it every 10 minutes.
+  It matches on reason *and* message, so failed Job pods (and their logs)
+  are left alone.
 
 Also seen, unrelated to the fix: immich-ml's startup probe gives it ~10 min,
 and that is not enough when the whole node cold-starts at once (6 restarts
