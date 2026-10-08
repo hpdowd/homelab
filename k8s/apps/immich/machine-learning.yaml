@@ -49,6 +49,21 @@ spec:
           # (faces immich-server, not the edge), so the exemption is low-risk.
           ports:
             - containerPort: 3003
+          env:
+            # Works around a gunicorn 25.1.0 regression. Its new control
+            # socket runs in a thread that logs just as the master forks the
+            # worker; if the fork lands while that thread holds the logging
+            # lock, the worker deadlocks on its first log line and never
+            # boots. Symptom: the log stops at "Control socket listening",
+            # "Booting worker" never appears, and /ping times out until the
+            # probe kills it. Seen 30 times on 2026-10-07/08, every one during
+            # a node cold start, where the timing race is likeliest.
+            # immich_ml launches `python -m gunicorn`, which reads this env var,
+            # so the image's own command is left alone. Drop once the image
+            # ships a fixed gunicorn.
+            # https://github.com/benoitc/gunicorn/issues/3529
+            - name: GUNICORN_CMD_ARGS
+              value: "--no-control-socket"
           volumeMounts:
             - name: model-cache
               mountPath: /cache
@@ -58,11 +73,15 @@ spec:
             # raise it before lowering expectations — worker headroom maths in
             # capacity-headroom.md.
             limits: { memory: "3Gi" }
-          # First start downloads models — give it time.
+          # A healthy start answers /ping in ~11s. Models are fetched on the
+          # first inference request, not at startup, so nothing here needs a
+          # long window. This was 10 min, which turned out to be 10 min of
+          # waiting on a worker deadlocked for good (see GUNICORN_CMD_ARGS).
+          # 3 min still covers a slow cold start with the whole node booting.
           startupProbe:
             httpGet: { path: /ping, port: 3003 }
             periodSeconds: 10
-            failureThreshold: 60
+            failureThreshold: 18
           livenessProbe:
             httpGet: { path: /ping, port: 3003 }
             periodSeconds: 30
