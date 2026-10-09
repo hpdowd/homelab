@@ -117,8 +117,11 @@ homelab/
 │   └── apps/           one directory per service
 ├── bootstrap/          getting ArgoCD running and pointed at this repo. Runs
 │                       once per rebuild, then never again.
-└── ansible/            the node layer under ArgoCD — journald, k3s config.yaml,
-                        systemd shutdown ordering. Things no cluster tool can reach.
+├── ansible/            the node layer under ArgoCD — journald, k3s config.yaml,
+│                       systemd shutdown ordering. Things no cluster tool can reach.
+└── lxc/                files deployed by hand into the LXCs, which no layer
+                        manages. The copy here is the source; each says how it
+                        is installed.
 ```
 
 Three layers own this box, and only `k8s/` self-heals: ArgoCD reconciles it

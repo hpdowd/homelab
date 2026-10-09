@@ -72,6 +72,14 @@ root). See ADR 009.
   (`/usr/local/bin/cloudflare-ddns.sh`, cron every 5 min; only PUTs when
   the IP actually changed, logs changes and failures to
   `/var/log/cloudflare-ddns.log` in the container).
+- The VPN is watched from the same LXC by
+  `/usr/local/bin/vpn-healthcheck.sh` (source: `lxc/wireguard/`), from root's
+  crontab every 5 min, a minute after the ddns run. It pings the healthchecks.io
+  check `homelab-vpn` (period 5m, grace 10m) when `wg0` is listening and
+  `home.henrydowd.dev` resolves publicly to the WAN IP, and `/fail` with the
+  reason when not. The ping URL is in `/etc/vpn-healthcheck.url` (0600), the
+  last result in `/tmp/vpn-healthcheck.last`. Down and up go to Pushover and
+  email from healthchecks.io.
 
 ## Authelia (SSO)
 

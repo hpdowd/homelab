@@ -157,6 +157,11 @@ than the grace will raise a "down" too, which is correct, if expected.
 null-route-typo lesson's smoke test still applies: `Watchdog` in the inbox
 means the routing is broken.
 
+A second check, `homelab-vpn`, uses the same service to watch the WireGuard
+LXC, which nothing in the cluster can see: `lxc/wireguard/vpn-healthcheck.sh`
+runs from its crontab every 5 minutes (period 5m, grace 10m). Details in
+`services.md` and known-risks §9.
+
 Verified 2026-10-09 by silencing `Watchdog` in Alertmanager for 20 minutes,
 which looks the same from outside as the house going dark. The last ping went
 at 00:22:06Z, healthchecks.io emailed "down" at 00:33Z, and pings resumed at

@@ -10,6 +10,7 @@ after the `pve/data` thin pool filled and froze the control plane: §10 opened, 
 "resolved" corrected, §7 reframed as the same failure one layer up. §2 and item 3 closed
 2026-10-09 when criticals started going to Pushover (ADR 019), and item 18 opened and closed
 the same night for the case that does not cover: a dead-man's switch at healthchecks.io.
+Item 13 and §9 closed the same night with a second check, from the WireGuard LXC.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -35,7 +36,7 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 10 | Adopt `k8s/infrastructure/sealed-secrets.yaml` | window | Verify `kubeseal --fetch-cert` against the backup first | Moderate — the controller's key is the trust root for every secret in the repo |
 | 11 | Exercise `bootstrap/bootstrap.sh` end-to-end against a scratch cluster | half a day | Needs a throwaway VM | None to prod; it is the only way to test the rebuild path |
 | ~~12~~ | ~~Decide what happens to `home.dowd.ie`~~ — **done 2026-09-03**, host dropped from Traefik | — | — | — |
-| 13 | Confirm LXC 101 has `onboot: 1` and add *something* that watches the VPN | ~30 min | — | Moderate — it is the remote-access path of last resort and nothing monitors it (§9) |
+| ~~13~~ | ~~Confirm LXC 101 has `onboot: 1` and add *something* that watches the VPN~~ — **done 2026-10-09**, see §9 | — | — | — |
 | 14 | Alert on `pve/data` `Data%` from the PVE host | ~1h | — | **Highest live exposure.** The pool filled with no warning and took the cluster down (§10) |
 | 15 | Reboot VMs 300 and 301 to activate `discard=on` and bank ~44.5 GiB | a window | Cluster downtime | Low — flags already set, pool is at 71% meanwhile |
 | 16 | Set `thin_pool_autoextend_threshold` | ~5 min | — | Low, and weak — only 2 GiB of VG left to grow into |
@@ -549,6 +550,13 @@ that failure mode, a job that succeeded nightly at doing nothing.
 ---
 
 ## 9. The VPN is the remote-access path of last resort, and nothing watches it
+
+**Resolved 2026-10-09.** LXC 101 has `onboot: 1`, and it now checks itself every 5
+minutes: `lxc/wireguard/vpn-healthcheck.sh` pings the healthchecks.io check
+`homelab-vpn` when `wg0` is listening and `home.henrydowd.dev` resolves publicly to the
+WAN IP, and pings `/fail` with the reason when either is wrong. The container being down
+or cron dying shows as no ping, reported after 15 minutes. Still not covered: the
+router's port forward, which only a client outside the house can prove.
 
 **Severity: medium. Silent by construction, and it has already happened once.**
 
