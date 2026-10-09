@@ -49,14 +49,35 @@ floor.
 
 Where each pin is set:
 
-| Workload | Set in | Applied |
-|---|---|---|
-| vmagent, VM operator, MetalLB, cloudflared, gitea, kiwix, Traefik | `k8s/` manifests | By ArgoCD auto-sync, done |
-| ArgoCD | `bootstrap.sh` (`kubectl patch`) | Pending the maintenance window |
-| Sealed Secrets | `sealed-secrets.yaml` values and `bootstrap.sh` | Pending (manual sync of the Deployment) |
-| Longhorn | `longhorn.yaml` (manager, UI, driver deployer, `systemManagedComponentsNodeSelector`) | Pending (first sync of the Application, with every volume detached) |
-| Control taint | `ansible/roles/k3s_node` (`node-taint`) | Pending (`kubectl taint`; k3s applies the config only when a node first registers) |
-| VM RAM | Proxmox (`qm set`) | Pending (cold boot) |
+| Workload | Set in |
+|---|---|
+| vmagent, VM operator, MetalLB, cloudflared, gitea, kiwix, Traefik | `k8s/` manifests, ArgoCD auto-sync |
+| ArgoCD | `bootstrap.sh` (`kubectl patch`); ArgoCD is not managed from `k8s/` |
+| Sealed Secrets | `sealed-secrets.yaml` values and `bootstrap.sh` |
+| Longhorn | `longhorn.yaml`: manager, UI and driver deployer `nodeSelector`, `systemManagedComponentsNodeSelector` |
+| Control taint | `ansible/roles/k3s_node` (`node-taint`). k3s applies it only when a node first registers, so the live node was tainted with `kubectl taint` |
+| VM RAM | Proxmox (`qm set`) |
+
+## Applied
+
+On 2026-10-09, in one window:
+
+1. Paused ArgoCD auto-sync on root-app and the six apps with Longhorn volumes,
+   scaled their Deployments to 0 and suspended `nextcloud-cron` until every
+   volume was detached.
+2. Patched ArgoCD onto the worker, then synced the longhorn Application for
+   the first time. Longhorn applied the node selector from its default-setting
+   ConfigMap and moved every component off control. Deleted the `k3s-control`
+   Longhorn node, synced the Sealed Secrets Deployment, tainted control.
+3. Scaled the CSI sidecars to 1 by hand: the driver deployer skips CSI
+   Deployments it has already deployed at the same version.
+4. Applied the Ansible k3s config, set the RAM, shut down the worker then
+   control, and started control then the worker.
+5. Scaled the apps back up, waited for all 12 volumes to be attached and
+   healthy, and resumed auto-sync.
+
+Public services were down for about 30 minutes. Fifteen minutes after the
+window, control had 2.0GiB available and the worker 5.8GiB.
 
 ## Rejected
 
@@ -80,5 +101,7 @@ Where each pin is set:
   that position.
 - After an ArgoCD upgrade, re-run the patch step in `bootstrap.sh`. It is
   idempotent.
-- Control's alert floor (0.75GiB) stays. Check its MemAvailable for a week
-  after the RAM change.
+- Control's alert floor (0.75GiB) stays. Check both nodes' MemAvailable for a
+  week after the RAM change.
+- Longhorn changes that need every volume detached (node selector,
+  tolerations) need the same window: steps 1, 2 and 5 above.

@@ -27,7 +27,7 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | ~~3~~ | ~~Route `severity: critical` to a channel that interrupts~~ — **done 2026-10-09**, Pushover, see §2 | — | — | — |
 | ~~4~~ | ~~Remove the hand-added `[Journal]` block from the worker's `journald.conf`~~ — **done 2026-07-27**, now a role task | — | — | — |
 | ~~5~~ | ~~Repoint local-path onto `vdb`~~ — **done 2026-08-10**, together with containerd, see §3 | — | — | — |
-| 6 | Adopt `k8s/infrastructure/longhorn.yaml` | window | Volumes must be healthy | **Highest here.** Never mid-incident |
+| ~~6~~ | ~~Adopt `k8s/infrastructure/longhorn.yaml`~~ — **done 2026-10-09**, ADR 020 | — | — | — |
 | 7 | Decide on worker memory limits at 191% of allocatable | judgement | — | Alert is currently ambient noise |
 | 8 | Add a Longhorn `trim` recurring job | ~15 min | — | Low |
 | 9 | Confirm the first restic prune actually ran (2026-07-27), then set the B2 bucket to keep last-version-only | ~10 min + a console change | Prune must run once first | Low; deletes only snapshots the 7d/4w/3m policy already excludes |
@@ -36,13 +36,13 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | ~~12~~ | ~~Decide what happens to `home.dowd.ie`~~ — **done 2026-09-03**, host dropped from Traefik | — | — | — |
 | ~~13~~ | ~~Confirm LXC 101 has `onboot: 1` and add *something* that watches the VPN~~ — **done 2026-10-09**, see §9 | — | — | — |
 | 14 | Alert on `pve/data` `Data%` from the PVE host | ~1h | — | **Highest live exposure.** The pool filled with no warning and took the cluster down (§10) |
-| 15 | Reboot VMs 300 and 301 to activate `discard=on` and bank ~44.5 GiB | a window | Cluster downtime | Low — flags already set, pool is at 71% meanwhile |
+| ~~15~~ | ~~Reboot VMs 300 and 301 to activate `discard=on` and bank ~44.5 GiB~~ — **done**, checked 2026-10-09: discard in effect on both, `pve/data` at 49% | — | — | — |
 | 16 | Set `thin_pool_autoextend_threshold` | ~5 min | — | Low, and weak — only 2 GiB of VG left to grow into |
 | 17 | `fsck` `vm-102-disk-0` next time LXC 102 is stopped | ~15 min | AMP downtime | Low — it took real write errors on 2026-09-16 |
 | ~~18~~ | ~~Route `Watchdog` to an external dead-man's switch (healthchecks.io → Pushover)~~ — **done 2026-10-09**, ADR 019 | — | — | — |
 
-With items 1, 2, 4 and 5 closed, item 6 inherits part of that exposure, because it is what
-makes the item 1 fix survive a rebuild (§1 below). Item 13 is new on 2026-09-03: the VPN
+Item 6, which makes the item 1 fix survive a rebuild (§1 below), was closed on 2026-10-09
+in a window with every volume detached (ADR 020). Item 13 is new on 2026-09-03: the VPN
 failed silently that day and nothing noticed (§9); closed 2026-10-09. Item 18 was added and
 closed on 2026-10-09: the alerting stack runs on the cluster, so it could not report the
 cluster being down. `Watchdog` now pings healthchecks.io every minute, and healthchecks.io
@@ -51,18 +51,16 @@ reports an outage about 11 minutes after the pings stop (ADR 019).
 **Items 14–17 are new on 2026-09-16, and 14 is now the one carrying the most live
 exposure** — it is the only item on this list whose absence has already caused an outage
 rather than threatened one. The `pve/data` thin pool filled to 100% with no alert at any
-threshold and froze the control plane mid-boot (§10). Item 15 is the deferred half of that
-fix and is waiting on a reboot window, not on a decision. Note that items 14 and 13 share a
+threshold and froze the control plane mid-boot (§10). Item 15, the deferred half of that
+fix, is closed: discard has been in effect since the VMs' next cold boot. Note that items 14 and 13 share a
 shape worth noticing: both are things that fail silently and are only discovered by their
 consequences, and this list now contains two of them.
-Item 6 is the one to be slowest about: it is the highest-value structural fix and the easiest
-to do damage with. Item 9 is a verification, not a change, and it is the only one with a date
+Item 9 is a verification, not a change, and it is the only one with a date
 attached.
 
 Item 5 is closed as of 2026-08-10 and took the worker's OS disk from 85% to 6% (§3). It also
 changed §1's arithmetic: `vdb` is a shared disk now, so `storageReserved` went 49.1 → 80 GiB
-to cover containerd and local-path. That makes item 6 slightly more load-bearing again —
-there is one more hand-applied Longhorn setting for it to adopt.
+to cover containerd and local-path.
 
 Item 2 turned out to matter more than its "~30 min" suggested: running the playbook revealed
 that the iSCSI shutdown ordering had never reached the worker at all. See §6.
@@ -159,16 +157,11 @@ There are three separate layers here, and fixing one does not fix the next:
 |---|---|---|
 | Longhorn *setting* (governs disks created from now on) | 10 ✅ | imperative patch, live only |
 | The *existing* disk's `storageReserved` | 49.1 GiB ✅ | separate imperative patch — the setting does not backfill it |
-| The declared value a rebuild would inherit | still unadopted ❌ | open action 6 |
+| The declared value a rebuild would inherit | 16% in `longhorn.yaml`, adopted 2026-10-09 ✅ | open action 6, closed |
 
-`k8s/infrastructure/longhorn.yaml` declares `storageReservedPercentageForDefaultDisk: 10`,
-but that Application is deliberately not auto-synced and has never been synced — ArgoCD
-still reports it `OutOfSync`. Until it is adopted, both patches above live only in the
-running cluster's etcd. A rebuild that skips the runbook comes back at 30%, auto-salvage is
-dead from first boot, and `LonghornDiskUnschedulable` stays green through the whole rebuild
-until enough PVCs exist to cross the limit — which is exactly when it is least useful. The
-alert is a smoke detector for drift, not evidence that the configuration is captured
-anywhere. See §3b.
+`k8s/infrastructure/longhorn.yaml` declares 16%, matching the live setting, and was first
+synced on 2026-10-09 (ADR 020). A rebuild that syncs it creates the default disk with the
+right reserve.
 
 Full detail: `docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`
 
@@ -277,7 +270,7 @@ how well they are protected:
 |---|---|---|
 | App manifests, alert rules, StorageClasses for apps | ArgoCD, self-healing | everything |
 | ArgoCD itself, Sealed Secrets controller, repo creds, `argocd-cm` | `bootstrap/bootstrap.sh`, pinned | a scripted rebuild — but the script has never been run end-to-end |
-| Longhorn settings, replica count, disk reservation | imperative patches in `cluster-rebuild.md` §3 | a documented rebuild, if someone follows it |
+| Longhorn settings, replica count, disk reservation, node placement | `k8s/infrastructure/longhorn.yaml`, manual sync, adopted 2026-10-09 | a sync of the Application |
 | k3s server flags | `ansible/roles/k3s_node` → `/etc/rancher/k3s/config.yaml` | a k3s reinstall (the installer does not overwrite it) |
 | Worker OS config (journald cap, iSCSI ordering) | `ansible/roles/{common,longhorn_node}` | an Ansible run — applied 2026-07-27, but nothing runs it on a schedule |
 
@@ -287,27 +280,12 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
 
 **Prevention:**
 
-1. **Longhorn as an ArgoCD Application — written, not yet adopted.**
-   `k8s/infrastructure/longhorn.yaml` now exists, pinned to chart 1.11.2 and matching the
-   `victoria-metrics.yaml` pattern. It declares everything currently patched by hand:
-   `defaultReplicaCount`, `storageReservedPercentageForDefaultDisk`,
-   `storageOverProvisioningPercentage`, and `persistence.defaultClassReplicaCount` (the
-   StorageClass knob that drifted). As of 2026-07-27 it also holds the only declared copy of
-   the §1 fix, so until it is synced that fix exists solely as live etcd state.
-
-   **It carries no `syncPolicy.automated`, on purpose.** Every other app in
-   `k8s/infrastructure/` self-heals; this one must not, because the parent `infrastructure`
-   app auto-syncs and would otherwise Helm-apply over a live Longhorn holding 11 volumes.
-   The Application object gets created on commit; nothing reaches the cluster until someone
-   syncs deliberately. Do not "Sync All" while it shows OutOfSync.
-
-   Adoption is a maintenance-window job: verify volumes healthy, diff, sync, re-check the
-   disk `Schedulable` condition, then delete the now-stale imperative patches from
-   `cluster-rebuild.md` §3. Verify the chart's value key names first — Longhorn has renamed
-   `defaultSettings` keys across minor releases.
-
-   A useful side effect while it sits unsynced: the diff is a live inventory of how far the
-   hand-install has drifted from the declared state.
+1. **Longhorn as an ArgoCD Application — adopted 2026-10-09.**
+   `k8s/infrastructure/longhorn.yaml` declares the replica count (setting and StorageClass),
+   the disk reservation, over-provisioning, the data path and node placement. It stays
+   manual-sync, on purpose: diff before every sync, and Longhorn applies some settings (node
+   selector, tolerations) only with every volume detached. ADR 020 has the window used for
+   the first sync.
 2. **Move k3s server flags into `/etc/rancher/k3s/config.yaml`.** k3s reads it on every
    start and the installer does not overwrite it, so flags survive a reinstall. Today they
    exist only in the systemd unit that the original curl command generated.
@@ -601,9 +579,8 @@ stranded at the host layer. The pool went from healthy to total write failure wi
 signal, and the first symptom was a dead cluster. A `Data%` scrape off the PVE host is
 the missing check, and it is the single highest-value item here.
 
-**`discard=on` is set but not yet in effect on VMs 300 and 301.** Applied 2026-09-16;
-QEMU only reads it at VM start, so ~44.5 GiB is still held and will be returned the next
-time those VMs are booted. Until then the pool sits at 71.10% carrying mostly garbage.
+**`discard=on` is in effect on VMs 300 and 301.** Set 2026-09-16 and active since their
+next cold boot; on 2026-10-09 both report discard on `vda` and `pve/data` was at 49%.
 Any new `local-lvm` disk needs the flag at creation — see the gotchas entry for why
 `fstrim` "succeeding" proves nothing without it.
 
@@ -612,7 +589,7 @@ not itself a bug, but it is the reason the pool must be monitored rather than as
 The VG has 2 GiB left, so there is no second `lvextend` available — the 16 GiB that
 bought room to work on 2026-09-16 is spent. The next occurrence has no cheap escape.
 
-**Prevention:** alert on `Data%`, reboot 300 and 301 to bank the 44.5 GiB, set
+**Prevention:** alert on `Data%`, set
 `thin_pool_autoextend_threshold` (unset; LVM warns on every `lvextend`), and treat §7
 below as the same failure in a different layer rather than an unrelated hygiene item.
 

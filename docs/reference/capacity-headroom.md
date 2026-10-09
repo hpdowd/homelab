@@ -5,6 +5,13 @@ This is the report that answers it for the current state, plus how to
 re-run it. Pairs with the Grafana "Homelab, Capacity & RAM headroom"
 dashboard (`k8s/apps/monitoring/grafana-dashboard-capacity.yaml`).
 
+> **Status update 2026-10-09 (control 5 → 4GiB, worker 12 → 13GiB):** control now runs
+> only k3s, its add-ons and node-exporter (ADR 020), so 1GiB moved to the worker with the
+> workloads. The host total is unchanged (worker 13 + control 4 = 17GB of ~24). Fifteen
+> minutes after the change: control 2.0GiB available, worker 5.8GiB, host 3.2GiB. The
+> worker's 7-day low before it was 2.85GiB; with ArgoCD, Traefik and gitea added it is
+> expected to stay around 2.8GiB, against the 2GiB `NodeMemoryLowWorker` floor.
+
 > **Status update 2026-09-16 (worker 14 → 12GiB, and RAM is not the only gate):** the
 > worker was taken **14 → 12GiB** to free host memory for an AMP game server —
 > `qm config 301` now reads `memory: 12288`, 11898MiB seen inside the guest. This is the

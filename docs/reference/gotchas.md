@@ -370,17 +370,11 @@ dead backend. See `docs/lessons/k8s/netpol-fresh-pod-race.md`.
   Verify after any Longhorn reinstall *and after adding any service*:
   `kubectl -n longhorn-system get volumes.longhorn.io`, every volume
   should say `healthy`, not `degraded`.
-- **A worker reboot bloats the control-node `longhorn-manager` for
-  hours.** The reboot faults/AutoSalvages every volume; the manager (the
-  controller leader, which sits on control) then runs the rebuilds plus
-  the recurring snapshot/trim/backup jobs on all of them, growing its
-  heap ~150MiB and holding it. On the thin 4GiB control node this trips
-  `NodeMemoryLowControl` (`MemAvailable < 0.75GiB`) *after* the crashloop
-  storm has cleared, looking unrelated. Reclaim it by bouncing the
-  control-node manager (`kubectl delete pod -n longhorn-system -l
-  app=longhorn-manager --field-selector spec.nodeName=k3s-control`), or
-  give control 5GiB. See
-  `docs/lessons/k8s/worker-reboot-alert-storm.md`.
+- **A worker reboot used to bloat the control-node `longhorn-manager` for
+  hours** (~150MiB, after rebuilding every volume), tripping
+  `NodeMemoryLowControl` after the crashloop storm had cleared. Since
+  2026-10-09 Longhorn runs on the worker only (ADR 020), so this no longer
+  happens. See `docs/lessons/k8s/worker-reboot-alert-storm.md`.
 - **`auto-salvage=true` does not mean auto-salvage works.** It skips any
   replica whose disk is `Schedulable: False`, so an over-provisioned disk
   turns a self-healing reboot into a 16-hour manual recovery. On

@@ -137,37 +137,29 @@ moving on.
 
 ## 3. Longhorn
 
-Install via Helm (or the official manifest). Point its data dir at
-`/mnt/longhorn` on `vdb`. Then make it the default storage class:
+Longhorn's configuration is `k8s/infrastructure/longhorn.yaml`, a manual-sync
+ArgoCD Application (ADR 020). ArgoCD does not exist yet at this step, so install
+the same chart version with the same values by hand. ArgoCD adopts the release
+when it arrives, as it did on 2026-10-09:
 
 ```bash
-kubectl annotate sc longhorn storageclass.kubernetes.io/is-default-class="true"
+helm repo add longhorn https://charts.longhorn.io
+# the Application's values block, unindented
+sed -n '/values: |/,/^  destination:/p' k8s/infrastructure/longhorn.yaml \
+  | sed '1d;$d' | sed 's/^        //' > /tmp/longhorn-values.yaml
+helm install longhorn longhorn/longhorn -n longhorn-system --create-namespace \
+  --version "$(awk '/targetRevision:/{print $2; exit}' k8s/infrastructure/longhorn.yaml)" \
+  -f /tmp/longhorn-values.yaml
 ```
 
-Set the replica count to 1 (single-worker reality) and keep replicas
-off the control node; it only has the 29G OS disk. **Two knobs, both
-matter:** the `default-replica-count` setting only covers volumes whose
-StorageClass doesn't say otherwise, and the stock `longhorn`
-StorageClass hardcodes `numberOfReplicas: "3"`; so new PVCs ignore the
-setting unless the StorageClass (via its source ConfigMap) is fixed too:
-
-```bash
-kubectl -n longhorn-system patch settings.longhorn.io default-replica-count \
-  --type=merge -p '{"value":"{\"v1\":\"1\",\"v2\":\"1\"}"}'
-# the SC is immutable but Longhorn regenerates it from this ConfigMap:
-kubectl -n longhorn-system get cm longhorn-storageclass \
-  -o jsonpath='{.data.storageclass\.yaml}' \
-  | sed 's/numberOfReplicas: "3"/numberOfReplicas: "1"/' > /tmp/sc.yaml
-kubectl -n longhorn-system create cm longhorn-storageclass \
-  --from-file=storageclass.yaml=/tmp/sc.yaml --dry-run=client -o yaml \
-  | kubectl apply -f -
-kubectl -n longhorn-system patch nodes.longhorn.io k3s-control \
-  --type=merge -p '{"spec":{"allowScheduling":false}}'
-```
-
-(The node object only exists once Longhorn has started on it, if the
-patch 404s, wait and retry. Confirm with
-`kubectl get sc longhorn -o jsonpath='{.parameters.numberOfReplicas}'`.)
+The values set the data path (`/mnt/longhorn` on `vdb`), one replica in both
+places that matter, the disk reservation below, and worker-only placement.
+**Two replica knobs:** the `default-replica-count` setting only covers volumes
+whose StorageClass doesn't say otherwise, and the stock `longhorn` StorageClass
+hardcodes `numberOfReplicas: "3"`, so `persistence.defaultClassReplicaCount` has
+to be 1 as well. Control is not a Longhorn node. Confirm with
+`kubectl get sc longhorn -o jsonpath='{.parameters.numberOfReplicas}'` and
+`kubectl -n longhorn-system get nodes.longhorn.io` (only `k3s-worker1`).
 
 ### Disk reservation, set this before the disk is created
 
@@ -211,14 +203,8 @@ enough that one new PVC would trip it.
 | headroom | 60.1 |
 | alert ratio | 0.854 (warns >0.90) |
 
-Set the *setting* first, so the default disk is created correctly and a
-rebuild never inherits the problem:
-
-```bash
-kubectl -n longhorn-system patch settings.longhorn.io \
-  storage-reserved-percentage-for-default-disk \
-  --type=merge -p '{"value":"16"}'
-```
+`longhorn.yaml` sets the reservation to 16%, and the install above applies it
+before the default disk is created.
 
 If the disk already exists, the setting does not retroactively change it,
 so fix the node object too. The disk key is generated at creation, so look
