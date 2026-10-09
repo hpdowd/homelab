@@ -7,10 +7,8 @@ and §1 revised 2026-08-10 when containerd and local-path moved off the worker's
 Re-read 2026-09-03 during a documentation sweep: §4's figures refreshed (the worker VM
 grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened. Updated 2026-09-16
 after the `pve/data` thin pool filled and froze the control plane: §10 opened, §3's
-"resolved" corrected, §7 reframed as the same failure one layer up. §2 and item 3 closed
-2026-10-09 when criticals started going to Pushover (ADR 019), and item 18 opened and closed
-the same night for the case that does not cover: a dead-man's switch at healthchecks.io.
-Item 13 and §9 closed the same night with a second check, from the WireGuard LXC.
+"resolved" corrected, §7 reframed as the same failure one layer up. Updated 2026-10-09:
+§2, §9 and items 3, 13 and 18 closed (ADR 019).
 
 Ordered by expected damage, not by how likely they are.
 
@@ -45,12 +43,10 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 
 With items 1, 2, 4 and 5 closed, item 6 inherits part of that exposure, because it is what
 makes the item 1 fix survive a rebuild (§1 below). Item 13 is new on 2026-09-03: the VPN
-failed silently that day and nothing noticed (§9). Item 18 was opened and closed on 2026-10-09:
-closing item 3 put criticals on the phone, but a phone alert still needs the cluster up to
-send it. Through each of the four power cuts between 2026-09-02 and 10-08, nothing could
-report the outage until the host was back. `Watchdog` now pings healthchecks.io once a
-minute, and healthchecks.io reports a dark homelab from outside about 11 minutes after the
-pings stop (ADR 019).
+failed silently that day and nothing noticed (§9); closed 2026-10-09. Item 18 was added and
+closed on 2026-10-09: the alerting stack runs on the cluster, so it could not report the
+cluster being down. `Watchdog` now pings healthchecks.io every minute, and healthchecks.io
+reports an outage about 11 minutes after the pings stop (ADR 019).
 
 **Items 14–17 are new on 2026-09-16, and 14 is now the one carrying the most live
 exposure** — it is the only item on this list whose absence has already caused an outage
@@ -180,11 +176,8 @@ Full detail: `docs/lessons/storage/longhorn-autosalvage-blocked-diskpressure.md`
 
 ## 2. Critical alerts fire into email and nothing escalates
 
-**Resolved 2026-10-09.** Criticals now go to Pushover as well as email, on a route of
-their own, so the email still arrives if Pushover breaks. Warnings stay on email only.
-Pushover's priority is normal, which respects the app's quiet hours: a critical at night
-waits for the morning rather than waking anyone, which is a deliberate choice, not a gap.
-See ADR 019.
+**Resolved 2026-10-09.** Criticals go to Pushover and email, warnings to email only.
+Pushover uses normal priority, so criticals follow the app's quiet hours. See ADR 019.
 
 **Severity: high. Already cost 16 hours.**
 
@@ -551,12 +544,11 @@ that failure mode, a job that succeeded nightly at doing nothing.
 
 ## 9. The VPN is the remote-access path of last resort, and nothing watches it
 
-**Resolved 2026-10-09.** LXC 101 has `onboot: 1`, and it now checks itself every 5
-minutes: `lxc/wireguard/vpn-healthcheck.sh` pings the healthchecks.io check
-`homelab-vpn` when `wg0` is listening and `home.henrydowd.dev` resolves publicly to the
-WAN IP, and pings `/fail` with the reason when either is wrong. The container being down
-or cron dying shows as no ping, reported after 15 minutes. Still not covered: the
-router's port forward, which only a client outside the house can prove.
+**Resolved 2026-10-09.** LXC 101 has `onboot: 1`. `lxc/wireguard/vpn-healthcheck.sh`
+runs in it every 5 minutes and reports to the healthchecks.io check `homelab-vpn`:
+success when `wg0` is listening and `home.henrydowd.dev` resolves to the WAN IP, failure
+with the reason otherwise. If the container or cron stops, the missing ping is reported
+after 15 minutes. Not covered: the router's port forward.
 
 **Severity: medium. Silent by construction, and it has already happened once.**
 

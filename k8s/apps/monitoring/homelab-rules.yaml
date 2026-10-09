@@ -100,19 +100,16 @@ spec:
             summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} degraded"
             description: "Desired != available replicas for 10m."
 
-        # Replaces KubeJobFailed for nextcloud-cron, which is null-routed in
-        # victoria-metrics.yaml. The cron runs every 5 minutes, so a single
-        # failed run means nothing, and one fails after every boot: the run
-        # that fires as the node comes up hangs before Postgres is ready.
-        # Its Job is kept 24h, so KubeJobFailed emailed every 6h for a day
-        # after each boot. What matters is the background jobs not running,
-        # so this alerts on an hour without a successful run.
+        # Replaces KubeJobFailed for nextcloud-cron (null-routed in
+        # victoria-metrics.yaml). The cron runs every 5 minutes; the run that
+        # starts during boot fails because Postgres isn't ready, and its Job
+        # is kept 24h, so KubeJobFailed emailed every 6h for a day after each
+        # boot. This alerts on an hour without a successful run instead.
         #
-        # After a long outage the last success is hours old when the cluster
-        # comes back, but the first good run lands ~10 min after boot (all
-        # six boots 09-16..10-08), so the 15m `for` never trips on a boot.
-        # absent() covers the CronJob or kube-state-metrics going missing,
-        # which would otherwise silence the rule rather than fire it.
+        # After a long outage the last success is hours old at boot, but the
+        # first good run lands about 10 min after boot (all six boots
+        # 09-16..10-08), so the 15m `for` doesn't trip. absent() fires if the
+        # CronJob or its kube-state-metrics data disappears.
         - alert: NextcloudCronStale
           expr: |
             time() - kube_cronjob_status_last_successful_time{namespace="nextcloud", cronjob="nextcloud-cron"} > 3600
@@ -127,11 +124,9 @@ spec:
 
     - name: homelab.reboots
       rules:
-        # Nothing in the cluster can see the host while it is down: the
-        # alerting stack lives on the worker. The healthchecks.io dead-man's
-        # switch (the Watchdog route in victoria-metrics.yaml) reports that
-        # from outside within about 11 minutes. These fire once the host is
-        # back, to say what happened.
+        # The cluster can't see the host while it is down; the healthchecks.io
+        # dead-man's switch (Watchdog route in victoria-metrics.yaml) reports
+        # that within about 11 minutes. These fire after the host is back.
         #
         # Uptime, not changes(node_boot_time_seconds[...]): vmalert is down for
         # the whole outage, and after a long one (6h on 2026-10-07) there is
@@ -161,22 +156,20 @@ spec:
             summary: "{{ $labels.instance }} rebooted {{ $value | humanizeDuration }} ago"
             description: "A single k3s VM restarted without the host. Expect a burst of reboot-fallout alerts (see the worker-reboot-alert-storm lesson)."
 
-        # Never delivered (null-routed in victoria-metrics.yaml). It is the
-        # source of an inhibit rule there that holds back warnings for the
-        # first 30 minutes after any k3s node boots.
+        # Never delivered (null-routed in victoria-metrics.yaml). Source for
+        # the inhibit rule that suppresses warnings for 30 minutes after any
+        # k3s node boots.
         #
-        # Every boot brings the same burst: 28-45 PodCrashLooping series on
-        # each of the six boots between 09-16 and 10-08, from pods restarting
-        # while Longhorn reattaches. They first fire 7-10 min after boot, each
-        # clears in ~10 min, and the last is gone by 23 min. A 5-minute
-        # silence from boot would have caught none of them; 30 minutes clears
-        # the worst case with 7 to spare. This starts holding 3.5-4.5 min
-        # after boot, once node-exporter is scraped again.
+        # On each of the six boots between 09-16 and 10-08, 28-45
+        # PodCrashLooping series fired 7-10 min after boot, lasted about
+        # 10 min each and were gone by 23 min. A 5-minute silence from boot
+        # would have missed all of them; 30 minutes leaves 7 minutes of
+        # margin. This rule starts firing 3.5-4.5 min after boot, once
+        # node-exporter is scraped.
         #
-        # Held, not dropped: anything still firing when this resolves gets
-        # sent then, so a real crashloop arrives late rather than never.
-        # min() across nodes, so the window runs from the last node up, and
-        # it fails open: with no node metrics there is nothing to inhibit with.
+        # Warnings still firing when this resolves are sent then. min() across
+        # nodes, so the window follows the last node to boot. Without node
+        # metrics it doesn't fire, so nothing is suppressed.
         - alert: NodeRecentlyBooted
           expr: |
             min(node_time_seconds{job="node-exporter"} - node_boot_time_seconds{job="node-exporter"}) < 1800

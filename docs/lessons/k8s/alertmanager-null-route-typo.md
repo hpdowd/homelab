@@ -117,10 +117,8 @@ kubectl get secret -n monitoring -l app.kubernetes.io/instance=vm \
 - **`Watchdog` in the inbox is itself the alert.** If the dead-man's-switch ever
   gets delivered, the routing is broken, treat it as a routing smoke test, not
   just noise to mute.
-- **Update 2026-10-09:** `Watchdog` is no longer null-routed. It now has a route
-  of its own, first in the tree, to a webhook that pings healthchecks.io (ADR
-  019). The rule above still holds for every other receiver: it must never
-  reach email or Pushover.
+- **Update 2026-10-09:** `Watchdog` now routes to a healthchecks.io webhook
+  (the first route, ADR 019). It must still never reach email or Pushover.
 
 ## Related
 - ADR: `docs/adr/005-victoria-metrics-monitoring.md` (monitoring design; SMTP-relay addendum)

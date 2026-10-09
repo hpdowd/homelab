@@ -110,17 +110,14 @@ spec:
               # short enough that I'll see something still firing the next morning.
               repeat_interval: 6h
               routes:
-                # The dead-man's switch. Watchdog always fires, so this pings
-                # healthchecks.io about once a minute: repeat_interval under
-                # group_interval re-sends on every 1m flush. When the pings
-                # stop (power cut, host or worker down, WAN down, vmalert or
-                # Alertmanager broken) healthchecks.io notices from outside
-                # the house after 1m period + 10m grace, and tells Pushover
-                # and email. Nothing in here can report its own absence.
-                # Watchdog must still never reach email or Pushover; see the
-                # null-route-typo lesson. Alertmanager logs "repeat_interval is
-                # less than group_interval" on every reload because of this
-                # route. That is the intent, not a mistake.
+                # Dead-man's switch (ADR 019). Watchdog always fires, so this
+                # pings healthchecks.io about once a minute; repeat_interval
+                # below group_interval re-sends on every 1m flush. If pings
+                # stop for 11 minutes (1m period + 10m grace), healthchecks.io
+                # notifies Pushover and email. Alertmanager logs
+                # "repeat_interval is less than group_interval" on each reload
+                # because of this route; that is expected. Watchdog must never
+                # reach email or Pushover (see the null-route-typo lesson).
                 - receiver: "deadman"
                   matchers:
                     - alertname = "Watchdog"
@@ -138,24 +135,21 @@ spec:
                   matchers:
                     - alertname =~ "InfoInhibitor|NodeRecentlyBooted|KubeCPUOvercommit|KubeMemoryOvercommit"
 
-                # One failed run of the 5-minute Nextcloud cron means nothing,
-                # and one fails after every boot. Its Job is kept 24h, so this
-                # emailed every 6h for a day each time. NextcloudCronStale in
-                # homelab-rules.yaml alerts on an hour without a successful
-                # run instead. Other Jobs in the namespace still email.
+                # nextcloud-cron runs every 5 minutes and one run fails after
+                # every boot; the failed Job is kept 24h, so this emailed every
+                # 6h for a day. NextcloudCronStale (homelab-rules.yaml) alerts
+                # on an hour without a successful run instead. Other Jobs
+                # still email.
                 - receiver: "null"
                   matchers:
                     - alertname = "KubeJobFailed"
                     - namespace = "nextcloud"
                     - job_name =~ "nextcloud-cron-.*"
 
-                # Criticals also go to the phone. A route of its own with
-                # `continue` so the email route below still matches, and so it
-                # can repeat less often: something like BackupJobMissing after
-                # a power cut stays up until I fix it, and the phone doesn't
-                # need telling every hour. Email stays the fallback if
-                # Pushover breaks; AlertmanagerFailedToSendAlerts is a warning,
-                # so it reaches me there.
+                # Criticals also go to Pushover. Separate route with `continue`
+                # so the email route below still matches, and so it can repeat
+                # every 4h instead of 1h. If Pushover fails,
+                # AlertmanagerFailedToSendAlerts (a warning) arrives by email.
                 - receiver: "pushover"
                   matchers:
                     - severity = "critical"
@@ -172,9 +166,8 @@ spec:
               - name: "deadman"
                 webhook_configs:
                   - url_file: /etc/vm/secrets/alertmanager-healthchecks/ping_url
-                    # Must stay false. If vmalert dies, Watchdog resolves,
-                    # and a resolve would land as one more successful ping,
-                    # hiding exactly the failure this exists to catch.
+                    # Must stay false: if vmalert stops, Watchdog resolves,
+                    # and the resolve would count as a ping.
                     send_resolved: false
               - name: "email"
                 email_configs:
@@ -184,17 +177,15 @@ spec:
                 pushover_configs:
                   - user_key_file: /etc/vm/secrets/alertmanager-pushover/user_key
                     token_file: /etc/vm/secrets/alertmanager-pushover/token
-                    # Upstream defaults to emergency (2) on firing, which
-                    # repeats until acknowledged. 0 respects the app's quiet
-                    # hours, so a critical at 3am waits for the morning, and
-                    # -1 delivers the resolve with no sound at all.
+                    # 0 when firing follows the app's quiet hours; -1 makes
+                    # resolves silent. The upstream default is 2 (emergency),
+                    # which repeats until acknowledged.
                     priority: '{{ if eq .Status "firing" }}0{{ else }}-1{{ end }}'
-                    # One line per alert. The default is every annotation run
-                    # together, which is unreadable on a lock screen.
+                    # One line per alert; the default concatenates every
+                    # annotation.
                     message: '{{ range .Alerts }}{{ or .Annotations.summary .Labels.alertname }}{{ "\n" }}{{ end }}'
-                    # The default links to Alertmanager's in-cluster address,
-                    # which the phone can't open. Grafana answers on the LAN
-                    # and over the VPN.
+                    # The default links to Alertmanager's in-cluster address.
+                    # Grafana works on the LAN and over the VPN.
                     url: "https://grafana.henrydowd.dev"
                     url_title: "Grafana"
                     send_resolved: true
@@ -209,12 +200,12 @@ spec:
               - source_matchers: [alertname = "InfoInhibitor"]
                 target_matchers: [severity = "info"]
                 equal: ["namespace"]
-                # Hold back warnings for 30 minutes after any node boots;
-                # every boot brings a burst of PodCrashLooping that clears
-                # itself (NodeRecentlyBooted in homelab-rules.yaml has the
-                # numbers). Held, not dropped: anything still firing when the
-                # window closes is sent then. Not the restart notices, which
-                # are the point, and never criticals.
+                # Suppress warnings for 30 minutes after any node boots, to
+                # skip the PodCrashLooping burst that clears on its own
+                # (numbers at NodeRecentlyBooted in homelab-rules.yaml).
+                # Warnings still firing after the window are sent then.
+                # ProxmoxHostRestarted, NodeRebooted and criticals are not
+                # suppressed.
               - source_matchers: [alertname = "NodeRecentlyBooted"]
                 target_matchers:
                   - severity = "warning"

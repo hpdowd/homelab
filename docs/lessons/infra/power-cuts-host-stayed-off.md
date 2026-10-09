@@ -81,10 +81,9 @@ homelab follows it.
   apart. The ddns log can, in a minute.
 - `ProxmoxHostRestarted` (homelab-rules) now announces every host restart,
   instead of leaving only the fallout alerts.
-- Since 2026-10-09 a healthchecks.io dead-man's switch reports the homelab
-  going dark about 11 minutes after it happens, by Pushover and email, and
-  reports it back up when the pings resume (ADR 019). Those two messages also
-  give the next outage a start and end time from outside the house.
+- Since 2026-10-09 healthchecks.io reports an outage about 11 minutes after
+  it starts and again when it ends, by Pushover and email (ADR 019). The
+  times of those two messages bracket the outage.
 - A small UPS would turn short cuts into nothing and long ones into a
   clean shutdown. Not bought yet.
 - The reboot done to apply this setting is what exposed the unsafe worker

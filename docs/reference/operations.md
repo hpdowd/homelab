@@ -212,6 +212,46 @@ repo is structurally sound, not that the data would load back into a
 running app. For the sampled-read and full test-restore procedures, see
 `docs/runbooks/backup-verification.md`.
 
+## Alerting
+
+Criticals go to Pushover and email, warnings to email, and `Watchdog` to
+the healthchecks.io dead-man's switch. Why: ADR 019 and the comments in
+`k8s/infrastructure/victoria-metrics.yaml`.
+
+```bash
+P=vmalertmanager-vm-victoria-metrics-k8s-stack-0
+AM="kubectl -n monitoring exec $P -c alertmanager -- amtool --alertmanager.url=http://localhost:9093"
+
+# which receivers a label set routes to
+kubectl -n monitoring exec $P -c alertmanager -- amtool config routes test \
+  --config.file=/etc/alertmanager/config/alertmanager.yaml severity=critical alertname=Test
+
+# test alert that resolves after 5 minutes (pass --start: without it amtool
+# sets the start time to the end time)
+$AM alert add alertname=Test severity=critical namespace=test \
+  --annotation='summary="test"' --start=$(date -u +%FT%TZ) --end=$(date -u -d '+5 min' +%FT%TZ)
+
+# silences are lost when the Alertmanager pod restarts (its storage is an emptyDir)
+$AM silence add alertname=Foo --duration=2h --comment="why"
+$AM silence query
+
+# sends and failures per integration (webhook = the dead-man pings)
+kubectl -n monitoring exec $P -c alertmanager -- wget -qO- localhost:9093/metrics \
+  | grep -E '^alertmanager_notifications_(total|failed_total)'
+
+# last result of the VPN check in LXC 101
+ssh pve 'pct exec 101 -- cat /tmp/vpn-healthcheck.last'
+```
+
+- **Test the dead-man's switch:** silence `Watchdog` for 20 minutes.
+  healthchecks.io should report `homelab-alertmanager` down about 11 minutes
+  after the last ping, and up when the silence ends.
+- **Credentials:** SealedSecrets `alertmanager-smtp` (Brevo),
+  `alertmanager-pushover` (`user_key`, `token`) and `alertmanager-healthchecks`
+  (`ping_url`) in `k8s/apps/monitoring/`; re-seal as in the Sealed Secrets
+  section above. The VPN check's ping URL is `/etc/vpn-healthcheck.url` in
+  LXC 101.
+
 ## When something looks wrong
 
 A short diagnosis flow that catches most of what bites me:

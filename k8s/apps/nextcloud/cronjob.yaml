@@ -36,10 +36,9 @@ spec:
       # the backup CronJobs: a failed backup is high-consequence and rare, and
       # should keep shouting until someone actually looks at it.
       #
-      # Since 2026-10-09, KubeJobFailed for this CronJob is null-routed: it
-      # still emailed every 6h for the day after each boot. NextcloudCronStale
-      # alerts on an hour without a successful run instead. The TTL stays, as
-      # it is still what clears an isolated failure.
+      # Since 2026-10-09 KubeJobFailed is null-routed for this CronJob and
+      # NextcloudCronStale alerts on an hour without a successful run
+      # instead. The TTL still removes isolated failed Jobs.
       ttlSecondsAfterFinished: 86400
       template:
         spec:

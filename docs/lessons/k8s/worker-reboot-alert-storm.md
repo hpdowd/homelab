@@ -67,7 +67,7 @@ So: `PodCrashLooping` *without* `PodOOMKilled`/`NodeMemoryLowWorker`, pods now s
 
 Accepted risk: the monitoring stack lives on the only worker, so it is blind to its own node's reboot and re-fires a batch on every cycle. If it becomes annoying, options are an inhibit rule for the post-restart window, or moving Alertmanager off the worker.
 
-**Update 2026-10-09: the inhibit rule is in.** It did become annoying: six boots between 09-16 and 10-08 (three power cuts, the thin-pool incident and two planned reboots), each bringing 28-45 `PodCrashLooping` series. `NodeRecentlyBooted` (`homelab-rules.yaml`) fires while the youngest node has been up under 30 minutes, and an inhibit rule in `victoria-metrics.yaml` holds back warnings while it does. Across all six boots the burst first fired 7-10 min in and was gone by 23 min. Held, not dropped: anything still firing at 30 minutes is sent then. `ProxmoxHostRestarted` and `NodeRebooted` are exempt, so a boot still produces one notice, and criticals are never held. The triage table above still applies to anything that gets through.
+**Update 2026-10-09:** implemented. Warnings are suppressed for 30 minutes after any node boots (`NodeRecentlyBooted` plus an inhibit rule, ADR 019). In the six boots between 09-16 and 10-08 the `PodCrashLooping` burst started 7–10 minutes after boot and cleared by 23 minutes. Warnings still firing after 30 minutes are sent. `ProxmoxHostRestarted`, `NodeRebooted` and criticals are not suppressed.
 
 ## Delayed second act: control-node longhorn-manager bloat (2026-06-28)
 
