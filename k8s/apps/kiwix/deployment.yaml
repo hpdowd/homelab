@@ -11,6 +11,8 @@ spec:
     metadata:
       labels: { app: kiwix }
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
       # Pod-level seccomp covers both the busybox init (chmod) and kiwix-serve.
       # No pod-level runAsNonRoot — the init container needs root to chmod the
       # freshly-provisioned volume.

@@ -18,6 +18,8 @@ spec:
       labels:
         app: gitea
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
       securityContext:
         seccompProfile:
           type: RuntimeDefault

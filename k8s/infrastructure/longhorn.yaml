@@ -77,9 +77,23 @@ spec:
           # disk backs everything.
           storageOverProvisioningPercentage: 100
 
-          # Keep replicas off the control node — it only has a 29GiB OS disk
-          # and runs the k3s control plane.
+          # Restricts every system-managed component (instance manager,
+          # engine image, CSI driver and its sidecars) to the worker. It does
+          # not place replicas; the control node's allowScheduling=false
+          # does that. Not live: Longhorn only accepts a change with every
+          # volume detached, so the setting is still empty and the twelve CSI
+          # sidecar pods sit on control. Applying it is a full storage
+          # outage.
           systemManagedComponentsNodeSelector: "kubernetes.io/hostname:k3s-worker1"
+
+        # Longhorn wants the user-deployed components pinned before the
+        # setting above. The manager stays on both nodes.
+        longhornUI:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
+        longhornDriver:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
 
         persistence:
           # THE knob that drifted. The stock chart ships numberOfReplicas: 3

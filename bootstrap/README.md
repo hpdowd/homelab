@@ -16,7 +16,7 @@ copy out of a runbook.
 
 | File | Purpose |
 |---|---|
-| bootstrap.sh | The sequence. Preflight, Sealed Secrets + master key, ArgoCD, **both** `argocd-cm` and `argocd-rbac-cm` patches, repo credentials, `root-app`. Idempotent |
+| bootstrap.sh | The sequence. Preflight, Sealed Secrets + master key, ArgoCD and its node pins, **both** `argocd-cm` and `argocd-rbac-cm` patches, repo credentials, `root-app`. Idempotent |
 | versions.env | Every pin, plus the chart repo URLs. The one file to edit when bumping |
 | argocd-cm-patch.yaml | Two things in one patch: the `resource.exclusions` list that keeps `EndpointSlice` synced, and (since 2026-09-03) ArgoCD's SSO config — `url` + `oidc.config`, including the `requestedIDTokenClaims` groups request. Copied verbatim from the running cluster; re-diff after an ArgoCD upgrade |
 | argocd-rbac-cm-patch.yaml | The SSO group policy — `scopes: "[groups]"` plus `admins` → `role:admin`. Added 2026-09-03; until then bootstrap applied only the first patch, which would have rebuilt into an SSO login with no permissions. Both ConfigMaps are patched rather than GitOps-managed so ArgoCD does not take ownership of ConfigMaps its own install creates |
@@ -40,8 +40,9 @@ halfway can be re-run rather than unpicked.
    and both secrets supplied. Fails here rather than halfway through.
 2. **Sealed Secrets**, then restores the master key and restarts the
    controller. Before ArgoCD, always — see below.
-3. **ArgoCD** at a pinned tag, then the `argocd-cm` (exclusions + SSO) and
-   `argocd-rbac-cm` (group policy) patches, then a restart.
+3. **ArgoCD** at a pinned tag, then its node pins (ADR 020), the `argocd-cm`
+   (exclusions + SSO) and `argocd-rbac-cm` (group policy) patches, then a
+   restart.
 4. **Repo credentials** — the one Secret that can never be in git.
 5. **`root-app`**, and the second `argocd-server` restart that everyone
    forgets.

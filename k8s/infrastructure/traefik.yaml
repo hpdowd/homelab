@@ -16,6 +16,12 @@ spec:
         deployment:
           replicas: 1
 
+        # Pinned to control, where it has always run. The worker has less
+        # headroom, and the proxmox.lan route then has no dependency on the
+        # worker.
+        nodeSelector:
+          kubernetes.io/hostname: k3s-control
+
         service:
           type: LoadBalancer
           annotations:

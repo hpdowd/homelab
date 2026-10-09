@@ -109,10 +109,12 @@ else
   # fullnameOverride matches the live install and every runbook reference;
   # without it the chart names the Deployment `sealed-secrets` and kubeseal's
   # defaults stop lining up.
+  # The nodeSelector matches k8s/infrastructure/sealed-secrets.yaml.
   helm install sealed-secrets sealed-secrets/sealed-secrets \
     --namespace "$SEALED_SECRETS_NAMESPACE" \
     --version "$SEALED_SECRETS_CHART_VERSION" \
     --set fullnameOverride=sealed-secrets-controller \
+    --set-string 'nodeSelector.kubernetes\.io/hostname=k3s-worker1' \
     --wait
   ok "controller installed"
 fi
@@ -140,6 +142,20 @@ kubectl apply -n argocd -f \
   "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 kubectl -n argocd rollout status deployment argocd-server --timeout=300s
 ok "installed"
+
+# The upstream manifest has no node pins, and the scheduler prefers the
+# control node, so without this every ArgoCD pod runs there. The application
+# controller stays on control because the worker cannot hold it and stay above
+# its 2GiB alert floor. See ADR 020.
+info "Pinning ArgoCD to nodes"
+kubectl -n argocd patch statefulset argocd-application-controller --type merge \
+  -p '{"spec":{"template":{"spec":{"nodeSelector":{"kubernetes.io/hostname":"k3s-control"}}}}}'
+for d in argocd-server argocd-repo-server argocd-redis argocd-dex-server \
+         argocd-applicationset-controller argocd-notifications-controller; do
+  kubectl -n argocd patch deployment "$d" --type merge \
+    -p '{"spec":{"template":{"spec":{"nodeSelector":{"kubernetes.io/hostname":"k3s-worker1"}}}}}'
+done
+ok "pinned"
 
 # Must land before root-app, or the EndpointSlices that point Traefik at the
 # LXC services are silently dropped. See argocd-cm-patch.yaml.
