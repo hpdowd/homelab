@@ -144,17 +144,13 @@ kubectl -n argocd rollout status deployment argocd-server --timeout=300s
 ok "installed"
 
 # The upstream manifest has no node pins, and the scheduler prefers the
-# control node, so without this every ArgoCD pod runs there. The application
-# controller, server and applicationset controller go on control: the worker
-# cannot hold them and stay above its 2GiB alert floor. See ADR 020.
-info "Pinning ArgoCD to nodes"
-pin() { printf '{"spec":{"template":{"spec":{"nodeSelector":{"kubernetes.io/hostname":"%s"}}}}}' "$1"; }
-kubectl -n argocd patch statefulset argocd-application-controller --type merge -p "$(pin k3s-control)"
-for d in argocd-server argocd-applicationset-controller; do
-  kubectl -n argocd patch deployment "$d" --type merge -p "$(pin k3s-control)"
-done
-for d in argocd-repo-server argocd-redis argocd-dex-server argocd-notifications-controller; do
-  kubectl -n argocd patch deployment "$d" --type merge -p "$(pin k3s-worker1)"
+# control node, so without this every ArgoCD pod runs there. See ADR 020.
+info "Pinning ArgoCD to the worker"
+pin='{"spec":{"template":{"spec":{"nodeSelector":{"kubernetes.io/hostname":"k3s-worker1"}}}}}'
+kubectl -n argocd patch statefulset argocd-application-controller --type merge -p "$pin"
+for d in argocd-server argocd-repo-server argocd-redis argocd-dex-server \
+         argocd-applicationset-controller argocd-notifications-controller; do
+  kubectl -n argocd patch deployment "$d" --type merge -p "$pin"
 done
 ok "pinned"
 

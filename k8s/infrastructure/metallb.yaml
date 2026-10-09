@@ -13,9 +13,13 @@ spec:
     targetRevision: 0.14.9
     helm:
       values: |
-        # Keep the controller off the 5GiB control node. The speaker is a
-        # DaemonSet and stays on both nodes.
+        # Both on the worker (ADR 020). The speaker announces the
+        # LoadBalancer IPs from the node it runs on, which is also where
+        # Traefik runs.
         controller:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
+        speaker:
           nodeSelector:
             kubernetes.io/hostname: k3s-worker1
   destination:

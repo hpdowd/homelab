@@ -59,17 +59,19 @@ spec:
           defaultReplicaCount: 1
 
           # ── Disk reservation. The 2026-07-25 outage. ──
-          # Longhorn's 30% default assumes a shared OS disk. vdb is dedicated
-          # to Longhorn and needs nothing like it: at 30 it reserved ~147GiB
-          # of 491GiB, which pushed ScheduledTotal past ProvisionedLimit and
-          # flipped the disk to Schedulable=False. An unschedulable disk
-          # silently disables auto-salvage, so a routine reboot became a
-          # 16-hour manual recovery.
+          # At the 30% default the reserve pushed ScheduledTotal past
+          # ProvisionedLimit and flipped the disk to Schedulable=False, which
+          # silently disables auto-salvage. 16% (80GiB) covers containerd's
+          # images and the local-path PVs, which share vdb since 2026-08-10.
+          # The numbers are in cluster-rebuild.md §3.
           #
           # This setting only applies when the default disk is CREATED. It
           # does not retroactively fix an existing disk — that needs the node
           # object patched too. See the runbook.
-          storageReservedPercentageForDefaultDisk: 10
+          storageReservedPercentageForDefaultDisk: 16
+
+          # The Longhorn disk is vdb, mounted here on the worker.
+          defaultDataPath: /mnt/longhorn
 
           # Longhorn schedules on PROVISIONED size, not actual usage:
           # immich-library counts its full 200Gi while holding ~44GiB. 100
@@ -77,23 +79,31 @@ spec:
           # disk backs everything.
           storageOverProvisioningPercentage: 100
 
-          # Restricts every system-managed component (instance manager,
-          # engine image, CSI driver and its sidecars) to the worker. It does
-          # not place replicas; the control node's allowScheduling=false
-          # does that. Not live: Longhorn only accepts a change with every
-          # volume detached, so the setting is still empty and the twelve CSI
-          # sidecar pods sit on control. Applying it is a full storage
-          # outage.
+          # Runs the system-managed components (instance manager, engine
+          # image, CSI driver and its sidecars) on the worker only. Longhorn
+          # applies a change to this only with every volume detached.
           systemManagedComponentsNodeSelector: "kubernetes.io/hostname:k3s-worker1"
 
-        # Longhorn wants the user-deployed components pinned before the
-        # setting above. The manager stays on both nodes.
+        # Longhorn runs on the worker only; control is not a Longhorn node
+        # (ADR 020). These pin the user-deployed components, the setting
+        # above pins the rest.
+        longhornManager:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
         longhornUI:
           nodeSelector:
             kubernetes.io/hostname: k3s-worker1
         longhornDriver:
           nodeSelector:
             kubernetes.io/hostname: k3s-worker1
+
+        # One replica of each CSI sidecar. The chart default of 3 only helps
+        # with more than one storage node.
+        csi:
+          attacherReplicaCount: 1
+          provisionerReplicaCount: 1
+          resizerReplicaCount: 1
+          snapshotterReplicaCount: 1
 
         persistence:
           # THE knob that drifted. The stock chart ships numberOfReplicas: 3
