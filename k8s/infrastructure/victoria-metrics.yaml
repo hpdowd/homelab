@@ -118,7 +118,9 @@ spec:
                 # the house after 1m period + 10m grace, and tells Pushover
                 # and email. Nothing in here can report its own absence.
                 # Watchdog must still never reach email or Pushover; see the
-                # null-route-typo lesson.
+                # null-route-typo lesson. Alertmanager logs "repeat_interval is
+                # less than group_interval" on every reload because of this
+                # route. That is the intent, not a mistake.
                 - receiver: "deadman"
                   matchers:
                     - alertname = "Watchdog"

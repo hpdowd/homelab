@@ -127,9 +127,11 @@ spec:
 
     - name: homelab.reboots
       rules:
-        # Nothing watches the Proxmox host directly, and the alerting stack
-        # lives on the worker, so a host going down is invisible while it is
-        # down. These fire once it comes back instead.
+        # Nothing in the cluster can see the host while it is down: the
+        # alerting stack lives on the worker. The healthchecks.io dead-man's
+        # switch (the Watchdog route in victoria-metrics.yaml) reports that
+        # from outside within about 11 minutes. These fire once the host is
+        # back, to say what happened.
         #
         # Uptime, not changes(node_boot_time_seconds[...]): vmalert is down for
         # the whole outage, and after a long one (6h on 2026-10-07) there is

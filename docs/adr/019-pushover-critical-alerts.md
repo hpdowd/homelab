@@ -78,10 +78,10 @@ notifications on either integration.
   `AlertmanagerFailedToSendAlerts` is a warning, so it takes the email route.
 - **Pushover is a third-party dependency.** Unlike anything on the cluster, it
   keeps working when the cluster doesn't, which is the point.
-- **This does not fix the host going dark.** Alertmanager runs on the worker,
-  so a power cut still produces nothing until the host is back up. That needs
-  a dead-man's switch outside the house: `Watchdog`, the always-firing alert
-  that exists for exactly this, is still null-routed.
+- **On its own this does not cover the host going dark.** Alertmanager runs
+  on the worker, so a power cut produces nothing until the host is back up.
+  That needed a dead-man's switch outside the house, added the same night:
+  see the second addendum below.
 
 ## Addendum (2026-10-09): warnings are held for 30 minutes after a boot
 
@@ -127,3 +127,41 @@ Verified with synthetic alerts on the live Alertmanager: while a fake
 `NodeRebooted` was not, and once the fake ended the held warning was emailed.
 `NextcloudCronStale` was checked against the 10-07 boot (5 minutes stale, then
 fresh) and with a bogus CronJob name, which makes its `absent()` branch fire.
+
+## Addendum (2026-10-09): a dead-man's switch at healthchecks.io
+
+Everything above runs on the cluster, so none of it can report the cluster
+being gone. Through each of the four power cuts between 09-02 and 10-08,
+nothing could say so until the host was back.
+
+**Decision:** `Watchdog`, the chart's always-firing alert, pings a
+healthchecks.io check about once a minute, and healthchecks.io raises the
+alarm from outside the house when the pings stop.
+
+| Piece | Choice | Why |
+|---|---|---|
+| Route | `Watchdog` → webhook receiver `deadman`, first in the tree; `group_wait: 0s`, `group_interval: 1m`, `repeat_interval: 50s` | Alertmanager only re-sends on a group flush, and only once `repeat_interval` has passed, so a repeat interval just under the flush interval re-sends on every 1m flush |
+| `send_resolved` | `false` | If vmalert dies, `Watchdog` resolves, and a resolve would land as one more good ping, hiding exactly the failure this exists to catch |
+| Check | Period 1 minute, grace 10 minutes | A clean worker reboot takes about a minute plus pod start, inside the grace. A real outage is reported about 11 minutes after the last ping |
+| Notifications | healthchecks.io's own Pushover integration (Normal for down, Low for up) and its email | Both leave from healthchecks.io, so neither depends on anything in the house, Brevo included |
+| URL | `alertmanager-healthchecks` SealedSecret, read with `url_file` | Anyone holding the URL can ping it and make a dark homelab look alive |
+| Service | healthchecks.io free plan (20 checks) | Purpose-built and hosted. Self-hosting it would put it back inside the failure it watches |
+
+What it covers: a power cut, a host freeze, the worker VM down, the WAN
+down, and vmalert or Alertmanager broken. What it does not cover: scrapes
+failing, because `Watchdog` is `vector(1)` and needs no data. The
+`*MetricsAbsent` rules cover that. A planned host reboot that takes longer
+than the grace will raise a "down" too, which is correct, if expected.
+
+`Watchdog` must still never reach email or Pushover directly. The
+null-route-typo lesson's smoke test still applies: `Watchdog` in the inbox
+means the routing is broken.
+
+Verified 2026-10-09 by silencing `Watchdog` in Alertmanager for 20 minutes,
+which looks the same from outside as the house going dark. The last ping went
+at 00:22:06Z, healthchecks.io emailed "down" at 00:33Z, and pings resumed at
+00:43Z when the silence lapsed, followed by the "up" email. Alertmanager sent
+nothing to email or Pushover itself throughout. The Pushover integration on
+the healthchecks.io side was only connected after the test, so that leg has
+not yet carried a real down/up.
+
