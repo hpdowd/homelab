@@ -26,9 +26,9 @@ spec:
         # emails. With the hold that is one alert, and the resolve email
         # arrives an hour after the last dip.
         #
-        # Control (5GiB, k3s control plane only): loose. It runs no app
-        # workloads, so it normally sits with plenty free; only warn once it's
-        # genuinely squeezed. 0.75GiB free for 5m.
+        # Control (4GiB): loose. It runs only k3s, its add-ons and
+        # node-exporter (ADR 020), so it normally sits with plenty free; only
+        # warn once it's genuinely squeezed. 0.75GiB free for 5m.
         - alert: NodeMemoryLowControl
           expr: |
             node_memory_MemAvailable_bytes{instance="192.168.1.10:9100"} < 805306368
@@ -40,7 +40,7 @@ spec:
             summary: "Low available memory on control node ({{ $labels.instance }})"
             description: "Available memory < 0.75Gi for 5m on k3s-control. Something heavy got scheduled onto the control plane — investigate."
 
-        # Worker1 (12GiB, runs every app): tight. This is the node that gates
+        # Worker1 (13GiB, runs every app): tight. This is the node that gates
         # adding workloads (e.g. Immich), so warn with a fat 2GiB cushion still
         # remaining — early enough to act before anything OOMs. 2GiB free for 5m.
         - alert: NodeMemoryLowWorker
@@ -256,12 +256,11 @@ spec:
         # Fires while there is still headroom, rather than after the disk has
         # already crossed into DiskPressure.
         #
-        # Expressed as a ratio, not absolute bytes, deliberately. An absolute
-        # "< 20GiB headroom" threshold sits 0.13GiB away from firing on the
-        # control node, which permanently reads -20.3GiB (29GiB OS disk, 30%
-        # reserved, zero replicas scheduled because control has
-        # allowScheduling=false). The ratio reads 0 there and can't
-        # false-positive. Verified live: control 0, worker 1.021.
+        # Expressed as a ratio, not absolute bytes, deliberately. While
+        # control was a Longhorn node it read -20.3GiB of headroom (29GiB OS
+        # disk, 30% reserved, no replicas), 0.13GiB from an absolute "< 20GiB"
+        # threshold. It left Longhorn on 2026-10-09 (ADR 020); the ratio still
+        # cannot false-positive on a node with nothing scheduled.
         - alert: LonghornProvisioningHeadroomLow
           expr: |
             longhorn_node_storage_scheduled_bytes
