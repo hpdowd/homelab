@@ -22,9 +22,9 @@ spec:
         #
         # keep_firing_for holds both alerts for an hour after memory recovers.
         # On 2026-10-09 control's MemAvailable hovered around 0.75GiB and the
-        # alert fired and resolved 12 times in under five hours, 24 emails.
-        # The hold makes that one alert; the resolve email arrives an hour
-        # after the last dip.
+        # alert fired and resolved 12 times in under five hours, sending 24
+        # emails. With the hold that is one alert, and the resolve email
+        # arrives an hour after the last dip.
         #
         # Control (5GiB, k3s control plane only): loose. It runs no app
         # workloads, so it normally sits with plenty free; only warn once it's

@@ -480,21 +480,14 @@ has nothing to order and the containers get swept concurrently with
 `k3s-agent` running, or stop the containers yourself first and confirm
 `ls /sys/class/iscsi_session | wc -l` is 0 before rebooting.
 
-**A pod without a nodeSelector lands on the control node.** Control has no
-taint, and the scheduler favours the node with the smaller share of its
-memory requested: about 9% on control against 49% on the worker. Control
-also boots first (Proxmox startup order 2, worker 3). After the 2026-10-08
-power cut, vmagent, the VM operator, the MetalLB controller, cloudflared,
-four ArgoCD components and all twelve Longhorn CSI sidecars started on
-control. Its MemAvailable fell from ~1.4GiB to ~0.5GiB and
-`NodeMemoryLowControl` fired 12 times overnight. Deleting the pods does not
-move them; pin each workload with `kubernetes.io/hostname: k3s-worker1`.
-Still unpinned: ArgoCD (installed by bootstrap), Sealed Secrets (manual
-sync), k3s's local-path-provisioner, and the Longhorn UI, driver deployer
-and CSI sidecars. `systemManagedComponentsNodeSelector` in `longhorn.yaml`
-is not live (`kubectl -n longhorn-system get settings.longhorn.io
-system-managed-components-node-selector` is empty), and Longhorn only
-applies it with every volume detached.
+**A pod without a node pin runs on the control node.** Control has no taint,
+and the scheduler favours the node with the smaller share of its memory
+requested (9% on control, 49% on the worker). Deleting the pod does not move
+it. After the 2026-10-08 power cut about 20 unpinned pods started on control,
+its MemAvailable fell from ~1.4GiB to ~0.5GiB, and `NodeMemoryLowControl`
+fired 12 times overnight. Pin every new workload with `nodeSelector:
+kubernetes.io/hostname: k3s-worker1`. ADR 020 has the placement of each
+workload and the ones that are still unpinned.
 
 ## restic / backups
 

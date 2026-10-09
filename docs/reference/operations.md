@@ -109,6 +109,18 @@ Get inside a running pod:
 kubectl exec -it -n <ns> <podname> -- /bin/sh
 ```
 
+List Deployments and StatefulSets with no node pin (ADR 020). Expected:
+coredns, metrics-server, local-path-provisioner, the four Longhorn CSI
+sidecars, and longhorn-ui and longhorn-driver-deployer until Longhorn is
+adopted:
+
+```bash
+kubectl get deploy,sts -A -o json | jq -r '.items[]
+  | select(.spec.template.spec.nodeSelector["kubernetes.io/hostname"] == null
+      and .spec.template.spec.affinity.nodeAffinity == null)
+  | "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
 ## Nextcloud-specific
 
 Run an `occ` command (the Nextcloud CLI). Has to run as `www-data` or
