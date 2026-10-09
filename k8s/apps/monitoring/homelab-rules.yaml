@@ -20,26 +20,34 @@ spec:
         # Per-node thresholds — the two nodes have very different roles and
         # headroom, so a single global threshold doesn't fit either well.
         #
-        # Control (4GiB, k3s control plane only): loose. It runs no app
+        # keep_firing_for holds both alerts for an hour after memory recovers.
+        # On 2026-10-09 control's MemAvailable hovered around 0.75GiB and the
+        # alert fired and resolved 12 times in under five hours, 24 emails.
+        # The hold makes that one alert; the resolve email arrives an hour
+        # after the last dip.
+        #
+        # Control (5GiB, k3s control plane only): loose. It runs no app
         # workloads, so it normally sits with plenty free; only warn once it's
         # genuinely squeezed. 0.75GiB free for 5m.
         - alert: NodeMemoryLowControl
           expr: |
             node_memory_MemAvailable_bytes{instance="192.168.1.10:9100"} < 805306368
           for: 5m
+          keep_firing_for: 1h
           labels:
             severity: warning
           annotations:
             summary: "Low available memory on control node ({{ $labels.instance }})"
             description: "Available memory < 0.75Gi for 5m on k3s-control. Something heavy got scheduled onto the control plane — investigate."
 
-        # Worker1 (14GiB, runs every app): tight. This is the node that gates
+        # Worker1 (12GiB, runs every app): tight. This is the node that gates
         # adding workloads (e.g. Immich), so warn with a fat 2GiB cushion still
         # remaining — early enough to act before anything OOMs. 2GiB free for 5m.
         - alert: NodeMemoryLowWorker
           expr: |
             node_memory_MemAvailable_bytes{instance="192.168.1.11:9100"} < 2147483648
           for: 5m
+          keep_firing_for: 1h
           labels:
             severity: warning
           annotations:
