@@ -38,6 +38,11 @@
       # the path recorded in their own spec.local.path; this only affects
       # PVs created from here on.
       default-local-storage-path: {{ k3s_local_storage_path }}
+      # Nothing but k3s's own add-ons and node-exporter runs on control
+      # (ADR 020); both tolerate this taint. k3s applies it only when the
+      # node first registers, so an existing node needs `kubectl taint`.
+      node-taint:
+        - node-role.kubernetes.io/control-plane:NoSchedule
   when: inventory_hostname in groups['k3s_servers']
 
 - name: Write k3s agent config
