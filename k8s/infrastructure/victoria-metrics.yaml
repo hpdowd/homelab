@@ -74,8 +74,9 @@ spec:
                 memory: 128Mi
 
         # Alertmanager: dedupes and routes alerts. Criticals go to Pushover
-        # and email, everything else to email only (ADR 019). Each secret
-        # listed under spec.secrets is a SealedSecret, mounted at
+        # and email, everything else to email only, and Watchdog feeds a
+        # dead-man's switch at healthchecks.io (ADR 019). Each secret listed
+        # under spec.secrets is a SealedSecret, mounted at
         # /etc/vm/secrets/<name>/ and read from file, never inlined.
         alertmanager:
           enabled: true
@@ -85,6 +86,7 @@ spec:
             secrets:
               - alertmanager-smtp
               - alertmanager-pushover
+              - alertmanager-healthchecks
             resources:
               requests:
                 cpu: 10m
@@ -108,6 +110,22 @@ spec:
               # short enough that I'll see something still firing the next morning.
               repeat_interval: 6h
               routes:
+                # The dead-man's switch. Watchdog always fires, so this pings
+                # healthchecks.io about once a minute: repeat_interval under
+                # group_interval re-sends on every 1m flush. When the pings
+                # stop (power cut, host or worker down, WAN down, vmalert or
+                # Alertmanager broken) healthchecks.io notices from outside
+                # the house after 1m period + 10m grace, and tells Pushover
+                # and email. Nothing in here can report its own absence.
+                # Watchdog must still never reach email or Pushover; see the
+                # null-route-typo lesson.
+                - receiver: "deadman"
+                  matchers:
+                    - alertname = "Watchdog"
+                  group_wait: 0s
+                  group_interval: 1m
+                  repeat_interval: 50s
+
                 # KubeCPU/MemoryOvercommit fire permanently on a 2-node
                 # cluster ("cannot tolerate node failure" — true by design
                 # here). Null-routed rather than disabled so they stay
@@ -116,7 +134,7 @@ spec:
                 # below.
                 - receiver: "null"
                   matchers:
-                    - alertname =~ "Watchdog|InfoInhibitor|NodeRecentlyBooted|KubeCPUOvercommit|KubeMemoryOvercommit"
+                    - alertname =~ "InfoInhibitor|NodeRecentlyBooted|KubeCPUOvercommit|KubeMemoryOvercommit"
 
                 # One failed run of the 5-minute Nextcloud cron means nothing,
                 # and one fails after every boot. Its Job is kept 24h, so this
@@ -149,6 +167,13 @@ spec:
                   repeat_interval: 1h
             receivers:
               - name: "null"
+              - name: "deadman"
+                webhook_configs:
+                  - url_file: /etc/vm/secrets/alertmanager-healthchecks/ping_url
+                    # Must stay false. If vmalert dies, Watchdog resolves,
+                    # and a resolve would land as one more successful ping,
+                    # hiding exactly the failure this exists to catch.
+                    send_resolved: false
               - name: "email"
                 email_configs:
                   - to: "henry@dowd.ie"
