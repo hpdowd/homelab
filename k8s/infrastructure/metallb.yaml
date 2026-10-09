@@ -11,6 +11,13 @@ spec:
     # Pin to a specific chart version (same reasoning as victoria-metrics.yaml):
     # floating "0.14.x" lets an autosync roll new versions in unattended.
     targetRevision: 0.14.9
+    helm:
+      values: |
+        # Keep the controller off the 5GiB control node. The speaker is a
+        # DaemonSet and stays on both nodes.
+        controller:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
   destination:
     server: https://kubernetes.default.svc
     namespace: metallb-system

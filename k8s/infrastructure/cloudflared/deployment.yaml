@@ -21,6 +21,8 @@ spec:
       labels:
         app: cloudflared
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker1
       containers:
         - name: cloudflared
           # Pinned: this is the public ingress path — a silently-pulled new

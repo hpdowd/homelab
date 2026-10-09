@@ -18,12 +18,16 @@ spec:
     helm:
       releaseName: vm
       values: |
-        # Global default: pin everything to the worker. The control node only
-        # has 4GiB RAM and runs the k3s control plane, so we keep workloads off
-        # it. node-exporter is a DaemonSet and overrides this below so we still
-        # get host metrics from control too.
-        nodeSelector:
-          kubernetes.io/hostname: k3s-worker1
+        # Every component is pinned to the worker with its own nodeSelector.
+        # The control node has 5GiB RAM and runs the k3s control plane. This
+        # chart has no global nodeSelector, so a component without its own
+        # lands on control: the scheduler prefers it because its pods request
+        # little memory. node-exporter is the exception, a DaemonSet that
+        # runs on both nodes.
+
+        victoria-metrics-operator:
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker1
 
         # vmsingle = the single-node VictoriaMetrics TSDB. The chart also
         # supports a cluster mode (vmstorage/vmselect/vminsert), which is
@@ -58,6 +62,11 @@ spec:
 
         vmcluster:
           enabled: false
+
+        vmagent:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: k3s-worker1
 
         # vmalert evaluates the rules in homelab-rules.yaml plus the chart's
         # built-in Kubernetes rules. Sends firing alerts to alertmanager.
