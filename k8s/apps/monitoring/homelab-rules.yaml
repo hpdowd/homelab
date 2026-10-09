@@ -134,6 +134,30 @@ spec:
             summary: "{{ $labels.instance }} rebooted {{ $value | humanizeDuration }} ago"
             description: "A single k3s VM restarted without the host. Expect a burst of reboot-fallout alerts (see the worker-reboot-alert-storm lesson)."
 
+        # Never delivered (null-routed in victoria-metrics.yaml). It is the
+        # source of an inhibit rule there that holds back warnings for the
+        # first 30 minutes after any k3s node boots.
+        #
+        # Every boot brings the same burst: 28-45 PodCrashLooping series on
+        # each of the six boots between 09-16 and 10-08, from pods restarting
+        # while Longhorn reattaches. They first fire 7-10 min after boot, each
+        # clears in ~10 min, and the last is gone by 23 min. A 5-minute
+        # silence from boot would have caught none of them; 30 minutes clears
+        # the worst case with 7 to spare. This starts holding 3.5-4.5 min
+        # after boot, once node-exporter is scraped again.
+        #
+        # Held, not dropped: anything still firing when this resolves gets
+        # sent then, so a real crashloop arrives late rather than never.
+        # min() across nodes, so the window runs from the last node up, and
+        # it fails open: with no node metrics there is nothing to inhibit with.
+        - alert: NodeRecentlyBooted
+          expr: |
+            min(node_time_seconds{job="node-exporter"} - node_boot_time_seconds{job="node-exporter"}) < 1800
+          labels:
+            severity: none
+          annotations:
+            summary: "A k3s node booted under 30 minutes ago; warnings are held back until then"
+
     - name: homelab.storage
       rules:
         # 85% is high enough to ignore daily noise, low enough to act on. Both

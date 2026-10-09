@@ -112,9 +112,11 @@ spec:
                 # cluster ("cannot tolerate node failure" — true by design
                 # here). Null-routed rather than disabled so they stay
                 # visible in vmalert/Grafana without emailing every 6h.
+                # NodeRecentlyBooted only exists to feed the inhibit rule
+                # below.
                 - receiver: "null"
                   matchers:
-                    - alertname =~ "Watchdog|InfoInhibitor|KubeCPUOvercommit|KubeMemoryOvercommit"
+                    - alertname =~ "Watchdog|InfoInhibitor|NodeRecentlyBooted|KubeCPUOvercommit|KubeMemoryOvercommit"
 
                 # Criticals also go to the phone. A route of its own with
                 # `continue` so the email route below still matches, and so it
@@ -169,6 +171,16 @@ spec:
               - source_matchers: [alertname = "InfoInhibitor"]
                 target_matchers: [severity = "info"]
                 equal: ["namespace"]
+                # Hold back warnings for 30 minutes after any node boots;
+                # every boot brings a burst of PodCrashLooping that clears
+                # itself (NodeRecentlyBooted in homelab-rules.yaml has the
+                # numbers). Held, not dropped: anything still firing when the
+                # window closes is sent then. Not the restart notices, which
+                # are the point, and never criticals.
+              - source_matchers: [alertname = "NodeRecentlyBooted"]
+                target_matchers:
+                  - severity = "warning"
+                  - alertname !~ "ProxmoxHostRestarted|NodeRebooted"
 
         # k3s bundles the controller-manager, scheduler, kube-proxy, and datastore
         # into the single k3s server process — none are exposed as the separately
