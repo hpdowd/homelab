@@ -118,6 +118,17 @@ spec:
                   matchers:
                     - alertname =~ "Watchdog|InfoInhibitor|NodeRecentlyBooted|KubeCPUOvercommit|KubeMemoryOvercommit"
 
+                # One failed run of the 5-minute Nextcloud cron means nothing,
+                # and one fails after every boot. Its Job is kept 24h, so this
+                # emailed every 6h for a day each time. NextcloudCronStale in
+                # homelab-rules.yaml alerts on an hour without a successful
+                # run instead. Other Jobs in the namespace still email.
+                - receiver: "null"
+                  matchers:
+                    - alertname = "KubeJobFailed"
+                    - namespace = "nextcloud"
+                    - job_name =~ "nextcloud-cron-.*"
+
                 # Criticals also go to the phone. A route of its own with
                 # `continue` so the email route below still matches, and so it
                 # can repeat less often: something like BackupJobMissing after

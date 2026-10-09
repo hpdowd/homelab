@@ -100,6 +100,31 @@ spec:
             summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} degraded"
             description: "Desired != available replicas for 10m."
 
+        # Replaces KubeJobFailed for nextcloud-cron, which is null-routed in
+        # victoria-metrics.yaml. The cron runs every 5 minutes, so a single
+        # failed run means nothing, and one fails after every boot: the run
+        # that fires as the node comes up hangs before Postgres is ready.
+        # Its Job is kept 24h, so KubeJobFailed emailed every 6h for a day
+        # after each boot. What matters is the background jobs not running,
+        # so this alerts on an hour without a successful run.
+        #
+        # After a long outage the last success is hours old when the cluster
+        # comes back, but the first good run lands ~10 min after boot (all
+        # six boots 09-16..10-08), so the 15m `for` never trips on a boot.
+        # absent() covers the CronJob or kube-state-metrics going missing,
+        # which would otherwise silence the rule rather than fire it.
+        - alert: NextcloudCronStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="nextcloud", cronjob="nextcloud-cron"} > 3600
+            or
+            absent(kube_cronjob_status_last_successful_time{namespace="nextcloud", cronjob="nextcloud-cron"})
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nextcloud background jobs have not run successfully for over an hour"
+            description: "No successful nextcloud-cron run in over an hour, or kube-state-metrics has no record of one. Check `kubectl -n nextcloud get jobs` and the logs of the latest failed run."
+
     - name: homelab.reboots
       rules:
         # Nothing watches the Proxmox host directly, and the alerting stack
