@@ -110,9 +110,7 @@ kubectl exec -it -n <ns> <podname> -- /bin/sh
 ```
 
 List Deployments and StatefulSets with no node pin (ADR 020). Expected:
-coredns, metrics-server, local-path-provisioner, the four Longhorn CSI
-sidecars, and longhorn-ui and longhorn-driver-deployer until Longhorn is
-adopted:
+coredns, metrics-server and local-path-provisioner, which are part of k3s:
 
 ```bash
 kubectl get deploy,sts -A -o json | jq -r '.items[]

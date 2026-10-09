@@ -115,6 +115,14 @@ Test reboot, `qm reboot 301 --timeout 300`, 2026-10-08 23:24:
 The kubelet unmounted every Longhorn volume (14 `UnmountDevice succeeded`)
 before systemd touched iSCSI.
 
+Found the next day: the replacements for the terminated pods are scheduled
+while the worker is down, so every pod without a node pin moved to control
+during the 23:24 test reboot (about 20 pods, all created within that
+minute). By
+morning control's MemAvailable was hovering around 0.75GiB and
+`NodeMemoryLowControl` fired 12 times. Fixed by pinning every workload to
+the worker and tainting control, see ADR 020.
+
 Two things still happen, and both are expected:
 - **Longhorn still reports volumes `faulted` with "Engine dead unexpectedly".**
   The kubelet *terminates* pods on shutdown but does not delete them, so no

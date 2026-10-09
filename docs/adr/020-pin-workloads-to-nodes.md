@@ -1,62 +1,84 @@
-# ADR 020: Pin every workload to a node
+# ADR 020: Nothing runs on the control node
 
 **Status:** Accepted
 **Date:** 2026-10-09
 
 ## Problem
 
-- The control node (5GiB) has no taint. The scheduler favours the node with
-  the smaller share of its memory requested: 9% on control, 49% on the
-  worker. A pod with no node pin goes to control.
-- Control also boots first (Proxmox startup order 2, worker 3). After the
-  2026-10-08 power cut the worker came up 23 minutes after control.
-- About 20 unpinned pods started on control that night. Its MemAvailable fell
-  from about 1.4GiB to about 0.5GiB, and `NodeMemoryLowControl` fired 12
-  times between 02:02 and 06:48.
+- The kubelet's graceful shutdown (enabled 2026-10-08) terminates the
+  worker's pods when it shuts down. Their replacements are scheduled while
+  control is the only Ready node, and they stay there after the worker
+  returns.
+- The scheduler also favours control for any unpinned pod: its pods request
+  9% of its memory, against 49% on the worker.
+- The 2026-10-08 test reboot of the worker moved about 20 pods to control.
+  Its MemAvailable fell from about 1.4GiB to about 0.5GiB, and
+  `NodeMemoryLowControl` fired 12 times between 02:02 and 06:48 UTC.
 - The VictoriaMetrics stack set a top-level `nodeSelector` that the chart
   never reads, so vmagent and the operator were unpinned without anyone
   knowing.
 
 ## Decision
 
-Every Deployment and StatefulSet sets a node. The worker is the default.
-These run on control:
+Control runs k3s, its packaged add-ons (coredns, metrics-server,
+local-path-provisioner) and node-exporter. Everything else runs on the
+worker.
 
-| Workload | Reason |
-|---|---|
-| ArgoCD application controller, server, applicationset controller | The controller's working set reached 1.57GiB in the week before the power cut, and the worker's low that week was 2.85GiB. On the worker they would take it under its 2GiB alert floor. They ran on control before 2026-10-08 |
-| Traefik | It has always run there. The proxmox.lan route then has no dependency on the worker |
-| DaemonSets (node-exporter, longhorn-manager, longhorn-csi-plugin, metallb-speaker) | One per node by design |
+- **Every Deployment and StatefulSet is pinned to the worker** with
+  `nodeSelector: kubernetes.io/hostname: k3s-worker1`.
+- **Control is tainted `node-role.kubernetes.io/control-plane:NoSchedule`.**
+  The k3s add-ons and node-exporter tolerate it. A workload that is missing
+  its pin goes Pending during a worker outage instead of landing on control.
+- **Longhorn runs on the worker only.** Control is removed as a Longhorn
+  node; it held no replicas (`allowScheduling=false`). The CSI sidecars drop
+  from three replicas each to one.
+- **MetalLB's speaker runs on the worker only**, with Traefik.
+- **RAM moves with the workloads:** control 5 → 4GiB, worker 12 → 13GiB. The
+  host has about 2.7GiB available and nothing else to give.
+
+| | Control | Worker |
+|---|---|---|
+| RSS moved (peak) | about −1.2GiB | about +1.1GiB (ArgoCD 0.72, gitea 0.22, Traefik 0.19) |
+| RAM | 5 → 4GiB | 12 → 13GiB |
+| Low MemAvailable, before | 1.05GiB (week to 10-08) | 2.85GiB (week to 10-08) |
+| Low MemAvailable, expected | about 1.3GiB | about 2.8GiB |
+| Alert floor | 0.75GiB | 2GiB |
+
+Without the RAM change the worker's expected low is about 1.8GiB, under its
+floor.
 
 Where each pin is set:
 
 | Workload | Set in | Applied |
 |---|---|---|
-| vmagent, VM operator, MetalLB controller, cloudflared, gitea, kiwix, traefik | `k8s/` manifests | By ArgoCD auto-sync |
-| Sealed Secrets | `sealed-secrets.yaml` values and `bootstrap.sh` | By a manual sync of the Deployment |
-| ArgoCD | `bootstrap.sh` (`kubectl patch`) | By running the patch step. ArgoCD is not managed from `k8s/` |
-| Longhorn UI and driver deployer | `longhorn.yaml` values | When Longhorn is adopted |
-| Longhorn CSI sidecars | `system-managed-components-node-selector` | Not applied. Longhorn accepts the change only with every volume detached |
-| coredns, metrics-server, local-path-provisioner | k3s packaged manifests | Not pinned. k3s deploys them from its own manifests. They stay on control |
+| vmagent, VM operator, MetalLB, cloudflared, gitea, kiwix, Traefik | `k8s/` manifests | By ArgoCD auto-sync, done |
+| ArgoCD | `bootstrap.sh` (`kubectl patch`) | Pending the maintenance window |
+| Sealed Secrets | `sealed-secrets.yaml` values and `bootstrap.sh` | Pending (manual sync of the Deployment) |
+| Longhorn | `longhorn.yaml` (manager, UI, driver deployer, `systemManagedComponentsNodeSelector`) | Pending (first sync of the Application, with every volume detached) |
+| Control taint | `ansible/roles/k3s_node` (`node-taint`) | Pending (`kubectl taint`; k3s applies the config only when a node first registers) |
+| VM RAM | Proxmox (`qm set`) | Pending (cold boot) |
 
 ## Rejected
 
-- **Taint control `NoSchedule`.** Every DaemonSet that must run there would
-  need a toleration. Longhorn sets tolerations for its system-managed
-  components through its `taint-toleration` setting, which, like its node
-  selector, can be changed only with every volume detached.
-- **Leave placement to the scheduler.** This is what happened on 2026-10-08.
-- **Everything on the worker, ArgoCD included.** See the ArgoCD row above.
+- **Pins without the taint.** A workload added without a pin would land on
+  control at the next worker reboot, as on 2026-10-08.
+- **The taint without pins.** Placement would still depend on the scheduler
+  for anything that tolerates the taint, and the pins make each workload's
+  node visible in its own manifest.
+- **ArgoCD's controller and Traefik on control.** Considered earlier the same
+  day to spare the worker's memory. The RAM change covers that, and it keeps
+  one rule with no exceptions.
+- **More RAM for the worker from the host.** The host has about 2.7GiB
+  available, and ZFS ARC holds another 2.3GiB.
 
 ## Consequences
 
 - A new workload needs `nodeSelector: kubernetes.io/hostname: k3s-worker1`.
-  Without one it runs on control. `operations.md` (Pods + Deployments) has a
-  command that lists unpinned workloads.
-- When the worker is down, pinned pods stay Pending instead of starting on
-  control. This was already true for every app.
+  `operations.md` (Pods + Deployments) has a command that lists unpinned
+  workloads.
+- When the worker is down, nothing but k3s runs. Every app was already in
+  that position.
 - After an ArgoCD upgrade, re-run the patch step in `bootstrap.sh`. It is
   idempotent.
-- The twelve CSI sidecar pods (about 360MiB) stay on control until a storage
-  maintenance window. Moving them restricts the instance manager and engine
-  image to the worker as well.
+- Control's alert floor (0.75GiB) stays. Check its MemAvailable for a week
+  after the RAM change.

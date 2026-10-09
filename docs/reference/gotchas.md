@@ -480,14 +480,16 @@ has nothing to order and the containers get swept concurrently with
 `k3s-agent` running, or stop the containers yourself first and confirm
 `ls /sys/class/iscsi_session | wc -l` is 0 before rebooting.
 
-**A pod without a node pin runs on the control node.** Control has no taint,
-and the scheduler favours the node with the smaller share of its memory
-requested (9% on control, 49% on the worker). Deleting the pod does not move
-it. After the 2026-10-08 power cut about 20 unpinned pods started on control,
-its MemAvailable fell from ~1.4GiB to ~0.5GiB, and `NodeMemoryLowControl`
-fired 12 times overnight. Pin every new workload with `nodeSelector:
-kubernetes.io/hostname: k3s-worker1`. ADR 020 has the placement of each
-workload and the ones that are still unpinned.
+**Every worker reboot moves unpinned pods to control.** The kubelet's
+graceful shutdown terminates the worker's pods, and their replacements are
+scheduled while control is the only Ready node. They stay there after the
+worker returns, because the scheduler favours the node with the smaller
+share of its memory requested (9% on control, 49% on the worker). On
+2026-10-08 one test reboot moved about 20 pods, control's MemAvailable fell
+from ~1.4GiB to ~0.5GiB, and `NodeMemoryLowControl` fired 12 times
+overnight. Pin every workload with `nodeSelector: kubernetes.io/hostname:
+k3s-worker1`. Control carries the `control-plane:NoSchedule` taint as a
+backstop. See ADR 020.
 
 ## restic / backups
 
