@@ -82,3 +82,48 @@ notifications on either integration.
   so a power cut still produces nothing until the host is back up. That needs
   a dead-man's switch outside the house: `Watchdog`, the always-firing alert
   that exists for exactly this, is still null-routed.
+
+## Addendum (2026-10-09): warnings are held for 30 minutes after a boot
+
+Every boot brings the same burst of warnings, and every one clears itself.
+Over the six boots between 09-16 and 10-08 (three power cuts, the thin-pool
+incident and two planned reboots), each produced 28-45 `PodCrashLooping`
+series from pods restarting while Longhorn reattached. They first fired 7-10
+minutes after boot, each lasted about 10 minutes, and the last was gone by 23
+minutes. In email that is one message per namespace and then a resolve for
+each, for nothing.
+
+**Decision:** an inhibit rule holds back `severity: warning` while
+`NodeRecentlyBooted` fires, which is while the youngest k3s node has been up
+under 30 minutes. That rule is null-routed and exists only to feed the
+inhibit rule.
+
+- **Why not a silence for 5 minutes after power-up**, which was the first
+  idea: the burst starts 7-10 minutes in, because `PodCrashLooping` needs
+  `for: 5m` on a 15-minute window, so a 5-minute silence would have expired
+  before the first one. A silence also needs something to create it at boot,
+  while the inhibit rule is declarative and ends on its own.
+- **Held, not dropped.** Alertmanager sends an inhibited alert that is still
+  firing once the inhibition ends, so a real crashloop arrives about 30
+  minutes after boot instead of never. One that clears inside the window is
+  never sent at all, and no resolve is sent for it either.
+- **Not held:** `ProxmoxHostRestarted` and `NodeRebooted`, which are the notice
+  that a boot happened, and every critical. The one critical seen after a boot
+  in the same data, `PodOOMKilled` on cloudflared 5 minutes after the 10-07
+  power cut, is a public-ingress OOM worth hearing about.
+- **Fails open.** With no node-exporter data the rule has nothing to fire on,
+  so nothing is held.
+- **`KubeJobFailed` for `nextcloud-cron` needed its own fix.** The run of that
+  5-minute cron that fires at boot hangs before Postgres is up and fails, and
+  the failed Job is kept for 24 hours (`ttlSecondsAfterFinished`), so the alert
+  outlasted any boot window and emailed every 6 hours for a day. It was the
+  only `KubeJobFailed` after every boot in the data. It is now null-routed for
+  that CronJob alone, and `NextcloudCronStale` alerts on an hour without a
+  successful run instead, which is what matters for a cron that runs every 5
+  minutes. Other Jobs, the backups included, still alert on any failure.
+
+Verified with synthetic alerts on the live Alertmanager: while a fake
+`NodeRecentlyBooted` was active, a test warning was held and a fake
+`NodeRebooted` was not, and once the fake ended the held warning was emailed.
+`NextcloudCronStale` was checked against the 10-07 boot (5 minutes stale, then
+fresh) and with a bogus CronJob name, which makes its `absent()` branch fire.
