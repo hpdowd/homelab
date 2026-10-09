@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: alertmanager-healthchecks
+  namespace: monitoring
+spec:
+  encryptedData:
+    ping_url: AgBkIllKsG9yCybP+F9DzSFUQWk8UaZdVJPwyjeOsMf1co/w8qsW/UKzIRIzWPHlVc+3wYm5kp0pj20yO4omAqyUrzrPo7g5xcWcc+NYCAWx8PvDnEcQ1j1l6MdgMfSW8gAU4VoWoMANq/NAV5uHUt4K1oUbbRs1SrwCpsiuMYizqG6YoT3icQvAr083SYiZEmBKZoXvgvQQMqmoHv5m+Zw4u2lGN4d8wW8d2aDxEHRv4n1TFN++93pkZwJVl7/ZQpLHfbMMS6oulxfqTOLJsX65E263edO76KonPZgxYv4bqhsHujbXxG6dMWBcb86WJ0rzSv5iOFtJUF7zQdxwCvAfdHzAU2IbEJRmXBSNWN8XdT9YILNOi3r1vQ0ukVTSsVeb6rFcNgvZD3saVsjRJp0mgool+NoKwZxr9KTQNRGidjjZao0qRlFaPhO56/7Uqr69Avaz6LZX005oQZHUl5xlErD+QFGWIvgYXAGKXPgNxpJtXoD4wzGsskUOKMb3EujBZ5DgY3zJmyqZvjjwiGJS6aiWvEfb5dHXE9eFGLyv1npS1JFvstVJ0rphaRgggxJNnxfFTHZ3EawdfI3gdSMWdZOcU33T8Z03OB5L9KOIvpSbyQAyaYUrFC91Br7TQsvOQ2dPsMMff6BLUQir9arJdo7KazvuOuT9STuYjAsla2YlcYQmj0+hFQdQSBqrQBOeaLALfsrqB/VtD2IqQynWtYEE2KR7SoTEHWoWJGi6BAyd6g3fXhJGTXaaCp9pgVcu9A8jIbG3iA==
+  template:
+    metadata:
+      name: alertmanager-healthchecks
+      namespace: monitoring
