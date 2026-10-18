@@ -67,6 +67,9 @@ root). See ADR 009.
 - Technitium on LXC 100, **192.168.1.5**, the LAN resolver.
 - `*.lan` → 192.168.1.200 and `*.henrydowd.dev` → 192.168.1.200
   (split-horizon: LAN traffic to public hostnames stays local).
+  Exception: `home.henrydowd.dev` is a Conditional Forwarder zone (Cloudflare
+  over DoH), so it returns the WAN IP on the LAN too; see the WireGuard entry
+  in gotchas.md.
 - `home.henrydowd.dev`, Cloudflare A record (DNS-only, not proxied),
   kept current by cloudflare-ddns on the WireGuard LXC
   (`/usr/local/bin/cloudflare-ddns.sh`, cron every 5 min; only PUTs when

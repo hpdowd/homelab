@@ -664,6 +664,27 @@ returns *your* ISP's address, not home's, which makes a perfectly current
 Both cost time on 2026-09-03, when the real fault was simply that LXC 101
 had not autostarted after a manual reboot (known-risks §9).
 
+**`home.henrydowd.dev` must resolve to the WAN IP everywhere, LAN
+included.** Technitium's `*.henrydowd.dev → 192.168.1.200` wildcard would
+otherwise catch the WireGuard endpoint too. It used to be held off with an
+A record to 192.168.1.3, which broke any VPN client that sends
+`henrydowd.dev` lookups (or all its DNS) through the tunnel. Clients
+re-resolve the endpoint to follow the nightly WAN IP change (NetworkManager
+does it after connecting), so the tunnel repointed itself at .3, which is
+excluded from `AllowedIPs` and unreachable from outside, and stayed down
+until reconnected.
+
+Since 2026-10-18 `home.henrydowd.dev` is a Conditional Forwarder zone in
+Technitium, forwarding to Cloudflare over DoH
+(`https://cloudflare-dns.com/dns-query (1.1.1.1)`), so LAN and VPN clients
+both get the WAN IP that cloudflare-ddns maintains. Don't add an A record
+for `home` back, and don't switch the forwarder to UDP: the hub drops plain
+port 53 to public resolvers and the zone SERVFAILs with "No Reachable
+Authority". See `docs/lessons/networking/certmanager-dns01-split-horizon.md`.
+
+Side effect: a device that brings the VPN up while at home now targets the
+WAN IP, which needs NAT loopback on the hub.
+
 ## Alpine LXCs: busybox crond doesn't notice appended crontabs
 
 busybox crond only re-reads `/etc/crontabs` when the *directory* mtime
