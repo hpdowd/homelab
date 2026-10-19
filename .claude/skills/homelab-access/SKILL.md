@@ -1,29 +1,31 @@
 ---
 name: homelab-access
-description: How to reach the homelab machines — the `ssh pve` / `ssh k3s-control` / `ssh k3s-worker1` aliases, what runs on each, and the standing rule against `pct enter` into the WireGuard LXC while on the VPN. Use whenever a task needs a shell on the Proxmox host or a k3s node, or any `pct` command against an LXC.
+description: How to reach the homelab machines — the `ssh pve` / `ssh control-node` / `ssh worker-node` aliases, what runs on each, and the standing rule against `pct enter` into the WireGuard LXC while on the VPN. Use whenever a task needs a shell on the Proxmox host or a k3s node, or any `pct` command against an LXC.
 ---
 
 # Reaching the homelab
 
 ## SSH aliases
 
-Three aliases in `~/.ssh/config`, all `root`, all port 22:
+Three aliases in `~/.ssh/config`, all `root`, all port 22, all keyed with
+`~/.ssh/p1.pub` via the 1Password SSH agent:
 
 | Alias | Host | What it is |
 |---|---|---|
 | `ssh pve` | 192.168.1.2 | Proxmox VE hypervisor. Web UI on `:8006`. |
-| `ssh k3s-control` | 192.168.1.10 | k3s control-plane VM (Proxmox VM 300). |
-| `ssh k3s-worker1` | 192.168.1.11 | k3s worker VM (Proxmox VM 301) — every app workload runs here. |
+| `ssh control-node` | 192.168.1.10 | k3s control-plane VM (Proxmox VM 300); k8s node name `k3s-control`. |
+| `ssh worker-node` | 192.168.1.11 | k3s worker VM (Proxmox VM 301), node name `k3s-worker1` — every app workload runs here. **Key not installed yet** — see below. |
 
-Always use the alias. Direct `ssh root@192.168.1.2` fails with `publickey` —
-the aliases carry the right keys (`id_ed25519_pve` / `id_ed25519_k3s`).
+Always use the alias; the k8s node names (`k3s-control`, `k3s-worker1`) are
+not SSH hosts and don't resolve.
 
-All three are already allowlisted in `.claude/settings.local.json`, so
-`ssh pve …`, `ssh k3s-control …` and `ssh k3s-worker1 …` run without a prompt.
+`worker-node` does not work yet: the p1.pub key hasn't been added to the worker.
+If a task genuinely needs a shell on the worker, add p1.pub to the worker's
+`/root/.ssh/authorized_keys` the same way it was done for `control-node`.
 
-`kubectl` runs from the laptop against the cluster directly; SSH into a node
-only when the thing you need is not visible through the API (containerd, disk,
-`/mnt/longhorn`, journal).
+`kubectl` is **not** installed on the laptop. Run it on the control node:
+`ssh control-node 'kubectl …'`. SSH into the worker only when the thing you need
+is not visible through the API (containerd, disk, `/mnt/longhorn`, journal).
 
 ## Proxmox guests
 
