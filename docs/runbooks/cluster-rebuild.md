@@ -77,12 +77,12 @@ remembering to run it. See `known-risks.md` §6 and `ansible/README.md`.
 Verify rather than assume — this is the check that would have caught it:
 
 ```bash
-ssh k3s-worker1 systemctl show k3s-agent -p After -p TimeoutStopUSec
+ssh worker-node systemctl show k3s-agent -p After -p TimeoutStopUSec
 # After= must list open-iscsi.service and iscsid.service
 # TimeoutStopUSec=5min
 
 # once k3s is installed (below):
-ssh k3s-worker1 systemd-inhibit --list
+ssh worker-node systemd-inhibit --list
 # must show kubelet holding a "shutdown" "delay" lock
 ```
 

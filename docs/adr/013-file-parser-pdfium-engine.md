@@ -34,6 +34,10 @@ Rolled out in three steps rather than one, each independently revertible:
 2. `sha-ef055b2` — pdfium promoted to the image's own default. The explicit
    ConfigMap override becomes redundant and is dropped; `PARSER_ENGINE` is
    now only needed to force the `pdfplumber` fallback.
+3. `sha-a60408b` (2026-10-19, after the fact) — pdfium reports a hyphen that
+   splits a word across lines as U+FFFE, which broke Print on some reports.
+   That character is now mapped back to `-`, and the workbook writer strips
+   XML-illegal characters. See the Consequences entry below.
 
 `PARSER_ENGINE` stays a real switch, not removed — an escape hatch if pdfium
 ever mis-renders something pdfplumber handled correctly.
@@ -69,9 +73,18 @@ ever mis-renders something pdfplumber handled correctly.
   against a deliberately long PDF, not just a large one, remains the reflex
   before shipping changes to this path — pdfium changed the engine, not the
   need for that check.
+- **The engines are not character-identical** (found 2026-10-19). pdfium
+  returns U+FFFE for a hyphen that splits a word across lines, where pdfplumber
+  returns `-`. openpyxl wrote it without complaint, so Print (which re-reads
+  the workbook) returned 500 on any report containing one, for three months.
+  `template.pdf` has no such line breaks, so the self-test passed throughout.
+  Fixed in `sha-a60408b`.
+  Takeaway for future engine changes: run `--compare-engines` on a few real
+  reports, not just the template.
 
 ## Related
 
+- docs/lessons/k8s/file-parser-print-500-pdfium-ufffe.md — the U+FFFE Print 500 from the engine swap
 - docs/lessons/k8s/file-parser-oom-large-pdf.md — the OOM incident that
   started this: mitigation (memory bump) then real fix (streaming rewrite)
 - Manifests: k8s/apps/file-parser/deployment.yaml, configmap.yaml
