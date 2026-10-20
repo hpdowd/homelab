@@ -14,14 +14,20 @@ Three aliases in `~/.ssh/config`, all `root`, all port 22, all keyed with
 |---|---|---|
 | `ssh pve` | 192.168.1.2 | Proxmox VE hypervisor. Web UI on `:8006`. |
 | `ssh control-node` | 192.168.1.10 | k3s control-plane VM (Proxmox VM 300); k8s node name `k3s-control`. |
-| `ssh worker-node` | 192.168.1.11 | k3s worker VM (Proxmox VM 301), node name `k3s-worker1` — every app workload runs here. **Key not installed yet** — see below. |
+| `ssh worker-node` | 192.168.1.11 | k3s worker VM (Proxmox VM 301), node name `k3s-worker1` — every app workload runs here. |
 
 Always use the alias; the k8s node names (`k3s-control`, `k3s-worker1`) are
 not SSH hosts and don't resolve.
 
-`worker-node` does not work yet: the p1.pub key hasn't been added to the worker.
-If a task genuinely needs a shell on the worker, add p1.pub to the worker's
-`/root/.ssh/authorized_keys` the same way it was done for `control-node`.
+To put p1.pub on a VM that doesn't have it, go through the QEMU guest agent
+(enabled on 300 and 301) rather than typing it out — this is how the worker got
+it on 2026-10-20. Append, never overwrite; the nodes carry other keys too:
+
+```
+ssh pve "qm guest exec <vmid> -- sh -c 'echo \"$(cat ~/.ssh/p1.pub)\" >> /root/.ssh/authorized_keys'"
+```
+
+`ssh-copy-id` won't work: sshd is `PermitRootLogin prohibit-password`.
 
 `kubectl` is **not** installed on the laptop. Run it on the control node:
 `ssh control-node 'kubectl …'`. SSH into the worker only when the thing you need
