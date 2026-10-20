@@ -9,7 +9,7 @@ grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened. Updated 2026-
 after the `pve/data` thin pool filled and froze the control plane: §10 opened, §3's
 "resolved" corrected, §7 reframed as the same failure one layer up. Updated 2026-10-09:
 §2, §9 and items 3, 13 and 18 closed (ADR 019). Updated 2026-10-20: §4's figures refreshed
-for the 13GiB worker.
+for the 13GiB worker, and §11 and item 19 opened for the host's 100 Mb/s link.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -41,6 +41,7 @@ verified on 2026-07-27. Nothing remaining is an emergency.
 | 16 | Set `thin_pool_autoextend_threshold` | ~5 min | — | Low, and weak — only 2 GiB of VG left to grow into |
 | 17 | `fsck` `vm-102-disk-0` next time LXC 102 is stopped | ~15 min | AMP downtime | Low — it took real write errors on 2026-09-16 |
 | ~~18~~ | ~~Route `Watchdog` to an external dead-man's switch (healthchecks.io → Pushover)~~ — **done 2026-10-09**, ADR 019 | — | — | — |
+| 19 | Get the PVE host's link to 1 Gb/s: swap the cable, then try another router port | ~15 min | Someone at the router | Low; everything leaving the host is capped at 100 Mb/s, see §11 |
 
 Item 6, which makes the item 1 fix survive a rebuild (§1 below), was closed on 2026-10-09
 in a window with every volume detached (ADR 020). Item 13 is new on 2026-09-03: the VPN
@@ -58,6 +59,9 @@ shape worth noticing: both are things that fail silently and are only discovered
 consequences, and this list now contains two of them.
 Item 9 is a verification, not a change, and it is the only one with a date
 attached.
+
+Item 19 is new on 2026-10-20 and is the only one that needs hands on hardware: the host's
+network link has run at 100 Mb/s since at least 2026-10-08 (§11).
 
 Item 5 is closed as of 2026-08-10 and took the worker's OS disk from 85% to 6% (§3). It also
 changed §1's arithmetic: `vdb` is a shared disk now, so `storageReserved` went 49.1 → 80 GiB
@@ -598,6 +602,38 @@ bought room to work on 2026-09-16 is spent. The next occurrence has no cheap esc
 **Prevention:** alert on `Data%`, set
 `thin_pool_autoextend_threshold` (unset; LVM warns on every `lvextend`), and treat §7
 below as the same failure in a different layer rather than an unrelated hygiene item.
+
+---
+
+## 11. The host's network link runs at 100 Mb/s
+
+**Severity: low. Nothing breaks, but all traffic in or out of the host is capped at about
+11 MB/s.**
+
+Found 2026-10-20. `ethtool enp0s31f6` on the PVE host reports `Speed: 100Mb/s`. The NIC
+advertises `1000baseT/Full`, but the far end (the router or switch port) only offers
+`10baseT` and `100baseT`. Every link-up since the host booted on 2026-10-08 has come up at
+100 Mbps, so this is not new.
+
+The cap applies to anything that leaves the host: LAN uploads to Immich and Nextcloud,
+Cloudflare tunnel traffic, and restic pushes to B2 if the internet connection is faster
+than 100 Mb/s. Traffic between guests stays on `vmbr0` and is unaffected.
+
+There are two likely causes, and swapping parts tells them apart:
+
+- **A damaged cable.** Gigabit needs all four wire pairs and 100 Mb/s needs two. When a pair
+  is broken, the far end retries, gives up on gigabit and offers only 10/100, which matches
+  what it advertises now. Swap the cable first.
+- **A 100 Mb/s port.** If a known-good cable still links at 100, move to another router port
+  or check whether that port is fast ethernet only.
+
+After each change, check with `ssh pve 'ethtool enp0s31f6 | grep Speed'`. Fixed looks
+like `Speed: 1000Mb/s`.
+
+The link also dropped three times on 2026-10-20, at 08:00, 15:22 and 19:58 UTC, for a few
+minutes each. Every drop was followed within 10 minutes by a new WAN IP in the
+cloudflare-ddns log, which points at the router restarting rather than the cable. Drops
+without a WAN IP change would point back at the cable.
 
 ---
 
