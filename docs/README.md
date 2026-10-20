@@ -42,3 +42,8 @@ thing it describes, constraints live closest to what they constrain (see the
   file for AI-assisted sessions, kept current, never committed. Nothing in
   the repo may depend on it; anything durable in it that humans need must
   also exist in `docs/`.
+- **Prose follows `reference/human-register-revision-guide.md`.** Run its
+  section 12 revision pass over a new lesson, ADR, plan or gotcha before
+  committing. These are technical docs, so its section 11 exemptions apply:
+  bullets, tables and repeated key terms stay. Numbers, names, commands and log
+  lines are never reworded for style.

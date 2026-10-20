@@ -1,5 +1,8 @@
 # Incident: <short title>
 
+<!-- Before committing, run the revision pass in
+     docs/reference/human-register-revision-guide.md (section 12). Delete this comment. -->
+
 ## Date
 YYYY-MM-DD
 

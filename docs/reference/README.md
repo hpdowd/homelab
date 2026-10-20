@@ -15,3 +15,4 @@ Cheat-sheets for the tools used day-to-day. Not tutorials; just the commands and
 | cloudflare-warp.md | WARP CLI setup on Arch/Wayland — backup remote-access path when WireGuard is unavailable |
 | capacity-headroom.md | Worker RAM headroom report (the gate for adding services) · how to re-run it from VictoriaMetrics · Collabora/Immich feasibility · re-evaluate triggers |
 | resources.md | Where each component's charts, images, docs and release notes live · trust ladder for images · before-an-upgrade checklist |
+| human-register-revision-guide.md | How docs prose should read · the patterns that make text read as machine-written and the fix for each · which rules technical docs are exempt from · the revision pass to run before committing a doc |
