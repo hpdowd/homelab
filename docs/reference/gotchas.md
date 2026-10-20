@@ -507,6 +507,17 @@ backstop. See ADR 020.
   **Alert on repo growth, not on job exit code** — nothing catches a job that
   succeeds at doing nothing. See
   `docs/lessons/backup/restic-retention-never-pruned.md`.
+- **A failed backup Job leaves no logs.** The backup CronJobs use
+  `restartPolicy: OnFailure`, so retries restart the container inside one pod,
+  and when `backoffLimit` is hit the Job controller deletes that pod. You get
+  `BackoffLimitExceeded` and nothing else. With no internet the jobs die at
+  `apk add restic`, before they reach B2: gitea (`set -e`) exits before scaling
+  down, and the no-`-e` scripts burn their retry loop on `restic: not found`.
+  Retry budgets are minutes, so any outage over the
+  02:00–03:40 UTC window fails all four. Re-run with `kubectl create job
+  --from=cronjob/<ns>-backup`, then delete the failed Jobs or `BackupJobFailed`
+  / `KubeJobFailed` never clear. See
+  `docs/lessons/backup/internet-outage-backups-failed.md`.
 
 ## LVM thin pool (`local-lvm`)
 
