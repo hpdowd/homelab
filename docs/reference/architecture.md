@@ -14,7 +14,7 @@ Proxmox is on the bare metal. Inside Proxmox there are some LXCs (the
 permanent ones: DNS, VPN, AMP) and two full VMs that make up the k3s
 cluster. The split matters because LXCs share memory with the host
 (they only use what they touch) but VMs *reserve* their RAM the
-moment they boot. So the two k3s VMs eat 19GB up front whether
+moment they boot. So the two k3s VMs eat 17GB up front whether
 they're idle or hammered.
 
 ```
@@ -23,10 +23,28 @@ Proxmox host
 ├── LXC 101  WireGuard   (VPN + cloudflare-ddns)
 ├── LXC 102  AMP         (game server)
 ├── VM  201  QBittorrent (PIA-only torrenting)
-├── VM  300  k3s-control   2 vCPU, 5GiB RAM  (raised from 4 on 2026-06-28)
-└── VM  301  k3s-worker1   8 vCPU, 14GiB RAM (12 for a while; back to 14 on
-                           2026-08-20), has the 500GB Longhorn disk
+├── VM  300  k3s-control   2 vCPU, 4GiB RAM
+└── VM  301  k3s-worker1   8 vCPU, 13GiB RAM, has the 500GB Longhorn disk
 ```
+
+The two VMs have been resized five times. When the host needs memory it
+comes off the worker, because ZFS ARC is already capped and control is
+already small.
+
+- **Worker 14 → 12GiB (2026-06-27, again 2026-09-16):** freed host RAM
+  for an AMP game server. AMP is an LXC, so it only gets what the VMs
+  leave behind.
+- **Control 4 → 5GiB (2026-06-28):** the worker reboot the day before
+  made the Longhorn manager on control grow during salvage, and on a
+  4GiB node that kept `NodeMemoryLowControl` firing for hours. The 1GiB
+  came out of the 2GiB the worker had just given up.
+- **Worker 12 → 14GiB (2026-08-20):** no reason was recorded.
+- **Control 5 → 4GiB, worker 12 → 13GiB (2026-10-09):** everything
+  except k3s moved from control to the worker (ADR 020), and 1GiB moved
+  with it. Longhorn left control too, so the reason for the June raise
+  is gone.
+
+Figures for each change are in `capacity-headroom.md`.
 
 ## The cluster
 
@@ -243,17 +261,17 @@ A few things I deliberately keep on LXCs:
 ## A note on memory
 
 The thing that constrains every "should I add X" decision is RAM.
-After the two k3s VMs reserve theirs, the host has maybe 5GB left for
+After the two k3s VMs reserve theirs, the host has maybe 6GB left for
 ZFS ARC, the Proxmox process, and the LXCs that didn't migrate. So
 when something says "needs 1.5GB", that's a real percentage of what's
 left. It's why I keep picking the lighter option (VictoriaMetrics
 single-node, Authelia over Authentik), and why Immich waited for the
 headroom report before getting deployed (it's in now, ADR 006).
 
-One nuance, though: that ~5GB host limit only bites things that live
+One nuance, though: that ~6GB host limit only bites things that live
 *outside* the k3s VMs (LXCs, another VM). The worker VM already reserves
-its 14GiB up front, so anything I schedule *inside* the cluster competes
-for the worker's own 13.59GiB, not the host's leftovers, and most of
+its 13GiB up front, so anything I schedule *inside* the cluster competes
+for the worker's own ~12.6GiB, not the host's leftovers, and most of
 that worker RAM sits idle (snapshot: ~35% used, never over 50%). The
 gating arithmetic for "add Immich/Collabora?" lives in
 `capacity-headroom.md`, including how to re-pull the numbers from

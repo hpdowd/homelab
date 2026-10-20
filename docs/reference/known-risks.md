@@ -8,7 +8,8 @@ Re-read 2026-09-03 during a documentation sweep: §4's figures refreshed (the wo
 grew back to 14GiB on 2026-08-20), item 12 closed, item 13 opened. Updated 2026-09-16
 after the `pve/data` thin pool filled and froze the control plane: §10 opened, §3's
 "resolved" corrected, §7 reframed as the same failure one layer up. Updated 2026-10-09:
-§2, §9 and items 3, 13 and 18 closed (ADR 019).
+§2, §9 and items 3, 13 and 18 closed (ADR 019). Updated 2026-10-20: §4's figures refreshed
+for the 13GiB worker.
 
 Ordered by expected damage, not by how likely they are.
 
@@ -371,6 +372,7 @@ degraded with replicas on the control node's OS disk. Documentation is not self-
 ```text
 2026-07-25   k3s-worker1   memory requests 5979Mi (50%)   limits 22820Mi (191%)
 2026-09-03   k3s-worker1   memory requests 6107Mi (43%)   limits 23588Mi (169%)
+2026-10-20   k3s-worker1   memory requests 6123Mi (47%)   limits 23652Mi (183%)
 ```
 
 The percentages fell without anything being trimmed: the **worker VM was raised
@@ -379,6 +381,10 @@ allocatable now 14248896Ki), undoing the 2026-06-27 shrink. Nothing in the repo
 records that change or why it was made — `capacity-headroom.md` and `HOMELAB.md`
 both still describe a 12GiB worker below. The overcommit is unchanged in
 absolute terms; only the denominator moved.
+
+The denominator has moved twice more since. The worker went 14 → 12GiB on 2026-09-16 to
+free host RAM for an AMP game server, then 12 → 13GiB on 2026-10-09 when the workloads
+left control (ADR 020). At 13GiB the limits are back at 183%.
 
 Requests are comfortable, so scheduling is honest. Limits are not: if enough workloads
 approach their ceilings at once, the node has no way to satisfy them and the kernel starts
@@ -389,8 +395,8 @@ Immich alone holds a 3Gi limit and has already been OOMKilled once at 2Gi, so th
 are not obviously wrong individually. The sum is the problem.
 
 **Prevention:** this is a capacity decision, not a bug. Either accept it explicitly (single
-worker, workloads rarely peak together, and the node now has 2GiB more to be wrong
-with) or bring the sum under 100% by trimming the largest limits. Worth recording which, so the alert stops being
+worker, workloads rarely peak together) or bring the sum under 100% by trimming the
+largest limits. Worth recording which, so the alert stops being
 ambient noise. `docs/reference/capacity-headroom.md` has the sizing context.
 
 ---

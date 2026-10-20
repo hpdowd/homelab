@@ -19,7 +19,7 @@ spec:
       releaseName: vm
       values: |
         # Every component is pinned to the worker with its own nodeSelector.
-        # The control node has 5GiB RAM and runs the k3s control plane. This
+        # The control node has 4GiB RAM and runs the k3s control plane. This
         # chart has no global nodeSelector, so a component without its own
         # lands on control: the scheduler prefers it because its pods request
         # little memory. node-exporter is the exception, a DaemonSet that
